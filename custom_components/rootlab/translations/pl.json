@@ -9,5 +9,16 @@
     "abort": {
       "already_configured": "Integracja jest już skonfigurowana."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opcje RootLab",
+        "data": {
+          "imgw_station": "Stacja IMGW (np. warszawa, krakow, poznan)",
+          "api_key": "Klucz API Claude (do zadań AI i diagnoz)"
+        }
+      }
+    }
   }
 }

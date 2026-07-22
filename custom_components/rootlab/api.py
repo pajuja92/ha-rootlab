@@ -31,6 +31,7 @@ def async_register(hass):
         ws_irrigation_pause,
         ws_irrigation_skip,
         ws_layout_save,
+        ws_weather,
     ):
         websocket_api.async_register_command(hass, cmd)
 
@@ -143,6 +144,14 @@ async def ws_irrigation_skip(hass, connection, msg):
     hass.data[DOMAIN]["data"]["irrigation"]["skip_date"] = msg["date"]
     await async_save(hass)
     connection.send_result(msg["id"], _public(hass))
+
+
+@websocket_api.websocket_command({vol.Required("type"): "rootlab/weather"})
+@websocket_api.async_response
+async def ws_weather(hass, connection, msg):
+    d = hass.data[DOMAIN]
+    station = d["entry"].options.get("imgw_station", "warszawa")
+    connection.send_result(msg["id"], await d["weather"].fetch(station))
 
 
 @websocket_api.websocket_command(

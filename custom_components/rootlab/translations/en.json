@@ -9,5 +9,16 @@
     "abort": {
       "already_configured": "Integration is already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "RootLab options",
+        "data": {
+          "imgw_station": "IMGW station (e.g. warszawa, krakow, poznan)",
+          "api_key": "Claude API key (for AI tasks and diagnoses)"
+        }
+      }
+    }
   }
 }
