@@ -129,7 +129,7 @@ function svg(app) {
       <path d="M 1 0 L 0 0 0 1" fill="none" class="grid-line"/></pattern></defs>
     <rect width="${W}" height="${H}" fill="url(#rl-grid)"/>
     ${areaNodes}${shadows}${nodes}${compass}
-    <rect id="draw-preview" class="draw-preview" hidden />
+    <rect id="draw-preview" class="draw-preview" style="display:none" />
   </svg>`;
 }
 
@@ -185,6 +185,26 @@ export function bind(app, root) {
     }
   });
 
+  /* Podczas przeciągania NIE wolno robić pełnego re-renderu (zniknąłby element
+     z przechwyconym pointerem) — aktualizujemy atrybuty SVG bezpośrednio. */
+  const syncAreaNode = (item) => {
+    const g = svgEl.querySelector(`.item-g[data-id="${item.id}"]`);
+    if (!g) return;
+    const rect = g.querySelector("rect.area");
+    rect.setAttribute("x", item.x);
+    rect.setAttribute("y", item.y);
+    rect.setAttribute("width", item.w);
+    rect.setAttribute("height", item.h);
+    const text = g.querySelector("text");
+    text.setAttribute("x", item.x + item.w / 2);
+    text.setAttribute("y", item.y + 0.7);
+    const handle = g.querySelector(".resize-handle");
+    if (handle) {
+      handle.setAttribute("cx", item.x + item.w);
+      handle.setAttribute("cy", item.y + item.h);
+    }
+  };
+
   svgEl.addEventListener("pointermove", (ev) => {
     if (!drag) return;
     const p = svgPoint(svgEl, ev);
@@ -192,22 +212,19 @@ export function bind(app, root) {
       drag.moved = true;
       drag.item.x = clamp(p.x + drag.dx, layout.width_m);
       drag.item.y = clamp(p.y + drag.dy, layout.height_m);
-      if (isArea(drag.item)) {
-        app.render(); // rect + label + handle — prościej przerysować
-      } else {
-        drag.node.setAttribute("transform", `translate(${drag.item.x} ${drag.item.y})`);
-      }
+      if (isArea(drag.item)) syncAreaNode(drag.item);
+      else drag.node.setAttribute("transform", `translate(${drag.item.x} ${drag.item.y})`);
     } else if (drag.type === "resize") {
       drag.moved = true;
       drag.item.w = Math.max(0.5, clamp(p.x - drag.item.x, layout.width_m));
       drag.item.h = Math.max(0.5, clamp(p.y - drag.item.y, layout.height_m));
-      app.render();
+      syncAreaNode(drag.item);
     } else if (drag.type === "draw") {
       drag.moved = true;
       drag.x1 = p.x;
       drag.y1 = p.y;
       const pr = root.getElementById("draw-preview");
-      pr.hidden = false;
+      pr.style.display = "";
       pr.setAttribute("x", Math.min(drag.x0, p.x));
       pr.setAttribute("y", Math.min(drag.y0, p.y));
       pr.setAttribute("width", Math.abs(p.x - drag.x0));

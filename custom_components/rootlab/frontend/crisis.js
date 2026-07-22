@@ -1,5 +1,5 @@
 import { t } from "./i18n.js";
-import { combo, esc, resizeImage, wireCombos } from "./util.js";
+import { combo, esc, resizeImage } from "./util.js";
 import { attachMic } from "./stt.js";
 
 let state = null;
@@ -112,16 +112,20 @@ function wire(app, el) {
   q("#cz-drop").addEventListener("dragover", (ev) => ev.preventDefault());
   q("#cz-drop").addEventListener("drop", async (ev) => {
     ev.preventDefault();
-    if (ev.dataTransfer.files[0]) {
+    if (ev.dataTransfer.files[0] && state) {
       snapshot();
-      state.img = await resizeImage(ev.dataTransfer.files[0]);
+      const img = await resizeImage(ev.dataTransfer.files[0]);
+      if (!state) return; // dialog zamknięty w międzyczasie
+      state.img = img;
       render(app);
     }
   });
   q("#cz-file").addEventListener("change", async (ev) => {
-    if (ev.target.files[0]) {
+    if (ev.target.files[0] && state) {
       snapshot();
-      state.img = await resizeImage(ev.target.files[0]);
+      const img = await resizeImage(ev.target.files[0]);
+      if (!state) return;
+      state.img = img;
       render(app);
     }
   });
