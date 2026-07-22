@@ -5,7 +5,9 @@ import voluptuous as vol
 
 from homeassistant.components import websocket_api
 from homeassistant.core import callback
+import homeassistant.util.dt as dt_util
 
+from . import ai
 from .const import DOMAIN
 from .store import async_save
 
@@ -32,6 +34,9 @@ def async_register(hass):
         ws_irrigation_skip,
         ws_layout_save,
         ws_weather,
+        ws_tasks_generate,
+        ws_crisis_diagnose,
+        ws_crisis_add_plan,
     ):
         websocket_api.async_register_command(hass, cmd)
 
@@ -160,5 +165,98 @@ async def ws_weather(hass, connection, msg):
 @websocket_api.async_response
 async def ws_layout_save(hass, connection, msg):
     hass.data[DOMAIN]["data"]["layout"] = msg["layout"]
+    await async_save(hass)
+    connection.send_result(msg["id"], _public(hass))
+
+
+@websocket_api.websocket_command({vol.Required("type"): "rootlab/tasks/generate"})
+@websocket_api.async_response
+async def ws_tasks_generate(hass, connection, msg):
+    try:
+        await ai.async_generate_tasks(hass)
+    except ai.NoApiKeyError:
+        connection.send_error(
+            msg["id"], "no_api_key",
+            "Brak klucza API Claude — ustaw go w opcjach integracji RootLab (Konfiguruj).",
+        )
+        return
+    except Exception as err:  # noqa: BLE001 — front pokazuje komunikat, HA loguje
+        connection.send_error(msg["id"], "ai_error", f"Nie udało się wygenerować zadań: {err}")
+        return
+    await async_save(hass)
+    connection.send_result(msg["id"], _public(hass))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rootlab/crisis/diagnose",
+        vol.Required("plant_id"): str,
+        vol.Required("description"): str,
+        vol.Optional("image", default=None): vol.Any(None, str),
+        vol.Optional("media_type", default=None): vol.Any(None, str),
+    }
+)
+@websocket_api.async_response
+async def ws_crisis_diagnose(hass, connection, msg):
+    data = hass.data[DOMAIN]["data"]
+    plant = next((p for p in data["plants"] if p["id"] == msg["plant_id"]), None)
+    if not plant:
+        connection.send_error(msg["id"], "not_found", "Nie ma takiej rośliny")
+        return
+    try:
+        diagnosis = await ai.async_diagnose(
+            hass, plant, msg["description"], msg["image"], msg["media_type"]
+        )
+    except ai.NoApiKeyError:
+        connection.send_error(
+            msg["id"], "no_api_key",
+            "Diagnoza wymaga klucza API Claude — ustaw go w opcjach integracji RootLab.",
+        )
+        return
+    except Exception as err:  # noqa: BLE001
+        connection.send_error(msg["id"], "ai_error", str(err))
+        return
+    entry = {
+        "id": uuid.uuid4().hex,
+        "plant_id": plant["id"],
+        "description": msg["description"],
+        "image": msg["image"],
+        "diagnosis": diagnosis,
+        "created": dt_util.now().date().isoformat(),
+    }
+    data["crisis_history"] = (data["crisis_history"] + [entry])[-50:]
+    await async_save(hass)
+    connection.send_result(msg["id"], entry)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rootlab/crisis/add_plan",
+        vol.Required("history_id"): str,
+    }
+)
+@websocket_api.async_response
+async def ws_crisis_add_plan(hass, connection, msg):
+    from datetime import date, timedelta
+
+    data = hass.data[DOMAIN]["data"]
+    entry = next((e for e in data["crisis_history"] if e["id"] == msg["history_id"]), None)
+    if not entry:
+        connection.send_error(msg["id"], "not_found", "Nie ma takiego zgłoszenia")
+        return
+    for step in entry["diagnosis"].get("steps", []):
+        data["tasks"].append(
+            {
+                "id": uuid.uuid4().hex,
+                "plant_id": entry["plant_id"],
+                "category": "crisis",
+                "title": step["title"],
+                "details": entry["diagnosis"].get("problem", ""),
+                "due": (date.today() + timedelta(days=step.get("due_in_days", 0))).isoformat(),
+                "done": False,
+                "source": "crisis",
+                "created": date.today().isoformat(),
+            }
+        )
     await async_save(hass)
     connection.send_result(msg["id"], _public(hass))

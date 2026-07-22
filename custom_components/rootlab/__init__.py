@@ -25,6 +25,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
     api.async_register(hass)
     async_setup_scheduler(hass)
+    _async_setup_weekly_tasks(hass)
 
     await hass.http.async_register_static_paths(
         [
@@ -52,6 +53,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update=True,
     )
     return True
+
+
+def _async_setup_weekly_tasks(hass: HomeAssistant) -> None:
+    """Poniedziałek 5:00 — automatyczne odświeżenie zadań AI (jeśli jest klucz API)."""
+    from homeassistant.helpers.event import async_track_time_change
+
+    from . import ai
+    from .store import async_save
+
+    async def _refresh(now):
+        if now.weekday() != 0:
+            return
+        if not hass.data[DOMAIN]["entry"].options.get("api_key"):
+            return
+        try:
+            await ai.async_generate_tasks(hass)
+            await async_save(hass)
+        except Exception:  # noqa: BLE001 — cykliczna próba, kolejna za tydzień
+            pass
+
+    hass.data[DOMAIN]["unsub"].append(
+        async_track_time_change(hass, _refresh, hour=5, minute=0, second=0)
+    )
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
