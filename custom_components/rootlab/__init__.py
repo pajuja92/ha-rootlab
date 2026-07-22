@@ -8,6 +8,7 @@ from . import api
 from .const import DOMAIN, PANEL_ICON, PANEL_TITLE, VERSION
 from .irrigation import async_setup_scheduler, async_stop_all
 from .store import async_load_data
+from .weather import ImgwClient
 
 FRONTEND_URL = f"/{DOMAIN}_files"
 
@@ -20,6 +21,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "entry": entry,
         "active": {},
         "unsub": [],
+        "weather": ImgwClient(hass),
     }
     api.async_register(hass)
     async_setup_scheduler(hass)
