@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Garden Planner AI",
+        "description": "Dodaj planer ogrodowy do Home Assistant."
+      }
+    },
+    "abort": {
+      "already_configured": "Integracja jest już skonfigurowana."
+    }
+  }
+}
