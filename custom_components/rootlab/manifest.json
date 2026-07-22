@@ -7,6 +7,6 @@
   "documentation": "https://github.com/pajuja92/ha-rootlab",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/pajuja92/ha-rootlab/issues",
-  "requirements": [],
-  "version": "0.1.0-beta.3"
+  "requirements": ["anthropic>=0.69.0"],
+  "version": "0.1.0-beta.4"
 }
