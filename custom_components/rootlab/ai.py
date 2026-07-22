@@ -1,14 +1,30 @@
-"""Klient Claude — generowanie zadań ogrodowych i diagnoza kryzysowa."""
+"""Klient AI — wielu dostawców: Anthropic, endpointy zgodne z OpenAI, usługa ai_task z HA."""
 import json
 import uuid
 from datetime import date
 
-import anthropic
+import aiohttp
+
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN
 from .logic import merge_ai_tasks
 
-MODEL = "claude-opus-4-8"
+# Dostawcy z API zgodnym z OpenAI (chat/completions) — jeden klient, różne base_url.
+OPENAI_COMPAT = {
+    "openai": ("https://api.openai.com/v1", "gpt-4o"),
+    "google": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash"),
+    "groq": ("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
+    "mistral": ("https://api.mistral.ai/v1", "mistral-large-latest"),
+    "deepseek": ("https://api.deepseek.com/v1", "deepseek-chat"),
+    "xai": ("https://api.x.ai/v1", "grok-3"),
+    "openrouter": ("https://openrouter.ai/api/v1", "openrouter/auto"),
+    "together": ("https://api.together.xyz/v1", "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
+    "perplexity": ("https://api.perplexity.ai", "sonar"),
+    "ollama": ("http://localhost:11434/v1", "llama3.2"),
+    "custom": ("", ""),
+}
+ANTHROPIC_MODEL = "claude-opus-4-8"
 
 SYSTEM = (
     "Jesteś spokojnym ogrodnikiem-ekspertem w aplikacji RootLab (Home Assistant). "
@@ -68,19 +84,156 @@ DIAGNOSIS_SCHEMA = {
 
 
 class NoApiKeyError(Exception):
-    """Brak klucza API w opcjach integracji."""
+    """Brak konfiguracji AI w opcjach integracji."""
 
 
-def _client(hass):
-    api_key = hass.data[DOMAIN]["entry"].options.get("api_key")
+def _options(hass):
+    return hass.data[DOMAIN]["entry"].options
+
+
+def _parse_json_loose(text):
+    """JSON z odpowiedzi modelu — toleruje płotki ```json i tekst wokół."""
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end == -1:
+        raise ValueError(f"Odpowiedź AI nie zawiera JSON: {text[:200]}")
+    return json.loads(text[start : end + 1])
+
+
+async def _complete(hass, prompt, schema=None, image_b64=None, media_type=None):
+    """Jedno zapytanie do skonfigurowanego dostawcy. schema=None → wolny tekst."""
+    provider = _options(hass).get("ai_provider", "anthropic")
+    if provider == "anthropic":
+        return await _anthropic(hass, prompt, schema, image_b64, media_type)
+    if provider == "ha_ai_task":
+        return await _ha_ai_task(hass, prompt, schema)
+    return await _openai_compat(hass, provider, prompt, schema, image_b64, media_type)
+
+
+async def _anthropic(hass, prompt, schema, image_b64, media_type):
+    import anthropic
+
+    api_key = _options(hass).get("api_key")
     if not api_key:
         raise NoApiKeyError
-    return anthropic.AsyncAnthropic(api_key=api_key, timeout=180.0)
+    client = anthropic.AsyncAnthropic(api_key=api_key, timeout=180.0)
+    content = []
+    if image_b64:
+        content.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type or "image/jpeg",
+                    "data": image_b64,
+                },
+            }
+        )
+    content.append({"type": "text", "text": prompt})
+    kwargs = {}
+    if schema:
+        kwargs["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
+    response = await client.messages.create(
+        model=_options(hass).get("ai_model") or ANTHROPIC_MODEL,
+        max_tokens=16000,
+        thinking={"type": "adaptive"},
+        system=SYSTEM,
+        messages=[{"role": "user", "content": content}],
+        **kwargs,
+    )
+    if response.stop_reason == "refusal":
+        raise RuntimeError("Model odmówił odpowiedzi na to zapytanie.")
+    text = next(b.text for b in response.content if b.type == "text")
+    return _parse_json_loose(text) if schema else text.strip()
+
+
+async def _openai_compat(hass, provider, prompt, schema, image_b64, media_type):
+    options = _options(hass)
+    default_base, default_model = OPENAI_COMPAT[provider]
+    base = (options.get("ai_base_url") or default_base).rstrip("/")
+    model = options.get("ai_model") or default_model
+    api_key = options.get("api_key")
+    if not base or not model or (not api_key and provider != "ollama"):
+        raise NoApiKeyError
+    user_content = [{"type": "text", "text": prompt}]
+    if image_b64:
+        user_content.insert(
+            0,
+            {
+                "type": "image_url",
+                "image_url": {"url": f"data:{media_type or 'image/jpeg'};base64,{image_b64}"},
+            },
+        )
+    system = SYSTEM + (
+        " Odpowiadasz WYŁĄCZNIE poprawnym JSON zgodnym z podanym schematem, bez komentarzy."
+        if schema
+        else ""
+    )
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_content},
+        ],
+    }
+    if schema:
+        body["response_format"] = {"type": "json_object"}
+        body["messages"][1]["content"].append(
+            {"type": "text", "text": "Schemat JSON odpowiedzi:\n" + json.dumps(schema)}
+        )
+    session = async_get_clientsession(hass)
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    async with session.post(
+        f"{base}/chat/completions",
+        json=body,
+        headers=headers,
+        timeout=aiohttp.ClientTimeout(total=180),
+    ) as resp:
+        if resp.status >= 400:
+            detail = (await resp.text())[:300]
+            raise RuntimeError(f"{provider}: HTTP {resp.status} — {detail}")
+        data = await resp.json()
+    text = data["choices"][0]["message"]["content"]
+    return _parse_json_loose(text) if schema else text.strip()
+
+
+async def _ha_ai_task(hass, prompt, schema):
+    """Usługa ai_task.generate_data — działa z każdą integracją AI skonfigurowaną w HA."""
+    entity_id = _options(hass).get("ai_task_entity")
+    if not entity_id:
+        raise NoApiKeyError
+    instructions = SYSTEM + "\n\n" + prompt
+    if schema:
+        instructions += (
+            "\n\nOdpowiedz WYŁĄCZNIE poprawnym JSON zgodnym ze schematem, bez płotków markdown:\n"
+            + json.dumps(schema)
+        )
+    result = await hass.services.async_call(
+        "ai_task",
+        "generate_data",
+        {"task_name": "rootlab", "entity_id": entity_id, "instructions": instructions},
+        blocking=True,
+        return_response=True,
+    )
+    text = result.get("data") if isinstance(result, dict) else None
+    if not isinstance(text, str):
+        raise RuntimeError(f"ai_task zwrócił nieoczekiwaną odpowiedź: {str(result)[:200]}")
+    return _parse_json_loose(text) if schema else text.strip()
 
 
 def _garden_context(hass):
     data = hass.data[DOMAIN]["data"]
     zones = {z["id"]: z["name"] for z in data["zones"]}
+    greenhouses = [
+        i for i in data["layout"]["items"] if i.get("kind") == "greenhouse" and "w" in i
+    ]
+    positions = {
+        i.get("plant_id"): i for i in data["layout"]["items"] if i.get("plant_id")
+    }
     plants = []
     for p in data["plants"]:
         readings = {}
@@ -91,73 +244,61 @@ def _garden_context(hass):
             if state and state.state not in ("unavailable", "unknown"):
                 unit = state.attributes.get("unit_of_measurement", "")
                 readings[key] = f"{state.state} {unit}".strip()
-        plants.append(
-            {
-                "id": p["id"],
-                "name": p["name"],
-                "species": p.get("species"),
-                "zone": zones.get(p.get("zone_id")),
-                "readings": readings,
-            }
-        )
+        info = {
+            "id": p["id"],
+            "name": p["name"],
+            "species": p.get("species"),
+            "zone": zones.get(p.get("zone_id")),
+            "readings": readings,
+        }
+        pos = positions.get(p["id"])
+        if pos and any(
+            g["x"] <= pos["x"] <= g["x"] + g["w"] and g["y"] <= pos["y"] <= g["y"] + g["h"]
+            for g in greenhouses
+        ):
+            # ponytail: stałe modyfikatory szklarni — ok. +5°C, +15 p.p. wilgotności, ~80% światła
+            info["environment"] = "szklarnia (ok. +5°C, wyższa wilgotność, ~80% światła)"
+        plants.append(info)
+    location = _options(hass).get("location") or {}
     return {
         "date": date.today().isoformat(),
-        "latitude": round(hass.config.latitude, 1),
+        "latitude": round(location.get("latitude", hass.config.latitude), 2),
         "plants": plants,
     }
 
 
-def _parse_structured(response):
-    if response.stop_reason == "refusal":
-        raise RuntimeError("Model odmówił odpowiedzi na to zapytanie.")
-    text = next(b.text for b in response.content if b.type == "text")
-    return json.loads(text)
-
-
 async def async_generate_tasks(hass):
     """Generuje zadania AI i scala je z listą (zastępuje niezrobione zadania AI)."""
-    client = _client(hass)
     context = _garden_context(hass)
     weather = await hass.data[DOMAIN]["weather"].fetch(
-        hass.data[DOMAIN]["entry"].options.get("imgw_station", "warszawa")
+        _options(hass).get("imgw_station", "warszawa")
     )
     if weather:
         context["weather_imgw"] = weather
-    response = await client.messages.create(
-        model=MODEL,
-        max_tokens=16000,
-        thinking={"type": "adaptive"},
-        system=SYSTEM,
-        output_config={"format": {"type": "json_schema", "schema": TASKS_SCHEMA}},
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    "Na podstawie danych ogrodu ułóż listę zadań na najbliższe 14 dni. "
-                    "Kategorie: maintenance (przycinanie, pielenie, nawożenie, podlewanie ręczne) "
-                    "i protection (opryski, ochrona przed przymrozkami i szkodnikami). "
-                    "Uwzględnij porę roku, odczyty czujników i pogodę. Maks. 3 zadania na roślinę, "
-                    "tylko naprawdę potrzebne. Dane ogrodu:\n"
-                    + json.dumps(context, ensure_ascii=False)
-                ),
-            }
-        ],
+    parsed = await _complete(
+        hass,
+        "Na podstawie danych ogrodu ułóż listę zadań na najbliższe 14 dni. "
+        "Kategorie: maintenance (przycinanie, pielenie, nawożenie, podlewanie ręczne) "
+        "i protection (opryski, ochrona przed przymrozkami i szkodnikami). "
+        "Uwzględnij porę roku, odczyty czujników, warunki (szklarnia) i pogodę. "
+        "Maks. 3 zadania na roślinę, tylko naprawdę potrzebne. Dane ogrodu:\n"
+        + json.dumps(context, ensure_ascii=False),
+        schema=TASKS_SCHEMA,
     )
-    parsed = _parse_structured(response)
     plant_ids = {p["id"] for p in hass.data[DOMAIN]["data"]["plants"]}
     fresh = [
         {
             "id": uuid.uuid4().hex,
             "plant_id": t["plant_id"] if t["plant_id"] in plant_ids else None,
-            "category": t["category"],
+            "category": t["category"] if t["category"] in ("maintenance", "protection") else "maintenance",
             "title": t["title"],
-            "details": t["details"],
-            "due": t["due"],
+            "details": t.get("details", ""),
+            "due": t.get("due"),
             "done": False,
             "source": "ai",
             "created": date.today().isoformat(),
         }
-        for t in parsed["tasks"]
+        for t in parsed.get("tasks", [])
     ]
     data = hass.data[DOMAIN]["data"]
     data["tasks"] = merge_ai_tasks(data["tasks"], fresh)
@@ -166,32 +307,29 @@ async def async_generate_tasks(hass):
 
 async def async_diagnose(hass, plant, description, image_b64, media_type):
     """Diagnoza problemu z rośliną na podstawie zdjęcia i opisu."""
-    client = _client(hass)
-    content = []
-    if image_b64:
-        content.append(
-            {
-                "type": "image",
-                "source": {"type": "base64", "media_type": media_type or "image/jpeg", "data": image_b64},
-            }
+    parsed = await _complete(
+        hass,
+        "Zdiagnozuj problem z rośliną i podaj plan naprawczy (2-5 kroków, każdy z terminem "
+        "w dniach od dziś, pole due_in_days). Jeśli pewność jest niska, powiedz to wprost.\n"
+        f"Roślina: {plant.get('name')} ({plant.get('species') or 'gatunek nieznany'}).\n"
+        f"Opis objawów od użytkownika: {description or 'brak opisu'}",
+        schema=DIAGNOSIS_SCHEMA,
+        image_b64=image_b64,
+        media_type=media_type,
+    )
+    if parsed.get("confidence") not in ("high", "medium", "low"):
+        parsed["confidence"] = "medium"
+    parsed.setdefault("steps", [])
+    return parsed
+
+
+async def async_ask(hass, question, plant=None):
+    """Wolne pytanie do AI (porada) — zwraca tekst."""
+    prompt = ""
+    if plant:
+        prompt += (
+            f"Pytanie dotyczy rośliny: {plant.get('name')} "
+            f"({plant.get('species') or 'gatunek nieznany'}).\n"
         )
-    content.append(
-        {
-            "type": "text",
-            "text": (
-                "Zdiagnozuj problem z rośliną i podaj plan naprawczy (2-5 kroków, każdy z terminem "
-                "w dniach od dziś). Jeśli pewność jest niska, powiedz to wprost.\n"
-                f"Roślina: {plant.get('name')} ({plant.get('species') or 'gatunek nieznany'}).\n"
-                f"Opis objawów od użytkownika: {description or 'brak opisu'}"
-            ),
-        }
-    )
-    response = await client.messages.create(
-        model=MODEL,
-        max_tokens=16000,
-        thinking={"type": "adaptive"},
-        system=SYSTEM,
-        output_config={"format": {"type": "json_schema", "schema": DIAGNOSIS_SCHEMA}},
-        messages=[{"role": "user", "content": content}],
-    )
-    return _parse_structured(response)
+    prompt += f"Pytanie: {question}\nOdpowiedz zwięźle (do ok. 200 słów), praktycznie."
+    return await _complete(hass, prompt)

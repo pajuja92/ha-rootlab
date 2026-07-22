@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "RootLab",
-        "description": "Dodaj planer ogrodowy do Home Assistant."
+        "description": "Dodaj planer ogrodowy RootLab do Home Assistant."
       }
     },
     "abort": {
@@ -15,9 +15,38 @@
       "init": {
         "title": "Opcje RootLab",
         "data": {
-          "imgw_station": "Stacja IMGW (np. warszawa, krakow, poznan)",
-          "api_key": "Klucz API Claude (do zadań AI i diagnoz)"
+          "imgw_station": "Stacja IMGW (pomiary bieżące)",
+          "weather_entity": "Encja pogody (prognozy godzinowe i dobowe)",
+          "ai_provider": "Dostawca AI",
+          "api_key": "Klucz API dostawcy AI",
+          "ai_model": "Model AI (puste = domyślny dostawcy)",
+          "ai_base_url": "Adres API (dla Ollama / custom)",
+          "ai_task_entity": "Encja Zadania AI (dla dostawcy „Zadanie AI z HA\")",
+          "location": "Lokalizacja ogrodu (do obliczeń nasłonecznienia)"
+        },
+        "data_description": {
+          "ai_task_entity": "Użyj dowolnej integracji AI skonfigurowanej w HA (np. Google, OpenAI, Anthropic, Ollama) — z logowaniem obsługiwanym przez tę integrację.",
+          "api_key": "Wymagany dla dostawców z bezpośrednim API. Niepotrzebny dla „Zadanie AI z HA\" i Ollamy."
         }
+      }
+    }
+  },
+  "selector": {
+    "ai_provider": {
+      "options": {
+        "ha_ai_task": "Zadanie AI z HA (dowolna integracja AI, logowanie przez konto)",
+        "anthropic": "Anthropic (Claude)",
+        "openai": "OpenAI (GPT)",
+        "google": "Google (Gemini)",
+        "groq": "Groq",
+        "mistral": "Mistral",
+        "deepseek": "DeepSeek",
+        "xai": "xAI (Grok)",
+        "openrouter": "OpenRouter",
+        "together": "Together AI",
+        "perplexity": "Perplexity",
+        "ollama": "Ollama (lokalnie)",
+        "custom": "Własny endpoint zgodny z OpenAI"
       }
     }
   }

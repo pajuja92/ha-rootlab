@@ -22,4 +22,14 @@ assert.ok(!isShaded({ id: "p", x: 10, y: 14 }, tree, L), "roślina na południe 
 assert.ok(!isShaded(tree, tree, L), "obiekt nie zacienia sam siebie");
 assert.ok(!isShaded({ id: "p", x: 10, y: 9 }, { id: "s", x: 10, y: 10, diameter_m: 1, height_m: 0.2 }, 0.5), "niski obiekt nie rzuca cienia");
 
+// Obrót północy: przy north_deg=90 północ jest w prawo (+x) — cień pada w prawo
+import { insideRect } from "../custom_components/rootlab/frontend/shade.js";
+assert.ok(isShaded({ id: "p", x: 12, y: 10 }, tree, L, 90), "przy north=90 cień pada w prawo");
+assert.ok(!isShaded({ id: "p", x: 10, y: 8 }, tree, L, 90), "przy north=90 'w górę' nie ma cienia");
+
+// Punkt w prostokącie (szklarnia)
+const gh = { x: 5, y: 5, w: 4, h: 3 };
+assert.ok(insideRect({ x: 6, y: 6 }, gh));
+assert.ok(!insideRect({ x: 4.9, y: 6 }, gh));
+
 console.log("Wszystkie testy cienia przeszły.");

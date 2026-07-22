@@ -101,7 +101,12 @@ export const CSS = `
   font: inherit; font-size: 14px; font-weight: 500; cursor: pointer;
 }
 :host([dark]) .btn { color: #1A1A1A; }
-.btn.ghost { background: transparent; border: 1px dashed var(--divider-color); color: var(--secondary-text-color); font-weight: 400; }
+.btn.ghost {
+  background: color-mix(in srgb, var(--rl-green) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--rl-green) 55%, transparent);
+  color: var(--primary-text-color);
+  font-weight: 500;
+}
 .btn.plain { background: transparent; color: var(--primary-text-color); font-weight: 400; }
 .btn.ai { background: var(--rl-ai); }
 .btn.small { padding: 4px 12px; font-size: 13px; }
@@ -205,6 +210,75 @@ select.inline, .toolbar select {
   padding: 8px 12px; border-radius: 999px; border: 1px solid var(--divider-color);
   background: var(--card-background-color); color: var(--primary-text-color); font: inherit; font-size: 14px;
 }
+/* Dialog: przycisk zamknięcia + szeroki wariant (karta rośliny) */
+dialog { position: relative; }
+dialog .dialog-x {
+  position: absolute; top: 12px; right: 12px;
+  border: none; background: transparent; color: var(--secondary-text-color);
+  cursor: pointer; padding: 6px; border-radius: 50%; display: inline-flex;
+}
+dialog .dialog-x:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+dialog.wide { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 64px); overflow-y: auto; }
+/* Combobox z wyszukiwaniem */
+.combo { position: relative; }
+.combo-caret { position: absolute; right: 8px; top: 10px; color: var(--secondary-text-color); pointer-events: none; }
+.combo-list {
+  position: absolute; z-index: 30; left: 0; right: 0; top: 100%;
+  max-height: 260px; overflow-y: auto;
+  background: var(--card-background-color);
+  border: 1px solid var(--divider-color); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35);
+}
+.combo-opt { padding: 8px 12px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; }
+.combo-opt:hover { background: color-mix(in srgb, var(--rl-green) 12%, transparent); }
+.combo-opt.selected { background: var(--rl-green-bg); }
+.combo-opt span { font-size: 14px; color: var(--primary-text-color); }
+.combo-opt small { font-size: 11px; color: var(--secondary-text-color); }
+.combo-empty { padding: 10px 12px; font-size: 13px; color: var(--secondary-text-color); }
+/* Mikrofon (dyktowanie) */
+.mic-btn { position: absolute; right: 6px; bottom: 6px; }
+.mic-wrap { position: relative; }
+.mic-btn.recording { color: var(--rl-crisis); animation: rl-pulse 1s ease-in-out infinite; }
+/* Wykresy prognozy */
+.chart-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+.chart-svg { width: 100%; height: auto; display: block; }
+.chart-svg text { font-size: 10px; fill: var(--secondary-text-color); }
+.chart-svg .temp-line { fill: none; stroke: var(--rl-harvest); stroke-width: 2; }
+.chart-svg .temp-line.min { stroke: var(--rl-water); }
+.chart-svg .rain-bar { fill: var(--rl-water); opacity: 0.55; }
+.chart-svg .gridline { stroke: var(--divider-color); stroke-width: 0.5; opacity: 0.6; }
+/* Galeria zdjęć rośliny */
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 8px; }
+.photo-grid .ph { position: relative; border-radius: 8px; overflow: hidden; aspect-ratio: 1; }
+.photo-grid img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo-grid .ph .del {
+  position: absolute; top: 2px; right: 2px; border: none; cursor: pointer;
+  background: rgba(0,0,0,0.55); color: #fff; border-radius: 50%; width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+}
+.note-row { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--divider-color); font-size: 13px; }
+.note-row .date { color: var(--secondary-text-color); white-space: nowrap; }
+.note-row .txt { flex: 1; }
+/* Baza wiedzy */
+.kn-search { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--divider-color); border-radius: 999px; background: var(--card-background-color); color: var(--primary-text-color); font: inherit; margin-bottom: var(--rl-gap); }
+.kn-item h3 { margin: 0 0 4px; font-size: 15px; font-weight: 500; }
+.kn-item .meta { font-size: 12px; color: var(--secondary-text-color); margin-bottom: 6px; display: flex; gap: 8px; align-items: center; }
+.kn-item .body { font-size: 14px; white-space: pre-wrap; }
+.kn-item .body.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+/* Edytor v2 */
+.editor-svg .area { stroke-width: 0.08; cursor: grab; }
+.editor-svg .area.greenhouse { fill: color-mix(in srgb, var(--rl-water) 18%, transparent); stroke: var(--rl-water); }
+.editor-svg .area.bed { fill: color-mix(in srgb, var(--rl-soil) 30%, transparent); stroke: var(--rl-soil); }
+.editor-svg .area.lawn { fill: color-mix(in srgb, var(--rl-green) 18%, transparent); stroke: color-mix(in srgb, var(--rl-green) 60%, transparent); }
+.editor-svg .area.selected, .editor-svg .item.selected circle { stroke: var(--rl-ai); stroke-width: 0.14; }
+.editor-svg .resize-handle { fill: var(--rl-ai); cursor: nwse-resize; }
+.editor-svg.view-mode .item, .editor-svg.view-mode .area { cursor: pointer; }
+.editor-svg .compass text { font-size: 0.9px; font-weight: 600; fill: var(--rl-crisis); }
+.editor-svg .draw-preview { fill: color-mix(in srgb, var(--rl-ai) 15%, transparent); stroke: var(--rl-ai); stroke-dasharray: 0.3 0.2; stroke-width: 0.08; }
+.mode-toggle { display: inline-flex; border: 1px solid var(--divider-color); border-radius: 999px; overflow: hidden; }
+.mode-toggle button { border: none; background: transparent; color: var(--secondary-text-color); padding: 8px 14px; font: inherit; font-size: 14px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.mode-toggle button.on { background: var(--rl-green); color: #fff; }
+:host([dark]) .mode-toggle button.on { color: #1A1A1A; }
 @media (max-width: 600px) {
   :host { --rl-gap: 12px; }
   .appbar .title span { display: none; }

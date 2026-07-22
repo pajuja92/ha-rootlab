@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { esc, todayISO } from "../util.js";
+import { combo, esc, todayISO } from "../util.js";
 
 const CATEGORIES = ["maintenance", "protection", "crisis", "manual"];
 const CAT_ICONS = {
@@ -85,7 +85,7 @@ function row(app, task) {
 }
 
 function addDialog(app) {
-  const plantOpts = app.data.plants.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+  const plantOpts = app.data.plants.map((p) => ({ value: p.id, label: `${p.emoji || "🌱"} ${p.name}`, secondary: p.species }));
   app.dialog(
     `<h2>${t("task.new")}</h2>
     <form>
@@ -94,7 +94,7 @@ function addDialog(app) {
       <label>${t("task.details")}</label>
       <input name="details" maxlength="240">
       <label>${t("task.plant")}</label>
-      <select name="plant_id"><option value="">${t("none")}</option>${plantOpts}</select>
+      ${combo({ name: "plant_id", options: plantOpts })}
       <label>${t("task.due")}</label>
       <input name="due" type="date" value="${todayISO()}">
       <div class="dialog-actions">

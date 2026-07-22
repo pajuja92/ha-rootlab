@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { esc, entityOptions, todayISO } from "../util.js";
+import { combo, entityOptions, esc, todayISO } from "../util.js";
 
 const KINDS = ["drip", "sprinkler", "other"];
 
@@ -36,7 +36,6 @@ export function render(app) {
 
 function timeline(sections, active) {
   const blocks = [];
-  const activeIds = new Set(Object.keys(active));
   for (const s of sections) {
     const sch = s.schedule || {};
     const dur = sch.duration_min || 10;
@@ -45,7 +44,8 @@ function timeline(sections, active) {
       if (isNaN(h)) continue;
       const left = ((h * 60 + m) / 1440) * 100;
       const width = Math.max((dur / 1440) * 100, 0.6);
-      blocks.push(`<div class="block ${activeIds.has(s.id) ? "active" : ""}" style="left:${left}%;width:${width}%" title="${esc(s.name)} ${time}"></div>`);
+      const run = active[s.id];
+      blocks.push(`<div class="block ${run && !run.paused ? "active" : ""}" style="left:${left}%;width:${width}%" title="${esc(s.name)} ${time}"></div>`);
     }
   }
   const now = new Date();
@@ -54,30 +54,47 @@ function timeline(sections, active) {
     <div class="timeline-scale"><span>0:00</span><span>6:00</span><span>12:00</span><span>18:00</span><span>24:00</span></div>`;
 }
 
-function sectionRow(app, s, activeEnd) {
+function sectionRow(app, s, run) {
   const sch = s.schedule || {};
   const days = (sch.days || []).map((d) => t("days")[d]).join(", ");
   const times = (sch.times || []).join(", ");
   const sched = days && times ? `${days} · ${times} · ${sch.duration_min || 10} min` : t("water.nosched");
   const zone = app.data.zones.find((z) => z.id === s.zone_id);
+  const oneOffs = (app.data.irrigation.one_offs || []).filter((o) => o.section_id === s.id);
   const entityWarn = s.entity_id ? "" : ` <span class="chip crisis">${t("water.noentity")}</span>`;
   const kindLabel = KINDS.includes(s.kind) ? t(`water.kind.${s.kind}`) : "";
-  return `<div class="section-row ${activeEnd ? "active" : ""}">
+  let controls;
+  if (run && run.paused) {
+    controls = `<span class="chip harvest">${t("water.run.paused")}</span>
+      <span style="font-size:13px;color:var(--secondary-text-color)">${t("water.run.left", { min: Math.round((run.remaining_s || 0) / 60) })}</span>
+      <button class="btn small" data-action="water-resume-run" data-id="${s.id}"><ha-icon icon="mdi:play"></ha-icon>${t("water.run.resume")}</button>
+      <button class="btn small plain" data-action="water-stop" data-id="${s.id}">${t("stop")}</button>`;
+  } else if (run) {
+    controls = `<span class="chip water">${t("water.now")}</span><span class="countdown" data-end="${esc(run.end)}"></span>
+      <button class="btn small ghost" data-action="water-pause-run" data-id="${s.id}"><ha-icon icon="mdi:pause"></ha-icon>${t("water.run.pause")}</button>
+      <button class="btn small plain" data-action="water-stop" data-id="${s.id}">${t("stop")}</button>`;
+  } else {
+    controls =
+      [5, 10, 15]
+        .map((m) => `<button class="btn small ghost" data-action="water-run" data-id="${s.id}" data-min="${m}" ${s.entity_id ? "" : "disabled"}>▶ ${m}′</button>`)
+        .join("") +
+      `<button class="icon-btn" data-action="water-oneoff" data-id="${s.id}" title="${t("water.oneoff")}"><ha-icon icon="mdi:calendar-plus"></ha-icon></button>`;
+  }
+  return `<div class="section-row ${run && !run.paused ? "active" : ""}">
     <span class="dot"></span>
     <div class="info">
       <span class="name">${esc(s.name)}</span>
       ${zone ? `<span class="chip">${esc(zone.emoji || "")} ${esc(zone.name)}</span>` : ""}
       ${kindLabel ? `<span class="chip water">${kindLabel}</span>` : ""}${entityWarn}
       <div class="sched">▷ ${sched}</div>
+      ${oneOffs
+        .map(
+          (o) => `<div class="sched"><span class="chip harvest">${t("water.oneoff.badge")}</span> ${esc(o.date)} ${esc(o.time)} · ${o.duration_min} min
+            <button class="icon-btn" data-action="water-oneoff-del" data-id="${o.id}" title="${t("delete")}" style="padding:2px"><ha-icon icon="mdi:close" style="--mdc-icon-size:14px"></ha-icon></button></div>`
+        )
+        .join("")}
     </div>
-    ${
-      activeEnd
-        ? `<span class="chip water">${t("water.now")}</span><span class="countdown" data-end="${esc(activeEnd)}"></span>
-           <button class="btn small plain" data-action="water-stop" data-id="${s.id}">${t("stop")}</button>`
-        : [5, 10, 15]
-            .map((m) => `<button class="btn small ghost" data-action="water-run" data-id="${s.id}" data-min="${m}" ${s.entity_id ? "" : "disabled"}>▶ ${m}′</button>`)
-            .join("")
-    }
+    ${controls}
     <button class="icon-btn" data-action="edit-section" data-id="${s.id}" title="${t("edit")}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
     <button class="icon-btn" data-action="delete-section" data-id="${s.id}" title="${t("delete")}"><ha-icon icon="mdi:trash-can-outline"></ha-icon></button>
   </div>`;
@@ -85,18 +102,17 @@ function sectionRow(app, s, activeEnd) {
 
 function sectionDialog(app, section) {
   const sch = section?.schedule || {};
-  const zoneOpts = app.data.zones
-    .map((z) => `<option value="${z.id}" ${section?.zone_id === z.id ? "selected" : ""}>${esc(z.name)}</option>`)
-    .join("");
+  const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: `${z.emoji || "🪴"} ${z.name}` }));
+  const valveOpts = entityOptions(app.hass, ["switch", "valve", "input_boolean"]);
   app.dialog(
     `<h2>${section ? t("water.section.edit") : t("water.section.new")}</h2>
     <form>
       <label>${t("name")}</label>
-      <input name="name" required maxlength="60" value="${esc(section?.name)}" placeholder="${t("water.section.name.ph")}" autofocus>
+      <input name="name" required maxlength="60" value="${esc(section?.name)}" placeholder="${t("water.section.name.ph")}">
       <label>${t("plant.zone")}</label>
-      <select name="zone_id"><option value="">${t("plant.zone.none")}</option>${zoneOpts}</select>
+      ${combo({ name: "zone_id", value: section?.zone_id || "", options: zoneOpts })}
       <label>${t("water.entity")}</label>
-      <select name="entity_id">${entityOptions(app.hass, ["switch", "valve", "input_boolean"], section?.entity_id, t("none"))}</select>
+      ${combo({ name: "entity_id", value: section?.entity_id || "", options: valveOpts })}
       <label>${t("water.kind")}</label>
       <select name="kind">${KINDS.map((k) => `<option value="${k}" ${section?.kind === k ? "selected" : ""}>${t(`water.kind.${k}`)}</option>`).join("")}</select>
       <label>${t("water.days")}</label>
@@ -132,6 +148,33 @@ function sectionDialog(app, section) {
   );
 }
 
+function oneOffDialog(app, sectionId) {
+  const section = app.data.irrigation.sections.find((s) => s.id === sectionId);
+  app.dialog(
+    `<h2>${t("water.oneoff.title")} — ${esc(section?.name)}</h2>
+    <form>
+      <label>${t("water.oneoff.date")}</label>
+      <input name="date" type="date" required value="${todayISO()}" min="${todayISO()}">
+      <label>${t("water.oneoff.time")}</label>
+      <input name="time" type="time" required value="18:00">
+      <label>${t("water.duration")}</label>
+      <input name="duration" type="number" min="1" max="120" value="10">
+      <div class="dialog-actions">
+        <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
+        <button type="submit" class="btn">${t("save")}</button>
+      </div>
+    </form>`,
+    (fd) =>
+      app.saveItem("one_offs", {
+        id: null,
+        section_id: sectionId,
+        date: fd.get("date"),
+        time: fd.get("time"),
+        duration_min: parseInt(fd.get("duration"), 10) || 10,
+      })
+  );
+}
+
 function pauseDialog(app) {
   app.dialog(
     `<h2>${t("water.pause.title")}</h2>
@@ -159,6 +202,11 @@ function pauseDialog(app) {
   );
 }
 
+const call = (type) => async (app, el) => {
+  app.data = await app.ws(type, { section_id: el.dataset.id });
+  app.render();
+};
+
 export const actions = {
   "add-section": (app) => sectionDialog(app),
   "edit-section": (app, el) => sectionDialog(app, app.data.irrigation.sections.find((s) => s.id === el.dataset.id)),
@@ -170,9 +218,12 @@ export const actions = {
     app.data = await app.ws("irrigation/run", { section_id: el.dataset.id, minutes: parseInt(el.dataset.min, 10) });
     app.render();
   },
-  "water-stop": async (app, el) => {
-    app.data = await app.ws("irrigation/stop", { section_id: el.dataset.id });
-    app.render();
+  "water-stop": call("irrigation/stop"),
+  "water-pause-run": call("irrigation/pause_run"),
+  "water-resume-run": call("irrigation/resume_run"),
+  "water-oneoff": (app, el) => oneOffDialog(app, el.dataset.id),
+  "water-oneoff-del": (app, el) => {
+    if (confirm(t("water.oneoff.delete.confirm"))) app.deleteItem("one_offs", el.dataset.id);
   },
   "water-pause": (app) => pauseDialog(app),
   "water-resume": async (app) => {
