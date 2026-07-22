@@ -1,21 +1,24 @@
 /* RootLab — custom panel Home Assistant.
-   ponytail: vanilla Web Components + moduły ES, bez bundlera; lit+rollup dopiero gdyby edytor 2D przerósł SVG. */
+   ponytail: vanilla Web Components + moduły ES, bez bundlera. */
 import { CSS } from "./styles.js";
 import { t, setLang } from "./i18n.js";
+import { wireCombos } from "./util.js";
 import * as crisis from "./crisis.js";
 import * as dashboard from "./views/dashboard.js";
 import * as editor from "./views/editor.js";
+import * as knowledge from "./views/knowledge.js";
 import * as plants from "./views/plants.js";
 import * as tasks from "./views/tasks.js";
 import * as water from "./views/water.js";
 
-const VIEWS = { dashboard, plants, tasks, water, editor };
+const VIEWS = { dashboard, plants, tasks, water, knowledge, editor };
 const ACTIONS = Object.assign(
   {},
   dashboard.actions,
   plants.actions,
   tasks.actions,
   water.actions,
+  knowledge.actions,
   editor.actions,
   crisis.actions
 );
@@ -24,7 +27,8 @@ const TABS = [
   { id: "plants", icon: "mdi:sprout" },
   { id: "tasks", icon: "mdi:clipboard-check-outline" },
   { id: "water", icon: "mdi:water" },
-  ...(editor.ENABLED ? [{ id: "editor", icon: "mdi:vector-square" }] : []),
+  { id: "knowledge", icon: "mdi:book-open-variant" },
+  { id: "editor", icon: "mdi:vector-square" },
 ];
 
 class RootlabPanel extends HTMLElement {
@@ -34,6 +38,8 @@ class RootlabPanel extends HTMLElement {
     this.tab = "dashboard";
     this.data = null;
     this.weather = null;
+    this.forecast = undefined;
+    this._pendingReload = false;
   }
 
   set hass(hass) {
@@ -41,8 +47,12 @@ class RootlabPanel extends HTMLElement {
     this._hass = hass;
     setLang(hass.language);
     this.toggleAttribute("dark", Boolean(hass.themes?.darkMode));
-    if (first) this._load();
-    else this._live();
+    if (first) {
+      this._load();
+      this._subscribe();
+    } else {
+      this._live();
+    }
     const menu = this.shadowRoot.querySelector("ha-menu-button");
     if (menu) menu.hass = hass;
   }
@@ -63,17 +73,39 @@ class RootlabPanel extends HTMLElement {
     return this._hass.callWS({ type: `rootlab/${type}`, ...payload });
   }
 
+  async _subscribe() {
+    // backend emituje rootlab_updated po każdej zmianie danych (scheduler, inny klient…)
+    try {
+      this._unsubEvents = await this._hass.connection.subscribeEvents(() => {
+        clearTimeout(this._reloadTimer);
+        this._reloadTimer = setTimeout(() => this.reload(), 400);
+      }, "rootlab_updated");
+    } catch (e) {
+      // brak subskrypcji = brak live-refresh, reszta działa
+    }
+  }
+
   async _load() {
     try {
       this.data = await this.ws("data");
     } catch (e) {
-      this.data = { zones: [], plants: [], tasks: [], irrigation: { sections: [] }, _error: e.message || String(e) };
+      this.data = {
+        zones: [], plants: [], tasks: [], knowledge: [],
+        irrigation: { sections: [], one_offs: [] },
+        layout: { items: [] }, crisis_history: [], active: {}, settings: {},
+        _error: e.message || String(e),
+      };
     }
     this.render();
     try {
       this.weather = await this.ws("weather");
     } catch (e) {
       this.weather = null;
+    }
+    try {
+      this.forecast = await this.ws("forecast");
+    } catch (e) {
+      this.forecast = null;
     }
     this.render();
   }
@@ -87,14 +119,28 @@ class RootlabPanel extends HTMLElement {
     this.render();
   }
   async reload() {
-    this.data = await this.ws("data");
+    if (this._dialogOpen()) {
+      this._pendingReload = true;
+      return;
+    }
+    try {
+      this.data = await this.ws("data");
+    } catch (e) {
+      return;
+    }
     this.render();
+  }
+
+  _dialogOpen() {
+    return Boolean(this.shadowRoot.querySelector("dialog[open]"));
   }
 
   render() {
     if (!this.data) return;
-    const openDialog = this.shadowRoot.querySelector("dialog[open]");
-    if (openDialog) return; // nie wyrywaj formularza spod rąk
+    if (this._dialogOpen()) {
+      this._pendingReload = true;
+      return; // nie wyrywaj formularza spod rąk
+    }
     this.shadowRoot.innerHTML = `
       <style>${CSS}</style>
       <div class="appbar">
@@ -108,7 +154,7 @@ class RootlabPanel extends HTMLElement {
         </nav>
       </div>
       <div class="content">${VIEWS[this.tab].render(this)}</div>
-      ${crisis.ENABLED ? crisis.renderFab(this) : ""}
+      ${crisis.renderFab(this)}
       <dialog id="form-dialog"></dialog>
     `;
     const menu = this.shadowRoot.querySelector("ha-menu-button");
@@ -129,13 +175,28 @@ class RootlabPanel extends HTMLElement {
         }
       })
     );
+    const dlg = this.shadowRoot.getElementById("form-dialog");
+    dlg.addEventListener("click", (ev) => {
+      if (ev.target === dlg) dlg.close(); // klik w tło zamyka
+    });
+    dlg.addEventListener("close", () => {
+      dlg.classList.remove("wide");
+      crisis.onDialogClose?.(this);
+      if (this._pendingReload) {
+        this._pendingReload = false;
+        this.reload();
+      }
+    });
     VIEWS[this.tab].bind?.(this, this.shadowRoot);
     this._tickCountdowns();
   }
 
-  dialog(html, onSubmit) {
+  /* Dialog pomocniczy: html + onSubmit; zamykanie: backdrop / Escape / X / Anuluj. */
+  dialog(html, onSubmit, { wide = false } = {}) {
     const dlg = this.shadowRoot.getElementById("form-dialog");
-    dlg.innerHTML = html;
+    dlg.classList.toggle("wide", wide);
+    dlg.innerHTML = `<button class="dialog-x" title="${t("close")}"><ha-icon icon="mdi:close"></ha-icon></button>` + html;
+    dlg.querySelector(".dialog-x").addEventListener("click", () => dlg.close());
     dlg.querySelector("form")?.addEventListener("submit", (ev) => {
       ev.preventDefault();
       dlg.close();
@@ -145,7 +206,9 @@ class RootlabPanel extends HTMLElement {
     dlg.querySelectorAll("[data-action]").forEach((el) =>
       el.addEventListener("click", () => ACTIONS[el.dataset.action]?.(this, el))
     );
-    dlg.showModal();
+    wireCombos(dlg);
+    if (!dlg.open) dlg.showModal();
+    return dlg;
   }
 
   /* Odświeżanie wartości live bez pełnego re-renderu (hass przychodzi bardzo często). */
@@ -175,7 +238,7 @@ class RootlabPanel extends HTMLElement {
       });
       if (!anyLeft) {
         clearInterval(this._cdTimer);
-        this.reload(); // podlewanie się skończyło — odśwież stan
+        this.reload();
       }
     };
     update();
@@ -184,6 +247,8 @@ class RootlabPanel extends HTMLElement {
 
   disconnectedCallback() {
     clearInterval(this._cdTimer);
+    clearTimeout(this._reloadTimer);
+    this._unsubEvents?.();
   }
 }
 

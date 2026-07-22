@@ -15,9 +15,38 @@
       "init": {
         "title": "RootLab options",
         "data": {
-          "imgw_station": "IMGW station (e.g. warszawa, krakow, poznan)",
-          "api_key": "Claude API key (for AI tasks and diagnoses)"
+          "imgw_station": "IMGW station (current conditions)",
+          "weather_entity": "Weather entity (hourly & daily forecasts)",
+          "ai_provider": "AI provider",
+          "api_key": "AI provider API key",
+          "ai_model": "AI model (empty = provider default)",
+          "ai_base_url": "API base URL (for Ollama / custom)",
+          "ai_task_entity": "AI Task entity (for the \"HA AI Task\" provider)",
+          "location": "Garden location (for insolation calculations)"
+        },
+        "data_description": {
+          "ai_task_entity": "Use any AI integration configured in HA (Google, OpenAI, Anthropic, Ollama…) — with account login handled by that integration.",
+          "api_key": "Required for direct-API providers. Not needed for \"HA AI Task\" or Ollama."
         }
+      }
+    }
+  },
+  "selector": {
+    "ai_provider": {
+      "options": {
+        "ha_ai_task": "HA AI Task (any AI integration, account login)",
+        "anthropic": "Anthropic (Claude)",
+        "openai": "OpenAI (GPT)",
+        "google": "Google (Gemini)",
+        "groq": "Groq",
+        "mistral": "Mistral",
+        "deepseek": "DeepSeek",
+        "xai": "xAI (Grok)",
+        "openrouter": "OpenRouter",
+        "together": "Together AI",
+        "perplexity": "Perplexity",
+        "ollama": "Ollama (local)",
+        "custom": "Custom OpenAI-compatible endpoint"
       }
     }
   }
