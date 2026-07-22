@@ -128,6 +128,20 @@ class RootlabPanel extends HTMLElement {
     } catch (e) {
       return;
     }
+    if (this.data.settings?.has_weather_entity && this.forecast == null) {
+      try {
+        this.forecast = await this.ws("forecast");
+      } catch (e) {
+        this.forecast = null;
+      }
+    }
+    if (this.weather == null) {
+      try {
+        this.weather = await this.ws("weather");
+      } catch (e) {
+        this.weather = null;
+      }
+    }
     this.render();
   }
 

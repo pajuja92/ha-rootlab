@@ -4,14 +4,16 @@ Planer ogrodowy dla Home Assistant wspierany przez AI. Własna zakładka **RootL
 
 ## Funkcje
 
-- **Pulpit** — status stref, pogoda IMGW, aktywne podlewanie, najbliższe zadania, ostrzeżenia (deszcz → propozycja pominięcia podlewania, przymrozek).
-- **Rośliny** — katalog roślin/krzewów/drzew w strefach (szklarnia, grządki…). Do rośliny podpinasz encje czujników HA (wilgotność gleby, temperatura, wilgotność powietrza) — wartości na żywo na karcie, klik otwiera natywny dialog encji.
-- **Woda** — sekcje nawadniania spięte z encjami `switch`/`valve`/`input_boolean`, harmonogram per sekcja (dni tygodnia, godziny, czas trwania), automatyczny scheduler, „podlej teraz" (5/10/15 min) z auto-stopem, globalne wstrzymanie, oś doby z blokami harmonogramu.
-- **Zadania** — AI (Claude) układa zadania per roślina: Utrzymanie (przycinanie, pielenie, nawożenie) i Zabezpieczenie (opryski, przymrozki), z terminami. Odhaczanie, odkładanie, własne zadania. Automatyczne odświeżanie w poniedziałki o 5:00.
-- **Tryb kryzysowy** — czerwony przycisk w rogu: zdjęcie + opis objawów → diagnoza AI z poziomem pewności i planem naprawczym, dodawanym jednym klikiem do zadań. Historia zgłoszeń per roślina.
-- **Edytor** — plan 2D ogrodu: klik stawia roślinę/drzewo/krzew/obiekt, przeciąganie przesuwa, definiujesz średnicę korony i wysokość. Uproszczony model toru słońca (Twoja szerokość geograficzna + suwak miesiąca) rysuje cienie i oznacza zacienione rośliny (☁).
+- **Pulpit** — strefy (z dodawaniem), pogoda IMGW teraz, **wykresy prognozy 24 h / 7 dni** (z dowolnej encji `weather` HA), aktywne podlewanie, najbliższe zadania, ostrzeżenia (deszcz → propozycja pominięcia podlewania, przymrozek).
+- **Rośliny** — katalog w strefach, **25 predefiniowanych roślin** (prefill), czujniki HA (gleba/temperatura/wilgotność) na żywo. **Karta rośliny**: notatki, galeria zdjęć, historia diagnoz, pytania do AI (z zapisem do bazy wiedzy) i szybka diagnoza.
+- **Woda** — sekcje spięte z `switch`/`valve`/`input_boolean`, harmonogram per sekcja, scheduler, „podlej teraz", **pauza biegu z dokończeniem pozostałego czasu**, stop, **jednorazowe podlewania** (data + godzina), globalne wstrzymanie, oś doby. Scheduler pilnuje też **zewnętrznego wyłączenia encji** (automatyzacja/ręcznie) i zamyka bieg.
+- **Zadania** — AI układa zadania per roślina (Utrzymanie / Zabezpieczenie) na bazie gatunku, pory roku, czujników, pogody i warunków (szklarnia). Odhaczanie, odkładanie, własne zadania, auto-odświeżanie w poniedziałki.
+- **Tryb kryzysowy** — zdjęcie + opis (można **podyktować** — STT z HA albo przeglądarki) → diagnoza z poziomem pewności i planem naprawczym → do zadań i/lub **do bazy wiedzy**.
+- **Wiedza** — zakładka z bazą wiedzy: zatwierdzone odpowiedzi AI i własne wpisy, z wyszukiwarką.
+- **Edytor** — tryby **Edycja/Podgląd**. Obszary rysowane przeciągnięciem (szklarnia, grządka, trawnik — z możliwością „zasadzenia" roślin), drzewa/krzewy/obiekty kołami, zmiana rozmiaru, **kierunek północy** (kompas), cienie wg toru słońca i miesiąca, **fizyka szklarni** (≈ +5°C, wyższa wilgotność, ~80% światła — znacznik 🏠 i kontekst dla AI). W podglądzie klik w roślinę otwiera jej kartę.
+- **AI do wyboru** — 12 dostawców: Anthropic (Claude), OpenAI, Google Gemini, Groq, Mistral, DeepSeek, xAI, OpenRouter, Together, Perplexity, Ollama (lokalnie), własny endpoint zgodny z OpenAI — **albo usługa „Zadanie AI" z HA** (dowolna integracja AI zalogowana w HA, np. przez konto Google).
 
-Interfejs po polsku i angielsku (wg języka HA), dark mode zgodny z motywem HA.
+Interfejs po polsku i angielsku (wg języka HA), dark mode zgodny z motywem HA, selecty z wyszukiwaniem, odświeżanie na żywo między urządzeniami.
 
 ## Instalacja
 
@@ -34,8 +36,14 @@ Następnie: *Ustawienia → Urządzenia i usługi → Dodaj integrację → Root
 
 | Opcja | Opis |
 |---|---|
-| **Stacja IMGW** | Nazwa stacji synoptycznej (małe litery, bez znaków diakrytycznych), np. `warszawa`, `krakow`, `poznan`, `wroclaw`. Lista: [danepubliczne.imgw.pl/api/data/synop](https://danepubliczne.imgw.pl/api/data/synop) |
-| **Klucz API Claude** | Wymagany do Zadań AI i Trybu kryzysowego. Wygenerujesz go na [platform.claude.com](https://platform.claude.com). Bez klucza reszta aplikacji działa normalnie. |
+| **Stacja IMGW** | Wybór z listy stacji synoptycznych (pomiary bieżące). |
+| **Encja pogody** | Dowolna encja `weather.*` (np. Met.no) — źródło wykresów prognozy 24 h / 7 dni. |
+| **Dostawca AI** | Jeden z 12 dostawców albo „Zadanie AI z HA" (używa integracji AI skonfigurowanej w HA — logowanie przez konto obsługuje ta integracja). |
+| **Klucz API / model / adres** | Dla dostawców z bezpośrednim API. Model pusty = rozsądny domyślny. Adres tylko dla Ollama/custom. |
+| **Encja Zadania AI** | Dla dostawcy „Zadanie AI z HA" — wybierz encję `ai_task.*`. |
+| **Lokalizacja ogrodu** | Punkt na mapie — używany do obliczeń nasłonecznienia w edytorze i kontekstu AI. |
+
+Dyktowanie objawów (🎤) używa pipeline'u STT z HA (np. Google AI STT); gdy niedostępny — rozpoznawania mowy przeglądarki.
 
 ## Jak zacząć
 

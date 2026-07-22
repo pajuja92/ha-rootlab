@@ -27,6 +27,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async_setup_scheduler(hass)
     _async_setup_weekly_tasks(hass)
 
+    async def _options_updated(hass_, updated_entry):
+        hass_.bus.async_fire("rootlab_updated")
+
+    entry.async_on_unload(entry.add_update_listener(_options_updated))
+
     await hass.http.async_register_static_paths(
         [
             StaticPathConfig(
@@ -65,7 +70,14 @@ def _async_setup_weekly_tasks(hass: HomeAssistant) -> None:
     async def _refresh(now):
         if now.weekday() != 0:
             return
-        if not hass.data[DOMAIN]["entry"].options.get("api_key"):
+        options = hass.data[DOMAIN]["entry"].options
+        provider = options.get("ai_provider", "anthropic")
+        configured = (
+            options.get("api_key")
+            or (provider == "ha_ai_task" and options.get("ai_task_entity"))
+            or provider == "ollama"
+        )
+        if not configured:
             return
         try:
             await ai.async_generate_tasks(hass)

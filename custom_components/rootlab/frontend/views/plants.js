@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { combo, entityOptions, esc, resizeImage, sensorState, wireCombos } from "../util.js";
+import { combo, entityOptions, esc, resizeImage, sensorState } from "../util.js";
 import { PLANT_PRESETS } from "../presets.js";
 import { openCrisis } from "../crisis.js";
 
