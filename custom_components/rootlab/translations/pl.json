@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Garden Planner AI",
+        "title": "RootLab",
         "description": "Dodaj planer ogrodowy do Home Assistant."
       }
     },
