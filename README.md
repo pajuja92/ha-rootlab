@@ -28,4 +28,7 @@ Następnie: *Ustawienia → Urządzenia i usługi → Dodaj integrację → Root
 
 ## Status
 
-🚧 Wczesny etap rozwoju — na razie szkielet integracji.
+🚧 **Beta** — wersjonowanie semantyczne z sufiksem pre-release (`0.1.0-beta.1`, `0.1.0-beta.2`…), stabilne wydania od `1.0.0`.
+
+Zrobione (etap 1): panel RootLab w pasku bocznym, strefy i rośliny (CRUD), mapowanie encji czujników (gleba, temperatura, wilgotność) z podglądem na żywo.
+Następne: harmonogram nawadniania, pogoda IMGW, zadania AI, tryb kryzysowy, edytor 2D ogrodu.
