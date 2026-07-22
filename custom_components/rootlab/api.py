@@ -20,7 +20,14 @@ def _items(data, kind):
 
 def _public(hass):
     d = hass.data[DOMAIN]
-    return {**d["data"], "active": {k: v["end"] for k, v in d["active"].items()}}
+    return {
+        **d["data"],
+        # zdjęcia (base64) nie jadą z każdym odświeżeniem — historia tylko z metadanymi
+        "crisis_history": [
+            {k: v for k, v in e.items() if k != "image"} for e in d["data"]["crisis_history"]
+        ],
+        "active": {k: v["end"] for k, v in d["active"].items()},
+    }
 
 
 def async_register(hass):
