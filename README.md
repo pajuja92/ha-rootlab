@@ -1,4 +1,4 @@
-# Garden Planner AI 🌱
+# RootLab 🌱
 
 Planer ogrodowy dla Home Assistant wspierany przez AI. Własna zakładka w pasku bocznym.
 
@@ -16,15 +16,15 @@ Planer ogrodowy dla Home Assistant wspierany przez AI. Własna zakładka w pasku
 ### HACS (zalecane)
 
 1. HACS → Integrations → ⋮ → *Custom repositories*
-2. Dodaj `https://github.com/pajuja92/ha-garden-planner` jako typ *Integration*
-3. Zainstaluj **Garden Planner AI** i zrestartuj Home Assistant
+2. Dodaj `https://github.com/pajuja92/ha-rootlab` jako typ *Integration*
+3. Zainstaluj **RootLab** i zrestartuj Home Assistant
 
 ### Ręcznie
 
-1. Skopiuj `custom_components/garden_planner` do katalogu `config/custom_components/` w HA
+1. Skopiuj `custom_components/rootlab` do katalogu `config/custom_components/` w HA
 2. Zrestartuj Home Assistant
 
-Następnie: *Ustawienia → Urządzenia i usługi → Dodaj integrację → Garden Planner AI*.
+Następnie: *Ustawienia → Urządzenia i usługi → Dodaj integrację → RootLab*.
 
 ## Status
 

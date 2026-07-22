@@ -1,4 +1,4 @@
-"""Garden Planner AI — planer ogrodowy wspierany przez AI."""
+"""RootLab — planer ogrodowy wspierany przez AI."""
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
