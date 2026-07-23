@@ -88,6 +88,43 @@ class NoApiKeyError(Exception):
     """Brak konfiguracji AI w opcjach integracji."""
 
 
+# Filtry listy modeli: pokazujemy tylko aktualne modele czatowe danego API.
+# allow = regexy prefiksów; deny = fragmenty wykluczające (embeddingi, TTS, obraz itd.)
+import re
+
+_DENY_COMMON = (
+    "embed", "tts", "audio", "image", "imagen", "veo", "whisper", "dall-e",
+    "moderation", "realtime", "transcribe", "deep-research", "learnlm", "aqa",
+    "live", "robotics", "computer-use", "guard", "ocr", "rerank", "-exp",
+)
+_MODEL_ALLOW = {
+    # tylko gemini >= 3 (2.5 wyłączone dla nowych kont, starsze tym bardziej)
+    "google": r"^gemini-(?:[3-9]|\d{2,})\.",
+    "openai": r"^(?:gpt-[4-9]|gpt-\d{2,}|o[1-9]|chatgpt-)",
+    "anthropic": r"^claude-",
+    "xai": r"^grok-",
+    "mistral": r"^(?:mistral|magistral|pixtral|codestral|ministral|open-)",
+    "deepseek": r"^deepseek-",
+    "groq": r"",
+    "openrouter": r"",
+    "together": r"",
+}
+
+
+def _filter_models(provider, ids):
+    allow = _MODEL_ALLOW.get(provider)
+    if allow is None:
+        return sorted(ids)
+    rx = re.compile(allow) if allow else None
+    out = [
+        i
+        for i in ids
+        if (rx is None or rx.match(i)) and not any(d in i.lower() for d in _DENY_COMMON)
+    ]
+    # ponytail: gdy filtr wytnie wszystko (nowe nazewnictwo u dostawcy), pokaż pełną listę
+    return sorted(out) if out else sorted(ids)
+
+
 async def async_list_models(hass, provider, api_key=None, base_url=None):
     """Lista modeli dostawcy (walidacja klucza + select w opcjach).
 
@@ -104,7 +141,7 @@ async def async_list_models(hass, provider, api_key=None, base_url=None):
             if resp.status >= 400:
                 raise RuntimeError(f"HTTP {resp.status} — {(await resp.text())[:200]}")
             data = await resp.json()
-        return sorted(m["id"] for m in data.get("data", []) if m.get("id"))
+        return _filter_models("anthropic", [m["id"] for m in data.get("data", []) if m.get("id")])
     default_base, _ = OPENAI_COMPAT.get(provider, ("", ""))
     base = (base_url or default_base).rstrip("/")
     if not base:
@@ -118,7 +155,9 @@ async def async_list_models(hass, provider, api_key=None, base_url=None):
         data = await resp.json()
     ids = [m.get("id") for m in data.get("data", []) if m.get("id")]
     # Google zwraca "models/gemini-x" — chat/completions przyjmuje sama nazwe
-    return sorted(i.split("/", 1)[1] if i.startswith("models/") else i for i in ids)
+    return _filter_models(
+        provider, [i.split("/", 1)[1] if i.startswith("models/") else i for i in ids]
+    )
 
 
 def _options(hass):
@@ -293,10 +332,10 @@ def _garden_context(hass):
             # ponytail: stałe modyfikatory szklarni — ok. +5°C, +15 p.p. wilgotności, ~80% światła
             info["environment"] = "szklarnia (ok. +5°C, wyższa wilgotność, ~80% światła)"
         plants.append(info)
-    location = _options(hass).get("location") or {}
+    location = data["layout"].get("location") or {}
     return {
         "date": date.today().isoformat(),
-        "latitude": round(location.get("latitude", hass.config.latitude), 2),
+        "latitude": round(location.get("latitude") or hass.config.latitude, 2),
         "plants": plants,
     }
 
