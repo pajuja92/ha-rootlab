@@ -1,7 +1,27 @@
 import { t } from "../i18n.js";
-import { combo, entityOptions, esc, todayISO } from "../util.js";
+import {
+  autoDetectRoles,
+  combo,
+  entityOptions,
+  esc,
+  haDeviceEntityIds,
+  haDeviceOptions,
+  optionsWithSuggestions,
+  sensorState,
+  todayISO,
+  zoneSuggestions,
+} from "../util.js";
 
 const KINDS = ["drip", "sprinkler", "other"];
+
+const ROLE_FIELDS = [
+  { key: "valve", labelKey: "device.role.valve", domains: ["switch", "valve", "input_boolean"], icon: "mdi:pipe-valve" },
+  { key: "flow", labelKey: "device.role.flow", domains: ["sensor"], icon: "mdi:waves-arrow-right" },
+  { key: "soil", labelKey: "plant.sensor.soil", domains: ["sensor"], icon: "mdi:water-percent" },
+  { key: "temp", labelKey: "plant.sensor.temp", domains: ["sensor"], icon: "mdi:thermometer" },
+  { key: "hum", labelKey: "plant.sensor.hum", domains: ["sensor"], icon: "mdi:cloud-percent-outline" },
+  { key: "battery", labelKey: "device.role.battery", domains: ["sensor"], icon: "mdi:battery" },
+];
 
 export function render(app) {
   const irr = app.data.irrigation;
@@ -31,7 +51,109 @@ export function render(app) {
     <div class="card">
       ${timeline(irr.sections, active)}
       ${irr.sections.map((s) => sectionRow(app, s, active[s.id])).join("")}
-    </div>`;
+    </div>
+    ${devicesSection(app)}`;
+}
+
+function devicesSection(app) {
+  const devices = app.data.devices || [];
+  return `
+    <div class="section-title"><ha-icon icon="mdi:devices"></ha-icon>${t("devices.title")}
+      <button class="icon-btn" data-action="device-add" title="${t("device.add")}"><ha-icon icon="mdi:plus"></ha-icon></button>
+    </div>
+    ${
+      devices.length
+        ? `<div class="grid">${devices.map((d) => deviceCard(app, d)).join("")}</div>`
+        : `<div class="card" style="color:var(--secondary-text-color);font-size:14px">${t("devices.empty")}</div>`
+    }`;
+}
+
+function deviceCard(app, d) {
+  const zone = app.data.zones.find((z) => z.id === d.zone_id);
+  const chips = ROLE_FIELDS.filter((f) => d.entities?.[f.key])
+    .map((f) => {
+      const entityId = d.entities[f.key];
+      const st = sensorState(app.hass, entityId);
+      return `<button class="sensor-chip ${st.unavailable ? "unavailable" : ""}" data-action="more-info" data-entity="${esc(entityId)}" title="${t(f.labelKey)}">
+        <ha-icon icon="${f.icon}"></ha-icon><span class="val">${esc(st.text)}</span></button>`;
+    })
+    .join("");
+  return `<div class="card">
+    <div class="header"><ha-icon icon="mdi:devices" style="color:var(--rl-water)"></ha-icon><h3>${esc(d.name)}</h3>
+      ${zone ? `<span class="chip">${esc(zone.emoji || "🪴")} ${esc(zone.name)}</span>` : ""}</div>
+    <div class="sensors">${chips || `<span style="font-size:13px;color:var(--secondary-text-color)">${t("device.noentities")}</span>`}</div>
+    <div class="actions">
+      <button class="icon-btn" data-action="device-edit" data-id="${d.id}" title="${t("edit")}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
+      <button class="icon-btn" data-action="device-delete" data-id="${d.id}" title="${t("delete")}"><ha-icon icon="mdi:trash-can-outline"></ha-icon></button>
+    </div>
+  </div>`;
+}
+
+/* Dialog urządzenia — wybór urządzenia z HA wypełnia nazwę i role automatycznie. */
+function deviceDialog(app, device) {
+  const draft = {
+    name: device?.name || "",
+    zone_id: device?.zone_id || "",
+    ha_device_id: device?.ha_device_id || "",
+    entities: { ...(device?.entities || {}) },
+  };
+  renderDeviceDialog(app, device, draft);
+}
+
+function renderDeviceDialog(app, device, draft) {
+  const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: `${z.emoji || "🪴"} ${z.name}` }));
+  const scoped = draft.ha_device_id ? haDeviceEntityIds(app.hass, draft.ha_device_id) : null;
+  const roleCombo = (f) => {
+    let opts = entityOptions(app.hass, f.domains);
+    if (scoped) {
+      const inDevice = opts.filter((o) => scoped.includes(o.value));
+      if (inDevice.length) opts = [...inDevice, ...opts.filter((o) => !scoped.includes(o.value))];
+    }
+    return combo({ name: `role_${f.key}`, value: draft.entities[f.key] || "", options: opts });
+  };
+  const dlg = app.dialog(
+    `<h2>${device ? t("device.edit") : t("device.new")}</h2>
+    <form>
+      <label>${t("device.hadev")}</label>
+      ${combo({ name: "ha_device_id", value: draft.ha_device_id, options: haDeviceOptions(app.hass) })}
+      <label>${t("name")}</label>
+      <input name="name" required maxlength="60" value="${esc(draft.name)}">
+      <label>${t("plant.zone")}</label>
+      ${combo({ name: "zone_id", value: draft.zone_id, options: zoneOpts })}
+      ${ROLE_FIELDS.map((f) => `<label>${t(f.labelKey)}</label>${roleCombo(f)}`).join("")}
+      <div class="dialog-actions">
+        <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
+        <button type="submit" class="btn">${t("save")}</button>
+      </div>
+    </form>`,
+    (fd) =>
+      app.saveItem("devices", {
+        id: device?.id ?? null,
+        name: fd.get("name").trim(),
+        zone_id: fd.get("zone_id") || null,
+        ha_device_id: fd.get("ha_device_id") || null,
+        entities: Object.fromEntries(ROLE_FIELDS.map((f) => [f.key, fd.get(`role_${f.key}`) || null])),
+      }),
+    { wide: true }
+  );
+  dlg.querySelector('input[name="ha_device_id"]').addEventListener("change", (ev) => {
+    // snapshot + autodetekcja ról z wybranego urządzenia HA
+    draft.name = dlg.querySelector('input[name="name"]').value;
+    draft.zone_id = dlg.querySelector('input[name="zone_id"]').value;
+    ROLE_FIELDS.forEach((f) => (draft.entities[f.key] = dlg.querySelector(`input[name="role_${f.key}"]`).value));
+    draft.ha_device_id = ev.target.value;
+    if (draft.ha_device_id) {
+      const detected = autoDetectRoles(app.hass, haDeviceEntityIds(app.hass, draft.ha_device_id));
+      ROLE_FIELDS.forEach((f) => {
+        if (!draft.entities[f.key] && detected[f.key]) draft.entities[f.key] = detected[f.key];
+      });
+      if (!draft.name) {
+        const dev = app.hass.devices?.[draft.ha_device_id];
+        draft.name = dev?.name_by_user || dev?.name || "";
+      }
+    }
+    renderDeviceDialog(app, device, draft);
+  });
 }
 
 function timeline(sections, active) {
@@ -100,19 +222,27 @@ function sectionRow(app, s, run) {
   </div>`;
 }
 
-function sectionDialog(app, section) {
+function sectionDialog(app, section, draft = null) {
   const sch = section?.schedule || {};
+  draft ??= { zone_id: section?.zone_id || "", entity_id: section?.entity_id || "" };
+  // dokładnie jedno urządzenie z zaworem w strefie → prefill; więcej → ⭐ na górze listy
+  const sugg = zoneSuggestions(app, draft.zone_id, "valve");
+  if (!draft.entity_id && sugg.length === 1) draft.entity_id = sugg[0].entity;
   const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: `${z.emoji || "🪴"} ${z.name}` }));
-  const valveOpts = entityOptions(app.hass, ["switch", "valve", "input_boolean"]);
-  app.dialog(
+  const valveOpts = optionsWithSuggestions(
+    app.hass,
+    entityOptions(app.hass, ["switch", "valve", "input_boolean"]),
+    sugg
+  );
+  const dlg = app.dialog(
     `<h2>${section ? t("water.section.edit") : t("water.section.new")}</h2>
     <form>
       <label>${t("name")}</label>
       <input name="name" required maxlength="60" value="${esc(section?.name)}" placeholder="${t("water.section.name.ph")}">
       <label>${t("plant.zone")}</label>
-      ${combo({ name: "zone_id", value: section?.zone_id || "", options: zoneOpts })}
+      ${combo({ name: "zone_id", value: draft.zone_id, options: zoneOpts })}
       <label>${t("water.entity")}</label>
-      ${combo({ name: "entity_id", value: section?.entity_id || "", options: valveOpts })}
+      ${combo({ name: "entity_id", value: draft.entity_id, options: valveOpts })}
       <label>${t("water.kind")}</label>
       <select name="kind">${KINDS.map((k) => `<option value="${k}" ${section?.kind === k ? "selected" : ""}>${t(`water.kind.${k}`)}</option>`).join("")}</select>
       <label>${t("water.days")}</label>
@@ -146,6 +276,13 @@ function sectionDialog(app, section) {
         },
       })
   );
+  dlg.querySelector('input[name="zone_id"]').addEventListener("change", (ev) => {
+    const next = {
+      zone_id: ev.target.value,
+      entity_id: dlg.querySelector('input[name="entity_id"]').value,
+    };
+    sectionDialog(app, section, next);
+  });
 }
 
 function oneOffDialog(app, sectionId) {
@@ -209,6 +346,12 @@ const call = (type) => async (app, el) => {
 
 export const actions = {
   "add-section": (app) => sectionDialog(app),
+  "device-add": (app) => deviceDialog(app),
+  "device-edit": (app, el) => deviceDialog(app, app.data.devices.find((d) => d.id === el.dataset.id)),
+  "device-delete": (app, el) => {
+    const d = app.data.devices.find((x) => x.id === el.dataset.id);
+    if (confirm(t("device.delete.confirm", { name: d.name }))) app.deleteItem("devices", d.id);
+  },
   "edit-section": (app, el) => sectionDialog(app, app.data.irrigation.sections.find((s) => s.id === el.dataset.id)),
   "delete-section": (app, el) => {
     const s = app.data.irrigation.sections.find((x) => x.id === el.dataset.id);

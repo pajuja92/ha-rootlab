@@ -12,6 +12,7 @@ DEFAULTS = {
     "plants": [],
     "tasks": [],
     "knowledge": [],
+    "devices": [],
     "irrigation": {"sections": [], "paused_until": None, "skip_date": None, "one_offs": []},
     "crisis_history": [],
     "layout": {"width_m": 20.0, "height_m": 12.0, "north_deg": 0, "location": None, "items": []},

@@ -12,7 +12,7 @@ from . import ai
 from .const import DOMAIN
 from .store import async_save
 
-KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs"]
+KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices"]
 # pola pomijane w liście (duże base64) — dostępne przez dedykowane komendy
 HEAVY_PLANT_FIELDS = ("photos",)
 
@@ -145,6 +145,9 @@ async def ws_delete_item(hass, connection, msg):
         for area in data["layout"]["items"]:
             if area.get("zone_id") == item_id:
                 area["zone_id"] = None
+        for device in data["devices"]:
+            if device.get("zone_id") == item_id:
+                device["zone_id"] = None
     if kind == "plants":
         data["layout"]["items"] = [
             i for i in data["layout"]["items"] if i.get("plant_id") != item_id

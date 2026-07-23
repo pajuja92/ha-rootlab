@@ -117,6 +117,60 @@ export async function resizeImage(file, max = 1024) {
   return { preview: dataUrl, media: "image/jpeg", data: dataUrl.split(",")[1] };
 }
 
+/* --- Urządzenia: rejestr HA + sugestie encji per strefa --- */
+
+export const haDeviceOptions = (hass) =>
+  Object.values(hass.devices || {})
+    .map((d) => ({
+      value: d.id,
+      label: d.name_by_user || d.name || "",
+      secondary: [d.manufacturer, d.model].filter(Boolean).join(" · "),
+    }))
+    .filter((o) => o.label)
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+export const haDeviceEntityIds = (hass, deviceId) =>
+  Object.values(hass.entities || {})
+    .filter((e) => e.device_id === deviceId)
+    .map((e) => e.entity_id);
+
+/* Automatyczne rozpoznanie ról encji urządzenia (zawór, przepływ, czujniki, bateria). */
+export function autoDetectRoles(hass, entityIds) {
+  const dc = (id) => hass.states[id]?.attributes?.device_class || "";
+  const unit = (id) => hass.states[id]?.attributes?.unit_of_measurement || "";
+  const sensors = entityIds.filter((id) => id.startsWith("sensor."));
+  return {
+    valve:
+      entityIds.find((id) => id.startsWith("valve.")) ||
+      entityIds.find((id) => id.startsWith("switch.")) ||
+      null,
+    flow:
+      sensors.find((id) => dc(id) === "volume_flow_rate" || unit(id).includes("m³/h")) || null,
+    soil:
+      sensors.find((id) => dc(id) === "moisture" || /soil|gleb/i.test(id)) || null,
+    temp: sensors.find((id) => dc(id) === "temperature") || null,
+    hum:
+      sensors.find((id) => dc(id) === "humidity" && !/soil|gleb/i.test(id)) || null,
+    battery: sensors.find((id) => dc(id) === "battery") || null,
+  };
+}
+
+/* Encje danej roli z urządzeń przypisanych do strefy: [{entity, device}] */
+export const zoneSuggestions = (app, zoneId, role) =>
+  (app.data.devices || [])
+    .filter((d) => zoneId && d.zone_id === zoneId && d.entities?.[role])
+    .map((d) => ({ entity: d.entities[role], device: d.name }));
+
+/* Opcje comboboxa z sugestiami strefy na górze (⭐) — sugerowane + reszta. */
+export function optionsWithSuggestions(hass, baseOptions, suggestions) {
+  const suggested = suggestions.map((s) => {
+    const friendly = hass.states[s.entity]?.attributes?.friendly_name || s.entity;
+    return { value: s.entity, label: `⭐ ${friendly}`, secondary: s.device };
+  });
+  const seen = new Set(suggested.map((s) => s.value));
+  return [...suggested, ...baseOptions.filter((o) => !seen.has(o.value))];
+}
+
 export const sensorState = (hass, entityId) => {
   const st = hass.states[entityId];
   const unavailable = !st || st.state === "unavailable" || st.state === "unknown";

@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { combo, entityOptions, esc, resizeImage, sensorState } from "../util.js";
+import { combo, entityOptions, esc, optionsWithSuggestions, resizeImage, sensorState, zoneSuggestions } from "../util.js";
 import { PLANT_PRESETS } from "../presets.js";
 import { openCrisis } from "../crisis.js";
 
@@ -137,9 +137,24 @@ function zoneDialog(app, zone) {
   );
 }
 
-function plantDialog(app, plant) {
+function plantDialog(app, plant, draft = null) {
+  draft ??= {
+    name: plant?.name || "",
+    species: plant?.species || "",
+    emoji: plant?.emoji || "",
+    zone_id: plant?.zone_id || "",
+    sensors: { ...(plant?.sensors || {}) },
+  };
+  // urządzenia strefy: jedno z daną rolą → predefiniowane; więcej → ⭐ na górze listy
+  SENSOR_FIELDS.forEach((f) => {
+    if (!draft.sensors[f.key]) {
+      const sugg = zoneSuggestions(app, draft.zone_id, f.key);
+      if (sugg.length === 1) draft.sensors[f.key] = sugg[0].entity;
+    }
+  });
+  const anySugg = SENSOR_FIELDS.some((f) => zoneSuggestions(app, draft.zone_id, f.key).length);
   const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: `${z.emoji || "🪴"} ${z.name}` }));
-  const sensorOpts = entityOptions(app.hass, ["sensor"]);
+  const baseSensorOpts = entityOptions(app.hass, ["sensor"]);
   const presetOpts = PLANT_PRESETS.map((p, i) => ({
     value: String(i),
     label: `${p.emoji} ${p.name}`,
@@ -154,17 +169,22 @@ function plantDialog(app, plant) {
           : `<label>${t("plant.preset")}</label>${combo({ name: "preset", options: presetOpts })}`
       }
       <label>${t("name")}</label>
-      <input name="name" required maxlength="60" value="${esc(plant?.name)}" placeholder="${t("plant.name.ph")}">
+      <input name="name" required maxlength="60" value="${esc(draft.name)}" placeholder="${t("plant.name.ph")}">
       <label>${t("plant.species")}</label>
-      <input name="species" maxlength="80" value="${esc(plant?.species)}">
+      <input name="species" maxlength="80" value="${esc(draft.species)}">
       <label>${t("zone.emoji")}</label>
-      <input name="emoji" maxlength="4" value="${esc(plant?.emoji)}" placeholder="🍅">
+      <input name="emoji" maxlength="4" value="${esc(draft.emoji)}" placeholder="🍅">
       <label>${t("plant.zone")}</label>
-      ${combo({ name: "zone_id", value: plant?.zone_id || "", options: zoneOpts })}
+      ${combo({ name: "zone_id", value: draft.zone_id, options: zoneOpts })}
+      ${anySugg ? `<p style="font-size:12px;color:var(--secondary-text-color);margin:6px 0 0">${t("plant.sensors.auto")}</p>` : ""}
       ${SENSOR_FIELDS.map(
         (f) =>
           `<label>${t(f.labelKey)} ${t("plant.sensor.entity")}</label>` +
-          combo({ name: `sensor_${f.key}`, value: plant?.sensors?.[f.key] || "", options: sensorOpts })
+          combo({
+            name: `sensor_${f.key}`,
+            value: draft.sensors[f.key] || "",
+            options: optionsWithSuggestions(app.hass, baseSensorOpts, zoneSuggestions(app, draft.zone_id, f.key)),
+          })
       ).join("")}
       <div class="dialog-actions">
         <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
@@ -188,6 +208,19 @@ function plantDialog(app, plant) {
     dlg.querySelector('input[name="name"]').value = preset.name;
     dlg.querySelector('input[name="species"]').value = preset.species;
     dlg.querySelector('input[name="emoji"]').value = preset.emoji;
+  });
+  // zmiana strefy → przelicz sugestie czujników z urządzeń tej strefy
+  dlg.querySelector('input[name="zone_id"]').addEventListener("change", (ev) => {
+    const next = {
+      name: dlg.querySelector('input[name="name"]').value,
+      species: dlg.querySelector('input[name="species"]').value,
+      emoji: dlg.querySelector('input[name="emoji"]').value,
+      zone_id: ev.target.value,
+      sensors: Object.fromEntries(
+        SENSOR_FIELDS.map((f) => [f.key, dlg.querySelector(`input[name="sensor_${f.key}"]`).value])
+      ),
+    };
+    plantDialog(app, plant, next);
   });
 }
 
