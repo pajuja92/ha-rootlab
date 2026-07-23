@@ -344,16 +344,144 @@ export const actions = {
       }
     );
   },
-  "tasks-generate": async (app) => {
-    app.busyGenerate = true;
-    app.generateError = null;
-    app.render();
-    try {
-      app.data = await app.ws("tasks/generate");
-    } catch (e) {
-      app.generateError = e.message || String(e);
-    }
-    app.busyGenerate = false;
-    app.render();
-  },
+  "tasks-generate": (app) => generateDialog(app),
 };
+
+/* ---------- MODAL GENEROWANIA: zakres → podgląd różnic → wdrożenie wybranych ---------- */
+
+function generateDialog(app) {
+  const zones = [...app.data.zones, { id: null, name: t("zone.none"), emoji: "🏷️" }];
+  const aiPlants = new Set(
+    pendingTasks(app.data.tasks)
+      .filter((task) => task.source === "ai" && task.plant_id)
+      .map((task) => task.plant_id)
+  );
+  let preview = null; // {generated, to_remove}
+
+  const scopeHtml = zones
+    .map((z) => {
+      const plants = app.data.plants.filter((p) => (p.zone_id || null) === z.id);
+      if (!plants.length) return "";
+      return `<div class="gen-zone">
+        <label class="gen-zone-head"><input type="checkbox" data-zone="${z.id ?? ""}" checked>
+          <b>${esc(z.emoji || "🪴")} ${esc(z.name)}</b></label>
+        ${plants
+          .map(
+            (p) => `<label class="gen-plant"><input type="checkbox" name="pl_${p.id}" data-zoneof="${z.id ?? ""}" checked>
+              ${esc(p.emoji || "🌱")} ${esc(p.name)}
+              ${aiPlants.has(p.id) ? `<span class="chip ai">✦ ${t("gen.has_ai")}</span>` : ""}</label>`
+          )
+          .join("")}
+      </div>`;
+    })
+    .join("");
+
+  const dlg = app.dialog(
+    `<h2><ha-icon icon="mdi:creation" style="color:var(--rl-ai)"></ha-icon> ${t("gen.title")}</h2>
+    <div id="gen-form">
+      <label>${t("gen.categories")}</label>
+      <div class="day-picker">
+        <label><input type="checkbox" name="cat_maintenance" checked>${t("tasks.cat.maintenance")}</label>
+        <label><input type="checkbox" name="cat_protection" checked>${t("tasks.cat.protection")}</label>
+      </div>
+      <label>${t("gen.scope")}</label>
+      ${scopeHtml || `<p style="font-size:13px;color:var(--secondary-text-color)">${t("plants.empty.nozones")}</p>`}
+      <label class="gen-plant" style="margin-left:0"><input type="checkbox" name="inc_general" checked> ${t("gen.general")}</label>
+    </div>
+    <div id="gen-result"></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
+      <button type="button" class="btn ai" id="gen-run"><ha-icon icon="mdi:creation"></ha-icon><span id="gen-run-label">${t("gen.run")}</span></button>
+      <button type="button" class="btn" id="gen-apply" style="display:none">${t("gen.apply")}</button>
+    </div>`,
+    () => {},
+    { wide: true }
+  );
+
+  // strefa ↔ rośliny: checkbox strefy przełącza dzieci; dziecko aktualizuje strefę
+  dlg.querySelectorAll("[data-zone]").forEach((zc) =>
+    zc.addEventListener("change", () => {
+      dlg.querySelectorAll(`[data-zoneof="${zc.dataset.zone}"]`).forEach((pc) => (pc.checked = zc.checked));
+    })
+  );
+  dlg.querySelectorAll("[data-zoneof]").forEach((pc) =>
+    pc.addEventListener("change", () => {
+      const siblings = [...dlg.querySelectorAll(`[data-zoneof="${pc.dataset.zoneof}"]`)];
+      dlg.querySelector(`[data-zone="${pc.dataset.zoneof}"]`).checked = siblings.some((x) => x.checked);
+    })
+  );
+
+  const catChip = (c) =>
+    `<span class="chip ${c === "protection" ? "harvest" : c === "crisis" ? "crisis" : ""}">${t("tasks.cat." + (c || "manual"))}</span>`;
+  const plantName = (pid) => {
+    const p = app.data.plants.find((x) => x.id === pid);
+    return p ? `${p.emoji || "🌱"} ${p.name}` : t("tasks.group.general");
+  };
+
+  dlg.querySelector("#gen-run").addEventListener("click", async () => {
+    const cats = ["maintenance", "protection"].filter((c) => dlg.querySelector(`[name="cat_${c}"]`).checked);
+    const checked = [...dlg.querySelectorAll('[name^="pl_"]')].filter((x) => x.checked).map((x) => x.name.slice(3));
+    const scopeAll = checked.length === app.data.plants.length;
+    const includeGeneral = dlg.querySelector('[name="inc_general"]').checked;
+    const run = dlg.querySelector("#gen-run");
+    run.disabled = true;
+    dlg.querySelector("#gen-run-label").textContent = t("tasks.generating");
+    dlg.querySelector("#gen-result").innerHTML = "";
+    try {
+      preview = await app.ws("tasks/generate", {
+        categories: cats.length ? cats : null,
+        plant_ids: scopeAll ? null : checked,
+        include_general: includeGeneral,
+      });
+    } catch (e) {
+      preview = null;
+      dlg.querySelector("#gen-result").innerHTML =
+        `<div class="warn-hint"><ha-icon icon="mdi:alert-circle-outline"></ha-icon>${esc(e.message || String(e))}</div>`;
+    }
+    run.disabled = false;
+    dlg.querySelector("#gen-run-label").textContent = t("gen.rerun");
+    if (!preview) return;
+    const { generated, to_remove: removed } = preview;
+    const rows = [];
+    if (!generated.length && !removed.length) {
+      rows.push(`<div class="ai-hint"><ha-icon icon="mdi:creation"></ha-icon>${t("gen.none")}</div>`);
+    }
+    if (generated.length) {
+      rows.push(`<label style="margin-top:14px">${t("gen.diff.new", { n: generated.length })}</label>`);
+      rows.push(
+        generated
+          .map(
+            (task, i) => `<label class="gen-plant diff-add"><input type="checkbox" class="gen-add" data-i="${i}" checked>
+              <span>＋</span> ${catChip(task.category)} <b>${esc(task.title)}</b>
+              <small style="color:var(--secondary-text-color)">${esc(plantName(task.plant_id))}${task.due ? " · " + esc(task.due) : ""}</small></label>`
+          )
+          .join("")
+      );
+    }
+    if (removed.length) {
+      rows.push(`<label style="margin-top:10px">${t("gen.diff.removed", { n: removed.length })}</label>`);
+      rows.push(
+        removed
+          .map(
+            (task) => `<label class="gen-plant diff-del"><input type="checkbox" class="gen-del" data-id="${task.id}" checked>
+              <span>−</span> ${catChip(task.category)} <s>${esc(task.title)}</s>
+              <small style="color:var(--secondary-text-color)">${esc(plantName(task.plant_id))}</small></label>`
+          )
+          .join("")
+      );
+    }
+    dlg.querySelector("#gen-result").innerHTML = rows.join("");
+    dlg.querySelector("#gen-apply").style.display = generated.length || removed.length ? "" : "none";
+  });
+
+  dlg.querySelector("#gen-apply").addEventListener("click", async () => {
+    if (!preview) return;
+    const add = [...dlg.querySelectorAll(".gen-add")]
+      .filter((x) => x.checked)
+      .map((x) => preview.generated[parseInt(x.dataset.i, 10)]);
+    const removeIds = [...dlg.querySelectorAll(".gen-del")].filter((x) => x.checked).map((x) => x.dataset.id);
+    app.data = await app.ws("tasks/apply", { add, remove_ids: removeIds });
+    dlg.close();
+    app.render();
+  });
+}

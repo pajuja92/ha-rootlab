@@ -80,7 +80,7 @@ def _async_setup_weekly_tasks(hass: HomeAssistant) -> None:
         if not configured:
             return
         try:
-            await ai.async_generate_tasks(hass)
+            await ai.async_generate_and_merge(hass)
             await async_save(hass)
         except Exception:  # noqa: BLE001 — cykliczna próba, kolejna za tydzień
             pass
