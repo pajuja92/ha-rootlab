@@ -100,13 +100,16 @@ export const CSS = `
   border-radius: 999px; border: none; background: var(--rl-green); color: #fff;
   font: inherit; font-size: 14px; font-weight: 500; cursor: pointer;
 }
-:host([dark]) .btn { color: #1A1A1A; }
+:host([dark]) .btn:not(.ghost):not(.plain) { color: #1A1A1A; }
 .btn.ghost {
-  background: color-mix(in srgb, var(--rl-green) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--rl-green) 55%, transparent);
+  background: color-mix(in srgb, var(--rl-green) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--rl-green) 80%, transparent);
   color: var(--primary-text-color);
   font-weight: 500;
 }
+.btn.plain { color: var(--primary-text-color); }
+.icon-btn { color: var(--primary-text-color); opacity: 0.72; }
+.icon-btn:hover { opacity: 1; }
 .btn.plain { background: transparent; color: var(--primary-text-color); font-weight: 400; }
 .btn.ai { background: var(--rl-ai); }
 .btn.small { padding: 4px 12px; font-size: 13px; }
@@ -307,6 +310,53 @@ dialog.wide { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 64
   cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
 .compass .needle, .compass circle { cursor: grab; }
+/* Kalendarz zadań */
+.cal-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
+.cal-head b { flex: 1; text-align: center; font-size: 15px; text-transform: capitalize; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-dow { font-size: 11px; color: var(--secondary-text-color); text-align: center; padding: 2px 0; }
+.cal-cell {
+  min-height: 86px; border: 1px solid var(--divider-color); border-radius: 8px;
+  padding: 4px; background: var(--card-background-color); overflow: hidden;
+}
+.cal-cell.other { opacity: 0.35; }
+.cal-cell.today { border-color: var(--rl-green); box-shadow: inset 0 0 0 1px var(--rl-green); }
+.cal-cell .d { font-size: 11px; color: var(--secondary-text-color); margin-bottom: 2px; }
+.cal-chip {
+  display: block; width: 100%; text-align: left; border: none; cursor: pointer;
+  font-size: 11px; line-height: 1.3; padding: 2px 6px; margin-bottom: 2px;
+  border-radius: 6px; background: var(--rl-green-bg); color: var(--primary-text-color);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: inherit;
+}
+.cal-chip.protection { background: var(--rl-harvest-bg); }
+.cal-chip.crisis { background: var(--rl-crisis-bg); }
+.cal-chip.manual { background: color-mix(in srgb, var(--secondary-text-color) 15%, transparent); }
+.cal-chip.overdue { outline: 1px solid var(--rl-crisis); }
+.cal-more { font-size: 10px; color: var(--secondary-text-color); }
+.filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: var(--rl-gap); align-items: center; }
+.filter-bar .combo { min-width: 170px; flex: 1; max-width: 240px; }
+.filter-bar select { padding: 8px 12px; border-radius: 999px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font: inherit; font-size: 13px; }
+.combo-input {
+  width: 100%; box-sizing: border-box; padding: 8px 30px 8px 12px;
+  border: 1px solid var(--divider-color); border-radius: 8px;
+  background: var(--primary-background-color); color: var(--primary-text-color);
+  font: inherit; font-size: 14px;
+}
+/* Mapa: pasek narzędzi, punkty obrysu, hint zooma */
+.map-toolbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.map-toolbar .dims { font-size: 13px; color: var(--secondary-text-color); }
+#map-hint {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.45); color: #fff; font-size: 14px; z-index: 5;
+  opacity: 0; pointer-events: none; transition: opacity 0.25s; text-align: center; padding: 12px;
+}
+#map-hint.show { opacity: 1; }
+.map-pt { position: absolute; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--rl-harvest); border: 2px solid #fff; transform: translate(-50%,-50%);
+  box-shadow: 0 0 3px #000; }
+#map-poly { position: absolute; inset: 0; pointer-events: none; }
+#map-poly polyline, #map-poly polygon { fill: color-mix(in srgb, var(--rl-harvest) 25%, transparent); stroke: var(--rl-harvest); stroke-width: 2; }
+
 @media (max-width: 600px) {
   :host { --rl-gap: 12px; }
   .appbar .title span { display: none; }

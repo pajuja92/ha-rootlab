@@ -381,7 +381,8 @@ function viewItem(app, itemId) {
   );
 }
 
-/* Dialog lokalizacji: mini-mapa satelitarna, celownik = środek ogrodu. */
+/* Dialog lokalizacji: mapa satelitarna z obrotem (strzałki / Shift+drag),
+   zoomem pod ⌘/Ctrl i obrysem ogrodu punktami (sugestia wymiarów planu). */
 function locationDialog(app) {
   const layout = app.data.layout;
   const start = layout.location || {
@@ -392,11 +393,26 @@ function locationDialog(app) {
   let lat = start.latitude;
   let lon = start.longitude;
   let z = Math.max(3, Math.min(MAX_Z, start.zoom || 18));
+  let ang = layout.north_deg || 0;
+  let points = []; // {lat, lon} — obrys ogrodu
+  let drawMode = false;
+  let dims = null;
+
   const dlg = app.dialog(
     `<h2>${t("editor.location")}</h2>
+    <div class="map-toolbar">
+      <button type="button" class="icon-btn" id="map-rl" title="${t("editor.map.rotl")}"><ha-icon icon="mdi:rotate-left"></ha-icon></button>
+      <button type="button" class="icon-btn" id="map-rr" title="${t("editor.map.rotr")}"><ha-icon icon="mdi:rotate-right"></ha-icon></button>
+      <span style="font-size:12px;color:var(--secondary-text-color);min-width:34px" id="map-ang">${ang}°</span>
+      <button type="button" class="btn small ghost" id="map-outline"><ha-icon icon="mdi:vector-polygon"></ha-icon>${t("editor.map.outline")}</button>
+      <button type="button" class="btn small plain" id="map-clear" style="display:none">${t("editor.map.clear")}</button>
+      <span class="dims" id="map-dims"></span>
+      <button type="button" class="btn small" id="map-apply" style="display:none">${t("editor.map.apply")}</button>
+    </div>
     <div id="map-view">
       <div id="map-tiles"></div>
       <ha-icon class="map-cross" icon="mdi:crosshairs"></ha-icon>
+      <div id="map-hint">${t("editor.map.zoomhint")}</div>
       <div class="map-zoom">
         <button type="button" id="map-zin"><ha-icon icon="mdi:plus"></ha-icon></button>
         <button type="button" id="map-zout"><ha-icon icon="mdi:minus"></ha-icon></button>
@@ -404,7 +420,7 @@ function locationDialog(app) {
       <div class="sat-attr">${ATTRIBUTION}</div>
     </div>
     <p id="map-coords" style="font-size:12px;color:var(--secondary-text-color);margin:8px 0 0"></p>
-    <p class="editor-hint" style="margin:4px 0 0">${t("editor.location.hint")}</p>
+    <p class="editor-hint" id="map-mode-hint" style="margin:4px 0 0">${t("editor.location.hint")}</p>
     <div class="dialog-actions">
       <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
       <button type="button" class="btn" id="map-save">${t("save")}</button>
@@ -414,53 +430,204 @@ function locationDialog(app) {
   );
   const view = dlg.querySelector("#map-view");
   const tiles = dlg.querySelector("#map-tiles");
+  const rad = () => (ang * Math.PI) / 180;
+  let diag = 0;
+
+  const baseTransform = (dx = 0, dy = 0) =>
+    `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(${ang}deg)`;
+
+  const polyHtml = () => {
+    if (!points.length) return "";
+    const cx = lonToX(lon, z) - diag / 2;
+    const cy = latToY(lat, z) - diag / 2;
+    const px = points.map((pt) => [lonToX(pt.lon, z) - cx, latToY(pt.lat, z) - cy]);
+    const shape =
+      px.length >= 3
+        ? `<polygon points="${px.map((c) => c.join(",")).join(" ")}"/>`
+        : px.length === 2
+          ? `<polyline points="${px.map((c) => c.join(",")).join(" ")}"/>`
+          : "";
+    return (
+      `<svg id="map-poly" width="${diag}" height="${diag}">${shape}</svg>` +
+      px.map((c) => `<div class="map-pt" style="left:${c[0]}px;top:${c[1]}px"></div>`).join("")
+    );
+  };
+
   const paint = () => {
     const w = view.clientWidth;
     const h = view.clientHeight;
     if (!w) return;
-    tiles.style.transform = "";
-    tiles.innerHTML = gridHtml(lat, lon, z, w, h);
+    diag = Math.ceil(Math.hypot(w, h)) + 256;
+    tiles.style.position = "absolute";
+    tiles.style.left = "50%";
+    tiles.style.top = "50%";
+    tiles.style.width = `${diag}px`;
+    tiles.style.height = `${diag}px`;
+    tiles.style.transform = baseTransform();
+    tiles.innerHTML = gridHtml(lat, lon, z, diag, diag) + polyHtml();
     dlg.querySelector("#map-coords").textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)} · zoom ${z}`;
+    dlg.querySelector("#map-ang").textContent = `${ang}°`;
   };
   requestAnimationFrame(paint);
-  let pan = null;
+
+  const updateDims = () => {
+    const el = dlg.querySelector("#map-dims");
+    const apply = dlg.querySelector("#map-apply");
+    if (points.length < 3) {
+      el.textContent = drawMode ? t("editor.map.outline.hint") : "";
+      apply.style.display = "none";
+      dims = null;
+      return;
+    }
+    // środek + bbox w układzie planu (obrót o ang), metry z Web Mercatora
+    const wx = points.map((pt) => lonToX(pt.lon, z));
+    const wy = points.map((pt) => latToY(pt.lat, z));
+    const cx = wx.reduce((a, b) => a + b, 0) / wx.length;
+    const cy = wy.reduce((a, b) => a + b, 0) / wy.length;
+    const a = rad();
+    const rx = [];
+    const ry = [];
+    for (let i = 0; i < wx.length; i++) {
+      const dx = wx[i] - cx;
+      const dy = wy[i] - cy;
+      rx.push(dx * Math.cos(a) - dy * Math.sin(a));
+      ry.push(dx * Math.sin(a) + dy * Math.cos(a));
+    }
+    const centroidLat = yToLat(cy, z);
+    const mpp = metersPerPixel(centroidLat, z);
+    dims = {
+      w: Math.max(2, Math.round((Math.max(...rx) - Math.min(...rx)) * mpp)),
+      h: Math.max(2, Math.round((Math.max(...ry) - Math.min(...ry)) * mpp)),
+      lat: centroidLat,
+      lon: xToLon(cx, z),
+    };
+    el.textContent = t("editor.map.dims", { w: dims.w, h: dims.h });
+    apply.style.display = "";
+  };
+
+  let gesture = null; // {type: pan|rotate, ...}
   view.addEventListener("pointerdown", (ev) => {
     if (ev.target.closest("button")) return;
-    pan = { x: ev.clientX, y: ev.clientY, dx: 0, dy: 0 };
+    const rect = view.getBoundingClientRect();
+    if (ev.shiftKey) {
+      const sx = ev.clientX - rect.left - rect.width / 2;
+      const sy = ev.clientY - rect.top - rect.height / 2;
+      gesture = { type: "rotate", start: (Math.atan2(sy, sx) * 180) / Math.PI, ang0: ang };
+    } else {
+      gesture = { type: "pan", x: ev.clientX, y: ev.clientY, dx: 0, dy: 0, moved: false };
+    }
     view.setPointerCapture(ev.pointerId);
   });
   view.addEventListener("pointermove", (ev) => {
-    if (!pan) return;
-    pan.dx = ev.clientX - pan.x;
-    pan.dy = ev.clientY - pan.y;
-    tiles.style.transform = `translate(${pan.dx}px, ${pan.dy}px)`;
+    if (!gesture) return;
+    const rect = view.getBoundingClientRect();
+    if (gesture.type === "rotate") {
+      const sx = ev.clientX - rect.left - rect.width / 2;
+      const sy = ev.clientY - rect.top - rect.height / 2;
+      const cur = (Math.atan2(sy, sx) * 180) / Math.PI;
+      ang = Math.round((((gesture.ang0 + cur - gesture.start) % 360) + 360) % 360);
+      tiles.style.transform = baseTransform();
+      dlg.querySelector("#map-ang").textContent = `${ang}°`;
+    } else {
+      gesture.dx = ev.clientX - gesture.x;
+      gesture.dy = ev.clientY - gesture.y;
+      if (Math.hypot(gesture.dx, gesture.dy) > 4) gesture.moved = true;
+      tiles.style.transform = baseTransform(gesture.dx, gesture.dy);
+    }
   });
-  view.addEventListener("pointerup", () => {
-    if (!pan) return;
-    lon = xToLon(lonToX(lon, z) - pan.dx, z);
-    lat = yToLat(latToY(lat, z) - pan.dy, z);
-    pan = null;
-    paint();
+  view.addEventListener("pointerup", (ev) => {
+    if (!gesture) return;
+    const g = gesture;
+    gesture = null;
+    if (g.type === "rotate") {
+      updateDims();
+      return;
+    }
+    if (!g.moved && drawMode) {
+      // klik = punkt obrysu (środek ekranu → mapa: odwróć obrót)
+      const rect = view.getBoundingClientRect();
+      const sx = ev.clientX - rect.left - rect.width / 2;
+      const sy = ev.clientY - rect.top - rect.height / 2;
+      const a = rad();
+      const mdx = sx * Math.cos(a) + sy * Math.sin(a);
+      const mdy = -sx * Math.sin(a) + sy * Math.cos(a);
+      points.push({
+        lat: yToLat(latToY(lat, z) + mdy, z),
+        lon: xToLon(lonToX(lon, z) + mdx, z),
+      });
+      paint();
+      updateDims();
+      return;
+    }
+    if (g.moved) {
+      const a = rad();
+      const mdx = g.dx * Math.cos(a) + g.dy * Math.sin(a);
+      const mdy = -g.dx * Math.sin(a) + g.dy * Math.cos(a);
+      lon = xToLon(lonToX(lon, z) - mdx, z);
+      lat = yToLat(latToY(lat, z) - mdy, z);
+      paint();
+    }
   });
+
+  const hint = dlg.querySelector("#map-hint");
+  let hintTimer = null;
+  view.addEventListener(
+    "wheel",
+    (ev) => {
+      ev.preventDefault();
+      if (!ev.metaKey && !ev.ctrlKey) {
+        hint.classList.add("show");
+        clearTimeout(hintTimer);
+        hintTimer = setTimeout(() => hint.classList.remove("show"), 1400);
+        return;
+      }
+      setZoom(z + (ev.deltaY < 0 ? 1 : -1));
+    },
+    { passive: false }
+  );
   const setZoom = (nz) => {
     nz = Math.max(3, Math.min(MAX_Z, nz));
     if (nz !== z) {
       z = nz;
       paint();
+      updateDims();
     }
   };
-  view.addEventListener("wheel", (ev) => {
-    ev.preventDefault();
-    setZoom(z + (ev.deltaY < 0 ? 1 : -1));
-  }, { passive: false });
   dlg.querySelector("#map-zin").addEventListener("click", () => setZoom(z + 1));
   dlg.querySelector("#map-zout").addEventListener("click", () => setZoom(z - 1));
+  const rot = (delta) => {
+    ang = ((ang + delta) % 360 + 360) % 360;
+    tiles.style.transform = baseTransform();
+    dlg.querySelector("#map-ang").textContent = `${ang}°`;
+    updateDims();
+  };
+  dlg.querySelector("#map-rl").addEventListener("click", () => rot(-15));
+  dlg.querySelector("#map-rr").addEventListener("click", () => rot(15));
+  dlg.querySelector("#map-outline").addEventListener("click", (ev) => {
+    drawMode = !drawMode;
+    ev.currentTarget.classList.toggle("plain", drawMode);
+    dlg.querySelector("#map-clear").style.display = drawMode || points.length ? "" : "none";
+    dlg.querySelector("#map-mode-hint").textContent = drawMode
+      ? t("editor.map.outline.hint")
+      : t("editor.location.hint");
+    updateDims();
+  });
+  dlg.querySelector("#map-clear").addEventListener("click", () => {
+    points = [];
+    paint();
+    updateDims();
+  });
+  dlg.querySelector("#map-apply").addEventListener("click", () => {
+    if (!dims) return;
+    layout.width_m = dims.w;
+    layout.height_m = dims.h;
+    lat = dims.lat;
+    lon = dims.lon;
+    paint();
+  });
   dlg.querySelector("#map-save").addEventListener("click", () => {
-    layout.location = {
-      latitude: +lat.toFixed(6),
-      longitude: +lon.toFixed(6),
-      zoom: z,
-    };
+    layout.location = { latitude: +lat.toFixed(6), longitude: +lon.toFixed(6), zoom: z };
+    layout.north_deg = ang;
     st(app).sat = true;
     dlg.close();
     saveLayout(app);
