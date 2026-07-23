@@ -319,6 +319,7 @@ dialog.wide { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 64
   z-index: 60; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,0.35);
 }
 #toast.show { opacity: 1; transform: translate(-50%, 0); }
+#toast.error { border-color: var(--rl-crisis); }
 /* Modal generowania zadań */
 .gen-zone { margin: 6px 0; }
 .gen-zone-head { display: flex; gap: 8px; align-items: center; margin: 0; font-size: 14px; }

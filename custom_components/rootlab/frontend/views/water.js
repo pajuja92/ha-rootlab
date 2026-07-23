@@ -340,7 +340,12 @@ function pauseDialog(app) {
 }
 
 const call = (type) => async (app, el) => {
-  app.data = await app.ws(type, { section_id: el.dataset.id });
+  try {
+    app.data = await app.ws(type, { section_id: el.dataset.id });
+  } catch (e) {
+    app.toast(`⚠ ${e.message || e}`, true);
+    return;
+  }
   app.render();
 };
 
