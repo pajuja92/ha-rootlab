@@ -70,6 +70,7 @@ def async_register(hass):
         ws_weather,
         ws_forecast,
         ws_tasks_generate,
+        ws_tasks_apply,
         ws_crisis_diagnose,
         ws_crisis_add_plan,
         ws_ai_ask,
@@ -282,14 +283,57 @@ def _ai_error(connection, msg_id, err):
         connection.send_error(msg_id, "ai_error", str(err))
 
 
-@websocket_api.websocket_command({vol.Required("type"): "rootlab/tasks/generate"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rootlab/tasks/generate",
+        vol.Optional("categories", default=None): vol.Any(None, [str]),
+        vol.Optional("plant_ids", default=None): vol.Any(None, [str]),
+        vol.Optional("include_general", default=True): bool,
+    }
+)
 @websocket_api.async_response
 async def ws_tasks_generate(hass, connection, msg):
+    """Podgląd generowania: zwraca propozycje i zadania do zastąpienia, NIE zapisuje."""
     try:
-        await ai.async_generate_tasks(hass)
+        fresh = await ai.async_generate_tasks(
+            hass, msg["categories"], msg["plant_ids"], msg["include_general"]
+        )
     except Exception as err:  # noqa: BLE001
         _ai_error(connection, msg["id"], err)
         return
+    cats = set(msg["categories"] or ["maintenance", "protection"])
+    plant_scope = set(msg["plant_ids"]) if msg["plant_ids"] is not None else None
+
+    def replaced(task):
+        if task.get("source") != "ai" or task.get("done"):
+            return False
+        if (task.get("category") or "manual") not in cats:
+            return False
+        if task.get("plant_id") is None:
+            return msg["include_general"] and plant_scope is None
+        return plant_scope is None or task["plant_id"] in plant_scope
+
+    to_remove = [t for t in hass.data[DOMAIN]["data"]["tasks"] if replaced(t)]
+    connection.send_result(msg["id"], {"generated": fresh, "to_remove": to_remove})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rootlab/tasks/apply",
+        vol.Required("add"): [dict],
+        vol.Required("remove_ids"): [str],
+    }
+)
+@websocket_api.async_response
+async def ws_tasks_apply(hass, connection, msg):
+    """Wdraża wybrane zmiany z podglądu generowania."""
+    data = hass.data[DOMAIN]["data"]
+    remove = set(msg["remove_ids"])
+    data["tasks"] = [t for t in data["tasks"] if t["id"] not in remove]
+    for task in msg["add"]:
+        if not task.get("id"):
+            task["id"] = uuid.uuid4().hex
+        data["tasks"].append(task)
     await async_save(hass)
     connection.send_result(msg["id"], _public(hass))
 

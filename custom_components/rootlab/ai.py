@@ -298,7 +298,7 @@ async def _ha_ai_task(hass, prompt, schema):
     return _parse_json_loose(text) if schema else text.strip()
 
 
-def _garden_context(hass):
+def _garden_context(hass, plant_ids=None):
     data = hass.data[DOMAIN]["data"]
     zones = {z["id"]: z["name"] for z in data["zones"]}
     greenhouses = [
@@ -309,6 +309,8 @@ def _garden_context(hass):
     }
     plants = []
     for p in data["plants"]:
+        if plant_ids is not None and p["id"] not in plant_ids:
+            continue
         readings = {}
         for key, entity_id in (p.get("sensors") or {}).items():
             if not entity_id:
@@ -340,9 +342,17 @@ def _garden_context(hass):
     }
 
 
-async def async_generate_tasks(hass):
-    """Generuje zadania AI i scala je z listą (zastępuje niezrobione zadania AI)."""
-    context = _garden_context(hass)
+async def async_generate_tasks(hass, categories=None, plant_ids=None, include_general=True):
+    """Generuje zadania AI dla zakresu — zwraca listę, NICZEGO nie zapisuje."""
+    cats = [c for c in (categories or []) if c in ("maintenance", "protection")] or [
+        "maintenance",
+        "protection",
+    ]
+    cat_desc = {
+        "maintenance": "maintenance (przycinanie, pielenie, nawożenie, podlewanie ręczne)",
+        "protection": "protection (opryski, ochrona przed przymrozkami i szkodnikami)",
+    }
+    context = _garden_context(hass, plant_ids)
     weather = await hass.data[DOMAIN]["weather"].fetch(
         _options(hass).get("imgw_station", "warszawa")
     )
@@ -351,28 +361,44 @@ async def async_generate_tasks(hass):
     parsed = await _complete(
         hass,
         "Na podstawie danych ogrodu ułóż listę zadań na najbliższe 14 dni. "
-        "Kategorie: maintenance (przycinanie, pielenie, nawożenie, podlewanie ręczne) "
-        "i protection (opryski, ochrona przed przymrozkami i szkodnikami). "
-        "Uwzględnij porę roku, odczyty czujników, warunki (szklarnia) i pogodę. "
+        "Dozwolone kategorie: " + "; ".join(cat_desc[c] for c in cats) + ". "
+        + ("" if include_general else "Każde zadanie musi dotyczyć konkretnej rośliny z danych (plant_id nie może być null). ")
+        + "Uwzględnij porę roku, odczyty czujników, warunki (szklarnia) i pogodę. "
         "Maks. 3 zadania na roślinę, tylko naprawdę potrzebne. Dane ogrodu:\n"
         + json.dumps(context, ensure_ascii=False),
         schema=TASKS_SCHEMA,
     )
-    plant_ids = {p["id"] for p in hass.data[DOMAIN]["data"]["plants"]}
-    fresh = [
-        {
-            "id": uuid.uuid4().hex,
-            "plant_id": t["plant_id"] if t["plant_id"] in plant_ids else None,
-            "category": t["category"] if t["category"] in ("maintenance", "protection") else "maintenance",
-            "title": t["title"],
-            "details": t.get("details", ""),
-            "due": t.get("due"),
-            "done": False,
-            "source": "ai",
-            "created": date.today().isoformat(),
-        }
-        for t in parsed.get("tasks", [])
-    ]
+    plant_scope = (
+        {p["id"] for p in hass.data[DOMAIN]["data"]["plants"]}
+        if plant_ids is None
+        else set(plant_ids)
+    )
+    fresh = []
+    for task in parsed.get("tasks", []):
+        pid = task.get("plant_id") if task.get("plant_id") in plant_scope else None
+        if pid is None and not include_general:
+            continue
+        if task.get("category") not in cats:
+            continue
+        fresh.append(
+            {
+                "id": uuid.uuid4().hex,
+                "plant_id": pid,
+                "category": task["category"],
+                "title": task.get("title", ""),
+                "details": task.get("details", ""),
+                "due": task.get("due"),
+                "done": False,
+                "source": "ai",
+                "created": date.today().isoformat(),
+            }
+        )
+    return fresh
+
+
+async def async_generate_and_merge(hass):
+    """Pełne generowanie + scalenie (cotygodniowy automat)."""
+    fresh = await async_generate_tasks(hass)
     data = hass.data[DOMAIN]["data"]
     data["tasks"] = merge_ai_tasks(data["tasks"], fresh)
     return len(fresh)

@@ -310,6 +310,15 @@ dialog.wide { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 64
   cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
 .compass .needle, .compass circle { cursor: grab; }
+/* Modal generowania zadań */
+.gen-zone { margin: 6px 0; }
+.gen-zone-head { display: flex; gap: 8px; align-items: center; margin: 0; font-size: 14px; }
+.gen-plant { display: flex; gap: 8px; align-items: center; margin: 4px 0 4px 24px; font-size: 14px; color: var(--primary-text-color); }
+.gen-plant small { font-size: 12px; }
+dialog input[type=checkbox], dialog input[type=radio] { width: auto; accent-color: var(--rl-green); }
+.diff-add > span:first-of-type { color: var(--rl-green); font-weight: 700; }
+.diff-del > span:first-of-type { color: var(--rl-crisis); font-weight: 700; }
+.diff-add, .diff-del { margin-left: 0; flex-wrap: wrap; }
 /* Kalendarz zadań */
 .cal-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
 .cal-head b { flex: 1; text-align: center; font-size: 15px; text-transform: capitalize; }
