@@ -279,6 +279,34 @@ dialog.wide { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 64
 .mode-toggle button { border: none; background: transparent; color: var(--secondary-text-color); padding: 8px 14px; font: inherit; font-size: 14px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
 .mode-toggle button.on { background: var(--rl-green); color: #fff; }
 :host([dark]) .mode-toggle button.on { color: #1A1A1A; }
+/* Podkład satelitarny + mapa lokalizacji */
+.sat-wrap { position: absolute; inset: 0; overflow: hidden; }
+#sat-under { position: absolute; left: 50%; top: 50%; transform-origin: center; }
+.editor-svg { position: relative; }
+.editor-svg.sat-on { background: transparent; }
+.editor-svg.sat-on .grid-line { stroke: rgba(255,255,255,0.35); }
+.editor-svg.sat-on text { fill: #fff; paint-order: stroke; stroke: rgba(0,0,0,0.7); stroke-width: 0.06; }
+.sat-attr {
+  position: absolute; right: 4px; bottom: 2px; z-index: 3;
+  font-size: 10px; color: #fff; text-shadow: 0 0 3px #000; pointer-events: none;
+}
+#map-view {
+  position: relative; width: 100%; height: 360px; overflow: hidden;
+  border-radius: 8px; background: #0a0a0a; touch-action: none; cursor: grab;
+}
+#map-tiles { position: absolute; inset: 0; }
+.map-cross {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  color: var(--rl-crisis); --mdc-icon-size: 32px; pointer-events: none;
+  filter: drop-shadow(0 0 2px #000);
+}
+.map-zoom { position: absolute; right: 8px; top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.map-zoom button {
+  width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--divider-color);
+  background: var(--card-background-color); color: var(--primary-text-color);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.compass .needle, .compass circle { cursor: grab; }
 @media (max-width: 600px) {
   :host { --rl-gap: 12px; }
   .appbar .title span { display: none; }

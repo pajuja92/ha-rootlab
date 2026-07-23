@@ -1,6 +1,7 @@
 import { t } from "../i18n.js";
 import { esc, uid } from "../util.js";
 import { insideRect, isShaded, northVector, shadowEllipse, shadowLength } from "../shade.js";
+import { ATTRIBUTION, MAX_Z, gridHtml, latToY, lonToX, metersPerPixel, xToLon, yToLat } from "../satmap.js";
 import { openPlantCard } from "./plants.js";
 
 export const ENABLED = true;
@@ -26,9 +27,11 @@ const st = (app) =>
     month: new Date().getMonth() + 1,
     selected: null,
     mode: "edit",
+    sat: true,
   });
 
-const lat = (app) => app.data.settings?.latitude || app.hass.config.latitude || 52;
+const gardenLat = (app) =>
+  app.data.layout.location?.latitude || app.hass.config.latitude || 52;
 const isArea = (i) => "w" in i;
 
 export function render(app) {
@@ -38,6 +41,7 @@ export function render(app) {
   const plantOpts = app.data.plants
     .map((p) => `<option value="plant:${p.id}" ${s.palette === "plant:" + p.id ? "selected" : ""}>${esc(p.emoji || "🌱")} ${esc(p.name)}</option>`)
     .join("");
+  const satActive = s.sat && layout.location;
   return `
     <div class="toolbar">
       <div class="mode-toggle">
@@ -69,16 +73,24 @@ export function render(app) {
              <button class="icon-btn" data-action="editor-delete" title="${t("delete")}"><ha-icon icon="mdi:trash-can-outline"></ha-icon></button>`
           : ""
       }
+      <button class="btn small ${satActive ? "" : "plain"}" data-action="editor-sat" title="${t("editor.sat")}"
+        ${layout.location ? "" : "disabled"}><ha-icon icon="mdi:satellite-variant"></ha-icon></button>
+      <button class="btn ghost" data-action="editor-location"><ha-icon icon="mdi:map-marker-outline"></ha-icon>${t("editor.location")}</button>
       <button class="btn ghost" data-action="editor-garden"><ha-icon icon="mdi:cog-outline"></ha-icon>${t("editor.garden")}</button>
     </div>
-    <div class="editor-wrap">${svg(app)}</div>
+    <div class="editor-wrap">
+      <div id="editor-stage" style="position:relative;overflow:hidden;border-radius:8px">
+        ${satActive ? `<div class="sat-wrap"><div id="sat-under"></div></div><div class="sat-attr">${ATTRIBUTION}</div>` : ""}
+        ${svg(app, satActive)}
+      </div>
+    </div>
     <div class="editor-hint">${s.mode === "edit" ? t("editor.hint.edit") : t("editor.hint.view")} · ${t("editor.greenhouse.info")}</div>`;
 }
 
-function svg(app) {
+function svg(app, satActive) {
   const s = st(app);
   const { width_m: W, height_m: H, north_deg: north = 0, items } = app.data.layout;
-  const latitude = lat(app);
+  const latitude = gardenLat(app);
   const circles = items.filter((i) => !isArea(i));
   const areas = items.filter(isArea);
   const greenhouses = areas.filter((a) => a.kind === "greenhouse");
@@ -118,13 +130,13 @@ function svg(app) {
     .join("");
 
   const n = northVector(north);
-  const compass = `<g class="compass" transform="translate(${W - 1.4} 1.4)">
-    <circle r="1" fill="var(--card-background-color)" stroke="var(--divider-color)" stroke-width="0.06"/>
-    <line x1="0" y1="0" x2="${n.x * 0.7}" y2="${n.y * 0.7}" stroke="var(--rl-crisis)" stroke-width="0.12"/>
-    <text x="${n.x * 0.95}" y="${n.y * 0.95 + 0.3}" text-anchor="middle">N</text>
+  const compass = `<g class="compass" transform="translate(${W - 1.6} 1.6)">
+    <circle r="1.1" fill="var(--card-background-color)" stroke="var(--divider-color)" stroke-width="0.06"/>
+    <line class="needle" x1="0" y1="0" x2="${n.x * 0.75}" y2="${n.y * 0.75}" stroke="var(--rl-crisis)" stroke-width="0.14"/>
+    <text class="n-label" x="${n.x * 0.95}" y="${n.y * 0.95 + 0.3}" text-anchor="middle">N</text>
   </g>`;
 
-  return `<svg id="garden-svg" class="editor-svg ${s.mode === "view" ? "view-mode" : ""}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+  return `<svg id="garden-svg" class="editor-svg ${s.mode === "view" ? "view-mode" : ""} ${satActive ? "sat-on" : ""}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
     <defs><pattern id="rl-grid" width="1" height="1" patternUnits="userSpaceOnUse">
       <path d="M 1 0 L 0 0 0 1" fill="none" class="grid-line"/></pattern></defs>
     <rect width="${W}" height="${H}" fill="url(#rl-grid)"/>
@@ -145,6 +157,30 @@ function svgPoint(svgEl, ev) {
   return pt.matrixTransform(svgEl.getScreenCTM().inverse());
 }
 
+/* Podkład satelitarny pod planem: skala px/m planu dopasowana do metrów/px kafelków. */
+function renderUnderlay(app, root) {
+  const under = root.getElementById("sat-under");
+  if (!under) return;
+  const s = st(app);
+  const layout = app.data.layout;
+  const loc = layout.location;
+  const stage = root.getElementById("editor-stage");
+  const wPx = stage.clientWidth;
+  if (!wPx || !loc) return;
+  const hPx = (wPx * layout.height_m) / layout.width_m;
+  const pxPerM = wPx / layout.width_m;
+  const phi = loc.latitude;
+  let z = Math.round(Math.log2(156543.03392 * Math.cos((phi * Math.PI) / 180) * pxPerM));
+  z = Math.max(3, Math.min(MAX_Z, z));
+  const scale = pxPerM * metersPerPixel(phi, z);
+  const diag = Math.ceil(Math.sqrt(wPx * wPx + hPx * hPx) / scale) + 256;
+  under.style.width = `${diag}px`;
+  under.style.height = `${diag}px`;
+  under.dataset.scale = scale;
+  under.style.transform = `translate(-50%,-50%) rotate(${layout.north_deg || 0}deg) scale(${scale})`;
+  under.innerHTML = gridHtml(phi, loc.longitude, z, diag, diag);
+}
+
 export function bind(app, root) {
   const s = st(app);
   root.querySelector('[data-bind="palette"]')?.addEventListener("change", (ev) => (s.palette = ev.target.value));
@@ -159,12 +195,53 @@ export function bind(app, root) {
 
   const svgEl = root.getElementById("garden-svg");
   if (!svgEl) return;
-  let drag = null; // {type: move|resize|draw, ...}
+  renderUnderlay(app, root);
+  let drag = null;
   const layout = app.data.layout;
   const clamp = (v, max) => Math.round(Math.min(Math.max(v, 0), max) * 10) / 10;
 
+  const syncAreaNode = (item) => {
+    const g = svgEl.querySelector(`.item-g[data-id="${item.id}"]`);
+    if (!g) return;
+    const rect = g.querySelector("rect.area");
+    rect.setAttribute("x", item.x);
+    rect.setAttribute("y", item.y);
+    rect.setAttribute("width", item.w);
+    rect.setAttribute("height", item.h);
+    const text = g.querySelector("text");
+    text.setAttribute("x", item.x + item.w / 2);
+    text.setAttribute("y", item.y + 0.7);
+    const handle = g.querySelector(".resize-handle");
+    if (handle) {
+      handle.setAttribute("cx", item.x + item.w);
+      handle.setAttribute("cy", item.y + item.h);
+    }
+  };
+
+  const syncCompass = (deg) => {
+    const n = northVector(deg);
+    const needle = svgEl.querySelector(".compass .needle");
+    const label = svgEl.querySelector(".compass .n-label");
+    needle.setAttribute("x2", n.x * 0.75);
+    needle.setAttribute("y2", n.y * 0.75);
+    label.setAttribute("x", n.x * 0.95);
+    label.setAttribute("y", n.y * 0.95 + 0.3);
+    const under = root.getElementById("sat-under");
+    if (under && under.dataset.scale) {
+      under.style.transform = `translate(-50%,-50%) rotate(${deg}deg) scale(${under.dataset.scale})`;
+    }
+  };
+
   svgEl.addEventListener("pointerdown", (ev) => {
     const p = svgPoint(svgEl, ev);
+    const compass = ev.target.closest(".compass");
+    if (compass && s.mode === "edit") {
+      // obrót planu: przeciągnij igłę kompasu
+      const W = layout.width_m;
+      drag = { type: "rotate", cx: W - 1.6, cy: 1.6, deg: layout.north_deg || 0 };
+      svgEl.setPointerCapture(ev.pointerId);
+      return;
+    }
     const handle = ev.target.closest(".resize-handle");
     const node = ev.target.closest("[data-id]");
     if (s.mode === "view") {
@@ -185,30 +262,15 @@ export function bind(app, root) {
     }
   });
 
-  /* Podczas przeciągania NIE wolno robić pełnego re-renderu (zniknąłby element
-     z przechwyconym pointerem) — aktualizujemy atrybuty SVG bezpośrednio. */
-  const syncAreaNode = (item) => {
-    const g = svgEl.querySelector(`.item-g[data-id="${item.id}"]`);
-    if (!g) return;
-    const rect = g.querySelector("rect.area");
-    rect.setAttribute("x", item.x);
-    rect.setAttribute("y", item.y);
-    rect.setAttribute("width", item.w);
-    rect.setAttribute("height", item.h);
-    const text = g.querySelector("text");
-    text.setAttribute("x", item.x + item.w / 2);
-    text.setAttribute("y", item.y + 0.7);
-    const handle = g.querySelector(".resize-handle");
-    if (handle) {
-      handle.setAttribute("cx", item.x + item.w);
-      handle.setAttribute("cy", item.y + item.h);
-    }
-  };
-
   svgEl.addEventListener("pointermove", (ev) => {
     if (!drag) return;
     const p = svgPoint(svgEl, ev);
-    if (drag.type === "move") {
+    if (drag.type === "rotate") {
+      drag.deg = Math.round(
+        ((Math.atan2(p.x - drag.cx, -(p.y - drag.cy)) * 180) / Math.PI + 360) % 360
+      );
+      syncCompass(drag.deg);
+    } else if (drag.type === "move") {
       drag.moved = true;
       drag.item.x = clamp(p.x + drag.dx, layout.width_m);
       drag.item.y = clamp(p.y + drag.dy, layout.height_m);
@@ -236,7 +298,10 @@ export function bind(app, root) {
     if (!drag) return;
     const d = drag;
     drag = null;
-    if (d.type === "move" || d.type === "resize") {
+    if (d.type === "rotate") {
+      layout.north_deg = d.deg;
+      saveLayout(app);
+    } else if (d.type === "move" || d.type === "resize") {
       if (d.moved) saveLayout(app);
       else {
         s.selected = s.selected === d.item.id ? null : d.item.id;
@@ -316,12 +381,103 @@ function viewItem(app, itemId) {
   );
 }
 
+/* Dialog lokalizacji: mini-mapa satelitarna, celownik = środek ogrodu. */
+function locationDialog(app) {
+  const layout = app.data.layout;
+  const start = layout.location || {
+    latitude: app.hass.config.latitude || 52.2,
+    longitude: app.hass.config.longitude || 21.0,
+    zoom: 18,
+  };
+  let lat = start.latitude;
+  let lon = start.longitude;
+  let z = Math.max(3, Math.min(MAX_Z, start.zoom || 18));
+  const dlg = app.dialog(
+    `<h2>${t("editor.location")}</h2>
+    <div id="map-view">
+      <div id="map-tiles"></div>
+      <ha-icon class="map-cross" icon="mdi:crosshairs"></ha-icon>
+      <div class="map-zoom">
+        <button type="button" id="map-zin"><ha-icon icon="mdi:plus"></ha-icon></button>
+        <button type="button" id="map-zout"><ha-icon icon="mdi:minus"></ha-icon></button>
+      </div>
+      <div class="sat-attr">${ATTRIBUTION}</div>
+    </div>
+    <p id="map-coords" style="font-size:12px;color:var(--secondary-text-color);margin:8px 0 0"></p>
+    <p class="editor-hint" style="margin:4px 0 0">${t("editor.location.hint")}</p>
+    <div class="dialog-actions">
+      <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
+      <button type="button" class="btn" id="map-save">${t("save")}</button>
+    </div>`,
+    () => {},
+    { wide: true }
+  );
+  const view = dlg.querySelector("#map-view");
+  const tiles = dlg.querySelector("#map-tiles");
+  const paint = () => {
+    const w = view.clientWidth;
+    const h = view.clientHeight;
+    if (!w) return;
+    tiles.style.transform = "";
+    tiles.innerHTML = gridHtml(lat, lon, z, w, h);
+    dlg.querySelector("#map-coords").textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)} · zoom ${z}`;
+  };
+  requestAnimationFrame(paint);
+  let pan = null;
+  view.addEventListener("pointerdown", (ev) => {
+    if (ev.target.closest("button")) return;
+    pan = { x: ev.clientX, y: ev.clientY, dx: 0, dy: 0 };
+    view.setPointerCapture(ev.pointerId);
+  });
+  view.addEventListener("pointermove", (ev) => {
+    if (!pan) return;
+    pan.dx = ev.clientX - pan.x;
+    pan.dy = ev.clientY - pan.y;
+    tiles.style.transform = `translate(${pan.dx}px, ${pan.dy}px)`;
+  });
+  view.addEventListener("pointerup", () => {
+    if (!pan) return;
+    lon = xToLon(lonToX(lon, z) - pan.dx, z);
+    lat = yToLat(latToY(lat, z) - pan.dy, z);
+    pan = null;
+    paint();
+  });
+  const setZoom = (nz) => {
+    nz = Math.max(3, Math.min(MAX_Z, nz));
+    if (nz !== z) {
+      z = nz;
+      paint();
+    }
+  };
+  view.addEventListener("wheel", (ev) => {
+    ev.preventDefault();
+    setZoom(z + (ev.deltaY < 0 ? 1 : -1));
+  }, { passive: false });
+  dlg.querySelector("#map-zin").addEventListener("click", () => setZoom(z + 1));
+  dlg.querySelector("#map-zout").addEventListener("click", () => setZoom(z - 1));
+  dlg.querySelector("#map-save").addEventListener("click", () => {
+    layout.location = {
+      latitude: +lat.toFixed(6),
+      longitude: +lon.toFixed(6),
+      zoom: z,
+    };
+    st(app).sat = true;
+    dlg.close();
+    saveLayout(app);
+  });
+}
+
 export const actions = {
   "editor-mode": (app, el) => {
     st(app).mode = el.dataset.mode;
     st(app).selected = null;
     app.render();
   },
+  "editor-sat": (app) => {
+    st(app).sat = !st(app).sat;
+    app.render();
+  },
+  "editor-location": (app) => locationDialog(app),
   "editor-delete": (app) => {
     const s = st(app);
     if (!confirm(t("editor.item.delete.confirm"))) return;
@@ -373,10 +529,6 @@ export const actions = {
         <input name="w" type="number" min="2" max="500" value="${layout.width_m}">
         <label>${t("editor.height")}</label>
         <input name="h" type="number" min="2" max="500" value="${layout.height_m}">
-        <label>${t("editor.north")}</label>
-        <input name="north" type="range" min="0" max="359" value="${layout.north_deg || 0}"
-          oninput="this.nextElementSibling.textContent = this.value + '°'">
-        <b>${layout.north_deg || 0}°</b>
         <div class="dialog-actions">
           <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
           <button type="submit" class="btn">${t("save")}</button>
@@ -385,7 +537,6 @@ export const actions = {
       (fd) => {
         layout.width_m = parseFloat(fd.get("w")) || layout.width_m;
         layout.height_m = parseFloat(fd.get("h")) || layout.height_m;
-        layout.north_deg = parseInt(fd.get("north"), 10) || 0;
         saveLayout(app);
       }
     );

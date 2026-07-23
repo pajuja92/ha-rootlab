@@ -1,4 +1,4 @@
-"""Config flow — jedna instancja; opcje: pogoda, AI (wielu dostawców), lokalizacja ogrodu."""
+"""Config flow — jedna instancja; opcje: pogoda i AI (lokalizacja ogrodu jest w Edytorze)."""
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigFlow, OptionsFlow
@@ -10,7 +10,7 @@ from .const import DOMAIN
 # dostawcy, dla ktorych klucz da sie zweryfikowac lista modeli
 _KEY_PROVIDERS = {
     "anthropic", "openai", "google", "groq", "mistral", "deepseek",
-    "xai", "openrouter", "together", "perplexity",
+    "xai", "openrouter", "together",
 }
 
 AI_PROVIDERS = [
@@ -132,19 +132,11 @@ class RootlabOptionsFlow(OptionsFlow):
                 vol.Optional("ai_task_entity"): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="ai_task")
                 ),
-                vol.Optional("location"): selector.LocationSelector(),
             }
         )
         defaults = {
             "imgw_station": options.get("imgw_station", "warszawa"),
             "ai_provider": options.get("ai_provider", "anthropic"),
-            "location": options.get(
-                "location",
-                {
-                    "latitude": self.hass.config.latitude,
-                    "longitude": self.hass.config.longitude,
-                },
-            ),
         }
         for key in ("weather_entity", "api_key", "ai_model", "ai_base_url", "ai_task_entity"):
             if options.get(key):

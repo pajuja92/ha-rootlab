@@ -29,7 +29,8 @@ def _public(hass):
     d = hass.data[DOMAIN]
     data = d["data"]
     options = d["entry"].options
-    location = options.get("location") or {}
+    # lokalizacja ogrodu jest definiowana w Edytorze (layout), nie w opcjach
+    location = data["layout"].get("location") or {}
     return {
         **data,
         "plants": [
