@@ -1,12 +1,18 @@
 {
   "domain": "rootlab",
   "name": "RootLab",
-  "codeowners": ["@pajuja92"],
+  "codeowners": [
+    "@pajuja92"
+  ],
   "config_flow": true,
-  "dependencies": ["http"],
+  "dependencies": [
+    "http"
+  ],
   "documentation": "https://github.com/pajuja92/ha-rootlab",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/pajuja92/ha-rootlab/issues",
-  "requirements": ["anthropic>=0.69.0"],
-  "version": "0.3.0"
+  "requirements": [
+    "anthropic>=0.69.0"
+  ],
+  "version": "0.3.1-beta.1"
 }
