@@ -46,7 +46,7 @@ TASKS_SCHEMA = {
                         "type": ["string", "null"],
                         "description": "id rośliny z danych albo null dla zadań ogólnych",
                     },
-                    "category": {"type": "string", "enum": ["maintenance", "protection"]},
+                    "category": {"type": "string", "enum": ["maintenance", "protection", "crisis"]},
                     "title": {"type": "string"},
                     "details": {"type": "string"},
                     "due": {"type": "string", "description": "termin YYYY-MM-DD"},
@@ -342,15 +342,16 @@ def _garden_context(hass, plant_ids=None):
     }
 
 
-async def async_generate_tasks(hass, categories=None, plant_ids=None, include_general=True):
+async def async_generate_tasks(hass, categories=None, plant_ids=None, include_general=True, extra_prompt=None):
     """Generuje zadania AI dla zakresu — zwraca listę, NICZEGO nie zapisuje."""
-    cats = [c for c in (categories or []) if c in ("maintenance", "protection")] or [
+    cats = [c for c in (categories or []) if c in ("maintenance", "protection", "crisis")] or [
         "maintenance",
         "protection",
     ]
     cat_desc = {
         "maintenance": "maintenance (przycinanie, pielenie, nawożenie, podlewanie ręczne)",
         "protection": "protection (opryski, ochrona przed przymrozkami i szkodnikami)",
+        "crisis": "crisis (pilne interwencje — TYLKO gdy odczyty czujników lub pogoda wskazują realny problem)",
     }
     context = _garden_context(hass, plant_ids)
     weather = await hass.data[DOMAIN]["weather"].fetch(
@@ -364,7 +365,9 @@ async def async_generate_tasks(hass, categories=None, plant_ids=None, include_ge
         "Dozwolone kategorie: " + "; ".join(cat_desc[c] for c in cats) + ". "
         + ("" if include_general else "Każde zadanie musi dotyczyć konkretnej rośliny z danych (plant_id nie może być null). ")
         + "Uwzględnij porę roku, odczyty czujników, warunki (szklarnia) i pogodę. "
-        "Maks. 3 zadania na roślinę, tylko naprawdę potrzebne. Dane ogrodu:\n"
+        "Maks. 3 zadania na roślinę, tylko naprawdę potrzebne. "
+        + (f"Dodatkowe wytyczne od użytkownika (traktuj priorytetowo): {extra_prompt}. " if extra_prompt else "")
+        + "Dane ogrodu:\n"
         + json.dumps(context, ensure_ascii=False),
         schema=TASKS_SCHEMA,
     )

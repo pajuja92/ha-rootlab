@@ -210,7 +210,12 @@ function renderDetail(app, area) {
 }
 
 async function saveLayout(app, msg = null) {
-  app.data = await app.ws("layout/save", { layout: app.data.layout });
+  try {
+    app.data = await app.ws("layout/save", { layout: app.data.layout });
+  } catch (e) {
+    app.toast(`⚠ ${e.message || e}`, true);
+    return;
+  }
   app.render();
   if (msg) app.toast(msg);
 }

@@ -295,6 +295,7 @@ def _ai_error(connection, msg_id, err):
         vol.Optional("categories", default=None): vol.Any(None, [str]),
         vol.Optional("plant_ids", default=None): vol.Any(None, [str]),
         vol.Optional("include_general", default=True): bool,
+        vol.Optional("extra_prompt", default=None): vol.Any(None, str),
     }
 )
 @websocket_api.async_response
@@ -302,7 +303,8 @@ async def ws_tasks_generate(hass, connection, msg):
     """Podgląd generowania: zwraca propozycje i zadania do zastąpienia, NIE zapisuje."""
     try:
         fresh = await ai.async_generate_tasks(
-            hass, msg["categories"], msg["plant_ids"], msg["include_general"]
+            hass, msg["categories"], msg["plant_ids"], msg["include_general"],
+            msg["extra_prompt"],
         )
     except Exception as err:  # noqa: BLE001
         _ai_error(connection, msg["id"], err)

@@ -383,6 +383,11 @@ function generateDialog(app) {
       <div class="day-picker">
         <label><input type="checkbox" name="cat_maintenance" checked>${t("tasks.cat.maintenance")}</label>
         <label><input type="checkbox" name="cat_protection" checked>${t("tasks.cat.protection")}</label>
+        <label><input type="checkbox" name="cat_crisis">${t("tasks.cat.crisis")}</label>
+      </div>
+      <label>${t("gen.prompt")}</label>
+      <div class="mic-wrap">
+        <textarea id="gen-prompt" placeholder="${t("gen.prompt.ph")}" style="width:100%;box-sizing:border-box;padding:10px 40px 10px 12px;border:1px solid var(--divider-color);border-radius:8px;background:var(--primary-background-color);color:var(--primary-text-color);font:inherit;min-height:52px"></textarea>
       </div>
       <label>${t("gen.scope")}</label>
       ${scopeHtml || `<p style="font-size:13px;color:var(--secondary-text-color)">${t("plants.empty.nozones")}</p>`}
@@ -397,6 +402,8 @@ function generateDialog(app) {
     () => {},
     { wide: true }
   );
+
+  import("../stt.js").then((stt) => stt.attachMic(app, dlg.querySelector("#gen-prompt")));
 
   // strefa ↔ rośliny: checkbox strefy przełącza dzieci; dziecko aktualizuje strefę
   dlg.querySelectorAll("[data-zone]").forEach((zc) =>
@@ -419,7 +426,7 @@ function generateDialog(app) {
   };
 
   dlg.querySelector("#gen-run").addEventListener("click", async () => {
-    const cats = ["maintenance", "protection"].filter((c) => dlg.querySelector(`[name="cat_${c}"]`).checked);
+    const cats = ["maintenance", "protection", "crisis"].filter((c) => dlg.querySelector(`[name="cat_${c}"]`).checked);
     const checked = [...dlg.querySelectorAll('[name^="pl_"]')].filter((x) => x.checked).map((x) => x.name.slice(3));
     const scopeAll = checked.length === app.data.plants.length;
     const includeGeneral = dlg.querySelector('[name="inc_general"]').checked;
@@ -432,6 +439,7 @@ function generateDialog(app) {
         categories: cats.length ? cats : null,
         plant_ids: scopeAll ? null : checked,
         include_general: includeGeneral,
+        extra_prompt: dlg.querySelector("#gen-prompt").value.trim() || null,
       });
     } catch (e) {
       preview = null;

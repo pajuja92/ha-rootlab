@@ -112,18 +112,28 @@ class RootlabPanel extends HTMLElement {
 
   async saveItem(kind, item) {
     const isNew = !item.id;
-    this.data = await this.ws("item/save", { kind, item });
+    try {
+      this.data = await this.ws("item/save", { kind, item });
+    } catch (e) {
+      this.toast(`⚠ ${e.message || e.code || e}`, true);
+      return;
+    }
     this.render();
     this.toast(t(isNew ? "toast.added" : "toast.saved"));
   }
   async deleteItem(kind, item_id) {
-    this.data = await this.ws("item/delete", { kind, item_id });
+    try {
+      this.data = await this.ws("item/delete", { kind, item_id });
+    } catch (e) {
+      this.toast(`⚠ ${e.message || e.code || e}`, true);
+      return;
+    }
     this.render();
     this.toast(t("toast.deleted"));
   }
 
   /* Snackbar-potwierdzenie akcji (dodanie/zapis/usunięcie). */
-  toast(msg) {
+  toast(msg, isError = false) {
     let el = this.shadowRoot.getElementById("toast");
     if (!el) {
       el = document.createElement("div");
@@ -131,9 +141,10 @@ class RootlabPanel extends HTMLElement {
       this.shadowRoot.append(el);
     }
     el.textContent = msg;
+    el.classList.toggle("error", isError);
     el.classList.add("show");
     clearTimeout(this._toastTimer);
-    this._toastTimer = setTimeout(() => el.classList.remove("show"), 2400);
+    this._toastTimer = setTimeout(() => el.classList.remove("show"), isError ? 6000 : 2400);
   }
   async reload() {
     if (this._dialogOpen()) {
