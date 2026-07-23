@@ -483,5 +483,6 @@ function generateDialog(app) {
     app.data = await app.ws("tasks/apply", { add, remove_ids: removeIds });
     dlg.close();
     app.render();
+    app.toast(t("toast.applied"));
   });
 }

@@ -310,6 +310,14 @@ dialog.wide { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 64
   cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
 .compass .needle, .compass circle { cursor: grab; }
+#toast {
+  position: fixed; bottom: 28px; left: 50%; transform: translate(-50%, 12px);
+  background: var(--card-background-color); border: 1px solid var(--rl-green);
+  color: var(--primary-text-color); padding: 10px 20px; border-radius: 999px;
+  font-size: 14px; opacity: 0; transition: opacity .25s, transform .25s;
+  z-index: 60; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+}
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
 /* Modal generowania zadań */
 .gen-zone { margin: 6px 0; }
 .gen-zone-head { display: flex; gap: 8px; align-items: center; margin: 0; font-size: 14px; }

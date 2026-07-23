@@ -27,7 +27,7 @@ export function render(app) {
   return (
     toolbar +
     groups
-      .filter((g) => g.plants.length)
+      .filter((g) => g.plants.length || g.zone.id) // puste strefy też widoczne (edycja tylko tutaj)
       .map(
         (g) => `
       <div class="section-title"><span class="emoji">${esc(g.zone.emoji || "🪴")}</span>${esc(g.zone.name)}
@@ -38,9 +38,62 @@ export function render(app) {
             : ""
         }
       </div>
-      <div class="grid">${g.plants.map((p) => plantCard(app, p)).join("")}</div>`
+      ${
+        g.plants.length
+          ? `<div class="grid">${g.plants.map((p) => plantCard(app, p)).join("")}</div>`
+          : `<div class="card" style="color:var(--secondary-text-color);font-size:14px">${t("plants.zone.empty")}</div>`
+      }`
       )
       .join("")
+  );
+}
+
+/* Karta strefy (podgląd bez edycji): statystyki, rośliny, zadania. */
+export function openZoneCard(app, zoneId) {
+  const zone = app.data.zones.find((z) => z.id === zoneId);
+  if (!zone) return;
+  const zonePlants = app.data.plants.filter((p) => p.zone_id === zone.id);
+  const plantIds = new Set(zonePlants.map((p) => p.id));
+  const zoneTasks = (app.data.tasks || []).filter(
+    (task) => !task.done && task.plant_id && plantIds.has(task.plant_id)
+  );
+  const plantRows = zonePlants
+    .map((p) => {
+      const sensors = SENSOR_FIELDS.filter((f) => p.sensors?.[f.key])
+        .map((f) => {
+          const st = sensorState(app.hass, p.sensors[f.key]);
+          return `<span class="sensor-chip ${st.unavailable ? "unavailable" : ""}" style="padding:2px 8px;font-size:12px"><ha-icon icon="${f.icon}" style="--mdc-icon-size:14px"></ha-icon>${esc(st.text)}</span>`;
+        })
+        .join(" ");
+      return `<div class="note-row"><span>${esc(p.emoji || "🌱")}</span>
+        <span class="txt"><b>${esc(p.name)}</b>${p.species ? ` <small style="color:var(--secondary-text-color)">${esc(p.species)}</small>` : ""}<br>${sensors}</span>
+        <button class="btn small ghost" data-action="plant-card" data-id="${p.id}">${t("plant.details")}</button></div>`;
+    })
+    .join("");
+  app.dialog(
+    `<h2><span class="emoji">${esc(zone.emoji || "🪴")}</span> ${esc(zone.name)}</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <span class="chip">${zonePlants.length} ${zonePlants.length === 1 ? t("zone.plants.one") : t("zone.plants.many")}</span>
+      <span class="chip ${zoneTasks.length ? "harvest" : ""}">${zoneTasks.length} ⏳</span>
+    </div>
+    <div class="section-title">${t("zonecard.plants")}</div>
+    ${plantRows || `<p style="font-size:14px;color:var(--secondary-text-color)">${t("zonecard.empty")}</p>`}
+    <div class="section-title">${t("zonecard.tasks")}</div>
+    ${
+      zoneTasks.length
+        ? zoneTasks
+            .map(
+              (task) => `<div class="task-row">
+                <input type="checkbox" data-action="task-done" data-id="${task.id}">
+                <div class="body"><div class="title">${esc(task.title)}</div></div>
+              </div>`
+            )
+            .join("")
+        : `<p style="font-size:14px;color:var(--secondary-text-color)">${t("zonecard.notasks")}</p>`
+    }
+    <div class="dialog-actions"><button type="button" class="btn plain" data-cancel>${t("close")}</button></div>`,
+    () => {},
+    { wide: true }
   );
 }
 
@@ -309,6 +362,7 @@ export const actions = {
     if (confirm(t("plant.delete.confirm", { name: plant.name }))) app.deleteItem("plants", plant.id);
   },
   "plant-card": (app, el) => openPlantCard(app, el.dataset.id),
+  "zone-card": (app, el) => openZoneCard(app, el.dataset.id),
   "more-info": (app, el) => {
     app.fire("hass-more-info", { entityId: el.dataset.entity });
   },
