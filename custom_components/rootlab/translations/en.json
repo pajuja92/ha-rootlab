@@ -26,9 +26,18 @@
         },
         "data_description": {
           "ai_task_entity": "Use any AI integration configured in HA (Google, OpenAI, Anthropic, Ollama…) — with account login handled by that integration.",
-          "api_key": "Required for direct-API providers. Not needed for \"HA AI Task\" or Ollama."
+          "api_key": "API key of the selected provider. Verified against the provider on save; not needed for \"HA AI Task\" and Ollama.",
+          "imgw_station": "IMGW measurement station for current temperature and rainfall (e.g. warszawa, krakow, gdansk).",
+          "weather_entity": "A weather.* entity from your HA — source of hourly and daily forecasts (e.g. frost warnings).",
+          "ai_provider": "AI service used for tasks, diagnoses and advice. \"HA AI Task\" uses an AI integration already configured in Home Assistant — no separate key.",
+          "ai_model": "Which of the provider's models should answer. Empty = a known-good default (e.g. gemini-3.5-flash for Google). Once a valid key is saved, this becomes a dropdown of models fetched from your account — a custom name can still be typed.",
+          "ai_base_url": "Only for Ollama (server address, e.g. http://192.168.1.10:11434/v1) or a custom OpenAI-compatible endpoint. Leave empty otherwise.",
+          "location": "Garden coordinates — used for insolation calculations and climate context for the AI."
         }
       }
+    },
+    "error": {
+      "invalid_auth": "Could not verify the key with the provider: {error_detail}"
     }
   },
   "selector": {

@@ -13,7 +13,8 @@ from .logic import merge_ai_tasks
 # Dostawcy z API zgodnym z OpenAI (chat/completions) — jeden klient, różne base_url.
 OPENAI_COMPAT = {
     "openai": ("https://api.openai.com/v1", "gpt-4o"),
-    "google": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash"),
+    # gemini-2.5-flash wyłączony dla nowych kont 2026-07-09 (404)
+    "google": ("https://generativelanguage.googleapis.com/v1beta/openai", "gemini-3.5-flash"),
     "groq": ("https://api.groq.com/openai/v1", "llama-3.3-70b-versatile"),
     "mistral": ("https://api.mistral.ai/v1", "mistral-large-latest"),
     "deepseek": ("https://api.deepseek.com/v1", "deepseek-chat"),
@@ -85,6 +86,39 @@ DIAGNOSIS_SCHEMA = {
 
 class NoApiKeyError(Exception):
     """Brak konfiguracji AI w opcjach integracji."""
+
+
+async def async_list_models(hass, provider, api_key=None, base_url=None):
+    """Lista modeli dostawcy (walidacja klucza + select w opcjach).
+
+    Rzuca RuntimeError przy błędnym kluczu / nieosiągalnym API.
+    """
+    session = async_get_clientsession(hass)
+    timeout = aiohttp.ClientTimeout(total=15)
+    if provider == "anthropic":
+        headers = {"x-api-key": api_key or "", "anthropic-version": "2023-06-01"}
+        async with session.get(
+            "https://api.anthropic.com/v1/models?limit=100",
+            headers=headers, timeout=timeout,
+        ) as resp:
+            if resp.status >= 400:
+                raise RuntimeError(f"HTTP {resp.status} — {(await resp.text())[:200]}")
+            data = await resp.json()
+        return sorted(m["id"] for m in data.get("data", []) if m.get("id"))
+    default_base, _ = OPENAI_COMPAT.get(provider, ("", ""))
+    base = (base_url or default_base).rstrip("/")
+    if not base:
+        raise RuntimeError("brak adresu API")
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    async with session.get(
+        f"{base}/models", headers=headers, timeout=timeout
+    ) as resp:
+        if resp.status >= 400:
+            raise RuntimeError(f"HTTP {resp.status} — {(await resp.text())[:200]}")
+        data = await resp.json()
+    ids = [m.get("id") for m in data.get("data", []) if m.get("id")]
+    # Google zwraca "models/gemini-x" — chat/completions przyjmuje sama nazwe
+    return sorted(i.split("/", 1)[1] if i.startswith("models/") else i for i in ids)
 
 
 def _options(hass):
