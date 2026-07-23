@@ -111,12 +111,29 @@ class RootlabPanel extends HTMLElement {
   }
 
   async saveItem(kind, item) {
+    const isNew = !item.id;
     this.data = await this.ws("item/save", { kind, item });
     this.render();
+    this.toast(t(isNew ? "toast.added" : "toast.saved"));
   }
   async deleteItem(kind, item_id) {
     this.data = await this.ws("item/delete", { kind, item_id });
     this.render();
+    this.toast(t("toast.deleted"));
+  }
+
+  /* Snackbar-potwierdzenie akcji (dodanie/zapis/usunięcie). */
+  toast(msg) {
+    let el = this.shadowRoot.getElementById("toast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "toast";
+      this.shadowRoot.append(el);
+    }
+    el.textContent = msg;
+    el.classList.add("show");
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => el.classList.remove("show"), 2400);
   }
   async reload() {
     if (this._dialogOpen()) {

@@ -38,25 +38,25 @@ function alerts(app) {
 }
 
 function zonesSection(app) {
-  const { zones, plants } = app.data;
+  const { zones, plants, tasks } = app.data;
+  // Pulpit: tylko niepuste strefy, bez edycji — klik otwiera kartę strefy (statystyki/zadania)
+  const nonEmpty = zones.filter((z) => plants.some((p) => p.zone_id === z.id));
+  if (!nonEmpty.length) return "";
   return `
-    <div class="section-title"><ha-icon icon="mdi:map-outline"></ha-icon>${t("zones.title")}
-      <button class="icon-btn" data-action="add-zone" title="${t("zones.add")}"><ha-icon icon="mdi:plus"></ha-icon></button>
-    </div>
+    <div class="section-title"><ha-icon icon="mdi:map-outline"></ha-icon>${t("zones.title")}</div>
     <div class="grid">
-      ${zones
+      ${nonEmpty
         .map((z) => {
-          const count = plants.filter((p) => p.zone_id === z.id).length;
-          return `<div class="card">
-            <div class="header"><span class="emoji">${esc(z.emoji || "🪴")}</span><h3>${esc(z.name)}</h3>
-              <button class="icon-btn" data-action="edit-zone" data-id="${z.id}" title="${t("edit")}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
-            </div>
-            <div class="zone-stat"><span class="num">${count}</span><span class="lbl">${count === 1 ? t("zone.plants.one") : t("zone.plants.many")}</span></div>
+          const zonePlants = plants.filter((p) => p.zone_id === z.id);
+          const ids = new Set(zonePlants.map((p) => p.id));
+          const open = (tasks || []).filter((task) => !task.done && ids.has(task.plant_id)).length;
+          return `<div class="card" data-action="zone-card" data-id="${z.id}" style="cursor:pointer">
+            <div class="header"><span class="emoji">${esc(z.emoji || "🪴")}</span><h3>${esc(z.name)}</h3></div>
+            <div class="zone-stat"><span class="num">${zonePlants.length}</span><span class="lbl">${zonePlants.length === 1 ? t("zone.plants.one") : t("zone.plants.many")}</span>
+              ${open ? `<span class="chip harvest" style="margin-left:auto">${open} ⏳</span>` : ""}</div>
           </div>`;
         })
         .join("")}
-      <button class="card btn ghost" data-action="add-zone" style="min-height:90px;border-radius:var(--rl-radius);display:flex;align-items:center;justify-content:center;gap:8px">
-        <ha-icon icon="mdi:plus"></ha-icon>${t("zones.add")}</button>
     </div>`;
 }
 

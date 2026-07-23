@@ -142,6 +142,9 @@ async def ws_delete_item(hass, connection, msg):
         for plant in data["plants"]:
             if plant.get("zone_id") == item_id:
                 plant["zone_id"] = None
+        for area in data["layout"]["items"]:
+            if area.get("zone_id") == item_id:
+                area["zone_id"] = None
     if kind == "plants":
         data["layout"]["items"] = [
             i for i in data["layout"]["items"] if i.get("plant_id") != item_id
