@@ -1,6 +1,6 @@
 import { t } from "../i18n.js";
 import { combo, esc, uid } from "../util.js";
-import { insideRect, isShaded, northVector, shadowEllipse, shadowLength } from "../shade.js";
+import { crownBase, insideRect, isShaded, northVector, shadowCapsule, solarPosition } from "../shade.js";
 import { ATTRIBUTION, MAX_Z, gridHtml, latToY, lonToX, metersPerPixel, xToLon, yToLat } from "../satmap.js";
 import { openPlantCard, openZoneCard } from "./plants.js";
 
@@ -8,10 +8,10 @@ export const ENABLED = true;
 
 const AREA_KINDS = ["greenhouse", "bed", "lawn"];
 const CIRCLE_DEFAULTS = {
-  plant: { diameter_m: 0.5, height_m: 0.6 },
-  tree: { diameter_m: 3, height_m: 5 },
-  shrub: { diameter_m: 1, height_m: 1.2 },
-  object: { diameter_m: 2, height_m: 2.5 },
+  plant: { diameter_m: 0.5, height_m: 0.6, crown_base_m: 0 },
+  tree: { diameter_m: 3, height_m: 5, crown_base_m: 2 },
+  shrub: { diameter_m: 1, height_m: 1.2, crown_base_m: 0.2 },
+  object: { diameter_m: 2, height_m: 2.5, crown_base_m: 0 },
 };
 const KIND_FILL = {
   plant: "var(--rl-green)",
@@ -26,6 +26,7 @@ const st = (app) =>
     palette: "greenhouse",
     detailPalette: "",
     month: new Date().getMonth() + 1,
+    hour: 12,
     mode: "view", // domyślnie podgląd
     sat: true,
     zoneDetail: null, // id obszaru otwartego w widoku szczegółowym
@@ -33,6 +34,16 @@ const st = (app) =>
 
 const gardenLat = (app) =>
   app.data.layout.location?.latitude || app.hass.config.latitude || 52;
+const gardenLon = (app) =>
+  app.data.layout.location?.longitude || app.hass.config.longitude || 21;
+
+/* Pozycja Słońca dla suwaków miesiąc+godzina (15. dzień miesiąca, czas lokalny). */
+function sunFor(app) {
+  const s = st(app);
+  const now = new Date();
+  const date = new Date(now.getFullYear(), s.month - 1, 15, s.hour, 0, 0);
+  return solarPosition(gardenLat(app), gardenLon(app), date);
+}
 const isArea = (i) => "w" in i;
 
 export function render(app) {
@@ -57,9 +68,12 @@ export function render(app) {
             </select>`
           : ""
       }
-      <span class="month-slider"><ha-icon icon="mdi:weather-sunny" style="--mdc-icon-size:18px;color:var(--rl-harvest)"></ha-icon>
+      <span class="month-slider">
         <input type="range" min="1" max="12" value="${s.month}" data-bind="month">
-        <b id="month-label">${t("months")[s.month - 1]}</b></span>
+        <b id="month-label">${t("months")[s.month - 1]}</b>
+        <input type="range" min="0" max="23" value="${s.hour}" data-bind="hour" style="width:90px">
+        <b id="hour-label">${String(s.hour).padStart(2, "0")}:00</b>
+        <b id="sun-label">${sunLabel(app)}</b></span>
       <div class="spacer"></div>
       <button class="btn small ${satActive ? "" : "plain"}" data-action="editor-sat" title="${t("editor.sat")}"
         ${layout.location ? "" : "disabled"}><ha-icon icon="mdi:satellite-variant"></ha-icon></button>
@@ -75,10 +89,14 @@ export function render(app) {
     <div class="editor-hint">${s.mode === "edit" ? t("editor.hint.edit") : t("editor.hint.view")} · ${t("editor.greenhouse.info")}</div>`;
 }
 
-function circleNode(app, i, circles, north, latitude) {
-  const s = st(app);
+function sunLabel(app) {
+  const sun = sunFor(app);
+  return sun.elevation > 0 ? `☀ ${Math.round(sun.elevation)}°` : "🌙";
+}
+
+function circleNode(app, i, caps) {
   const greenhouses = app.data.layout.items.filter((a) => isArea(a) && a.kind === "greenhouse");
-  const shaded = circles.some((c) => isShaded(i, c, shadowLength(c.height_m, latitude, s.month), north));
+  const shaded = caps.some(({ c, cap }) => isShaded(i, c, cap));
   const inGh = i.kind === "plant" && greenhouses.some((g) => insideRect(i, g));
   const r = Math.max(i.diameter_m / 2, 0.25);
   return `<g class="item" data-id="${i.id}" transform="translate(${i.x} ${i.y})">
@@ -90,8 +108,9 @@ function circleNode(app, i, circles, north, latitude) {
 function svg(app, satActive) {
   const s = st(app);
   const { width_m: W, height_m: H, north_deg: north = 0, items } = app.data.layout;
-  const latitude = gardenLat(app);
+  const sun = sunFor(app);
   const circles = items.filter((i) => !isArea(i));
+  const caps = circles.map((c) => ({ c, cap: shadowCapsule(c, sun, north) }));
   const areas = items.filter(isArea);
 
   const areaNodes = areas
@@ -108,15 +127,15 @@ function svg(app, satActive) {
     )
     .join("");
 
-  const shadows = circles
-    .filter((i) => i.height_m > 0.3)
-    .map((i) => {
-      const e = shadowEllipse(i, shadowLength(i.height_m, latitude, s.month), north);
-      return `<ellipse class="shadow" cx="${e.cx}" cy="${e.cy}" rx="${e.rx}" ry="${e.ry}" transform="rotate(${e.rot} ${i.x} ${i.y})"/>`;
-    })
+  const shadows = caps
+    .filter(({ cap }) => cap)
+    .map(
+      ({ cap }) =>
+        `<line class="shadow-line" x1="${cap.ax}" y1="${cap.ay}" x2="${cap.bx}" y2="${cap.by}" stroke-width="${2 * cap.r}"/>`
+    )
     .join("");
 
-  const nodes = circles.map((i) => circleNode(app, i, circles, north, latitude)).join("");
+  const nodes = circles.map((i) => circleNode(app, i, caps)).join("");
 
   const n = northVector(north);
   const compass = `<g class="compass" transform="translate(${W - 1.6} 1.6)">
@@ -149,15 +168,16 @@ function renderDetail(app, area) {
     .join("");
   const pad = Math.max(1, Math.min(area.w, area.h) * 0.1);
   const north = layout.north_deg || 0;
-  const latitude = gardenLat(app);
+  const sun = sunFor(app);
   const circles = layout.items.filter((i) => !isArea(i));
+  const caps = circles.map((c) => ({ c, cap: shadowCapsule(c, sun, north) }));
   const inside = circles.filter((i) => insideRect(i, area));
-  const shadows = circles
-    .filter((i) => i.height_m > 0.3)
-    .map((i) => {
-      const e = shadowEllipse(i, shadowLength(i.height_m, latitude, s.month), north);
-      return `<ellipse class="shadow" cx="${e.cx}" cy="${e.cy}" rx="${e.rx}" ry="${e.ry}" transform="rotate(${e.rot} ${i.x} ${i.y})"/>`;
-    })
+  const shadows = caps
+    .filter(({ cap }) => cap)
+    .map(
+      ({ cap }) =>
+        `<line class="shadow-line" x1="${cap.ax}" y1="${cap.ay}" x2="${cap.bx}" y2="${cap.by}" stroke-width="${2 * cap.r}"/>`
+    )
     .join("");
   return `
     <div class="toolbar">
@@ -183,7 +203,7 @@ function renderDetail(app, area) {
         <rect x="${area.x - pad}" y="${area.y - pad}" width="${area.w + 2 * pad}" height="${area.h + 2 * pad}" fill="url(#rl-grid2)"/>
         <rect class="area ${area.kind}" x="${area.x}" y="${area.y}" width="${area.w}" height="${area.h}" rx="0.2"/>
         ${shadows}
-        ${inside.map((i) => circleNode(app, i, circles, north, latitude)).join("")}
+        ${inside.map((i) => circleNode(app, i, caps)).join("")}
       </svg>
     </div>
     <div class="editor-hint">${t("editor.detail.hint")}</div>`;
@@ -238,6 +258,14 @@ export function bind(app, root) {
   });
   slider?.addEventListener("change", (ev) => {
     s.month = parseInt(ev.target.value, 10);
+    app.render();
+  });
+  const hourSlider = root.querySelector('[data-bind="hour"]');
+  hourSlider?.addEventListener("input", (ev) => {
+    root.getElementById("hour-label").textContent = `${String(ev.target.value).padStart(2, "0")}:00`;
+  });
+  hourSlider?.addEventListener("change", (ev) => {
+    s.hour = parseInt(ev.target.value, 10);
     app.render();
   });
 
@@ -533,6 +561,7 @@ function circleDialog(app, item) {
       <input name="label" required maxlength="40" value="${esc(item.label)}" autofocus>
       <label>${t("editor.diameter")}</label><input name="diameter" type="number" step="0.1" min="0.1" max="30" value="${item.diameter_m}">
       <label>${t("editor.heightm")}</label><input name="height" type="number" step="0.1" min="0" max="40" value="${item.height_m}">
+      <label>${t("editor.crownbase")}</label><input name="crownbase" type="number" step="0.1" min="0" max="40" value="${crownBase(item)}">
       <div class="dialog-actions">
         <button type="button" class="btn plain" id="circle-del" style="margin-right:auto;color:var(--rl-crisis)">${t("delete")}</button>
         ${item.plant_id ? `<button type="button" class="btn ghost" data-action="plant-card" data-id="${item.plant_id}">${t("plant.details")}</button>` : ""}
@@ -544,6 +573,7 @@ function circleDialog(app, item) {
       item.label = fd.get("label").trim();
       item.diameter_m = parseFloat(fd.get("diameter")) || item.diameter_m;
       item.height_m = parseFloat(fd.get("height")) || 0;
+      item.crown_base_m = Math.min(parseFloat(fd.get("crownbase")) || 0, item.height_m);
       saveLayout(app, t("toast.saved"));
     }
   );
@@ -568,7 +598,8 @@ function locationDialog(app) {
   let lon = start.longitude;
   let z = Math.max(3, Math.min(MAX_Z, start.zoom || 18));
   let ang = layout.north_deg || 0;
-  let points = [];
+  let points = (layout.outline || []).map((pt) => ({ ...pt })); // trwały obrys
+  let applied = points.length >= 3;
   let drawMode = false;
   let dims = null;
 
@@ -579,7 +610,7 @@ function locationDialog(app) {
       <button type="button" class="icon-btn" id="map-rr" title="${t("editor.map.rotr")}"><ha-icon icon="mdi:rotate-right"></ha-icon></button>
       <span style="font-size:12px;color:var(--secondary-text-color);min-width:34px" id="map-ang">${ang}°</span>
       <button type="button" class="btn small ghost" id="map-outline"><ha-icon icon="mdi:vector-polygon"></ha-icon>${t("editor.map.outline")}</button>
-      <button type="button" class="btn small plain" id="map-clear" style="display:none">${t("editor.map.clear")}</button>
+      <button type="button" class="btn small plain" id="map-clear" style="display:${points.length ? "" : "none"}">${t("editor.map.clear")}</button>
       <span class="dims" id="map-dims"></span>
       <button type="button" class="btn small" id="map-apply" style="display:none">${t("editor.map.apply")}</button>
     </div>
@@ -623,8 +654,14 @@ function locationDialog(app) {
           : "";
     return (
       `<svg id="map-poly" width="${diag}" height="${diag}">${shape}</svg>` +
-      px.map((c) => `<div class="map-pt" style="left:${c[0]}px;top:${c[1]}px"></div>`).join("")
+      px
+        .map((c, i) => `<div class="map-pt" data-i="${i}" style="left:${c[0]}px;top:${c[1]}px"></div>`)
+        .join("")
     );
+  };
+  const repaintPoly = () => {
+    const layer = tiles.querySelector("#poly-layer");
+    if (layer) layer.innerHTML = polyHtml();
   };
 
   const paint = () => {
@@ -638,11 +675,15 @@ function locationDialog(app) {
     tiles.style.width = `${diag}px`;
     tiles.style.height = `${diag}px`;
     tiles.style.transform = baseTransform();
-    tiles.innerHTML = gridHtml(lat, lon, z, diag, diag) + polyHtml();
+    tiles.innerHTML =
+      gridHtml(lat, lon, z, diag, diag) + `<div id="poly-layer">${polyHtml()}</div>`;
     dlg.querySelector("#map-coords").textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)} · zoom ${z}`;
     dlg.querySelector("#map-ang").textContent = `${ang}°`;
   };
-  requestAnimationFrame(paint);
+  requestAnimationFrame(() => {
+    paint();
+    updateDims();
+  });
 
   const updateDims = () => {
     const el = dlg.querySelector("#map-dims");
@@ -675,13 +716,24 @@ function locationDialog(app) {
       lon: xToLon(cx, z),
     };
     el.textContent = t("editor.map.dims", { w: dims.w, h: dims.h });
+    apply.textContent = t(applied ? "editor.map.update" : "editor.map.apply");
     apply.style.display = "";
   };
 
   let gesture = null;
+  const screenToMapDelta = (sx, sy) => {
+    const a = rad();
+    return { mdx: sx * Math.cos(a) + sy * Math.sin(a), mdy: -sx * Math.sin(a) + sy * Math.cos(a) };
+  };
   view.addEventListener("pointerdown", (ev) => {
     if (ev.target.closest("button")) return;
     const rect = view.getBoundingClientRect();
+    const ptEl = ev.target.closest(".map-pt");
+    if (ptEl) {
+      gesture = { type: "point", i: parseInt(ptEl.dataset.i, 10) };
+      view.setPointerCapture(ev.pointerId);
+      return;
+    }
     if (ev.shiftKey) {
       const sx = ev.clientX - rect.left - rect.width / 2;
       const sy = ev.clientY - rect.top - rect.height / 2;
@@ -694,6 +746,17 @@ function locationDialog(app) {
   view.addEventListener("pointermove", (ev) => {
     if (!gesture) return;
     const rect = view.getBoundingClientRect();
+    if (gesture.type === "point") {
+      const sx = ev.clientX - rect.left - rect.width / 2;
+      const sy = ev.clientY - rect.top - rect.height / 2;
+      const { mdx, mdy } = screenToMapDelta(sx, sy);
+      points[gesture.i] = {
+        lat: yToLat(latToY(lat, z) + mdy, z),
+        lon: xToLon(lonToX(lon, z) + mdx, z),
+      };
+      repaintPoly();
+      return;
+    }
     if (gesture.type === "rotate") {
       const sx = ev.clientX - rect.left - rect.width / 2;
       const sy = ev.clientY - rect.top - rect.height / 2;
@@ -712,6 +775,10 @@ function locationDialog(app) {
     if (!gesture) return;
     const g = gesture;
     gesture = null;
+    if (g.type === "point") {
+      updateDims();
+      return;
+    }
     if (g.type === "rotate") {
       updateDims();
       return;
@@ -786,6 +853,7 @@ function locationDialog(app) {
   });
   dlg.querySelector("#map-clear").addEventListener("click", () => {
     points = [];
+    applied = false;
     paint();
     updateDims();
   });
@@ -795,10 +863,13 @@ function locationDialog(app) {
     layout.height_m = dims.h;
     lat = dims.lat;
     lon = dims.lon;
+    applied = true;
     paint();
+    updateDims();
   });
   dlg.querySelector("#map-save").addEventListener("click", () => {
     layout.location = { latitude: +lat.toFixed(6), longitude: +lon.toFixed(6), zoom: z };
+    layout.outline = points.length ? points : null; // obrys zostaje na następne wejście
     layout.north_deg = ang;
     st(app).sat = true;
     dlg.close();

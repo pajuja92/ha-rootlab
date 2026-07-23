@@ -205,6 +205,7 @@ dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; mar
 .editor-svg .item { cursor: grab; }
 .editor-svg .item.selected circle { stroke: var(--rl-ai); stroke-width: 0.12; }
 .editor-svg .shadow { fill: rgba(0, 0, 0, 0.18); pointer-events: none; }
+.editor-svg .shadow-line { stroke: rgba(0, 0, 0, 0.22); fill: none; stroke-linecap: round; pointer-events: none; }
 .editor-svg text { font-size: 0.45px; fill: var(--primary-text-color); text-anchor: middle; pointer-events: none; }
 .editor-hint { font-size: 13px; color: var(--secondary-text-color); margin: 8px 4px; }
 .month-slider { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--secondary-text-color); }
@@ -368,9 +369,10 @@ dialog input[type=checkbox], dialog input[type=radio] { width: auto; accent-colo
   opacity: 0; pointer-events: none; transition: opacity 0.25s; text-align: center; padding: 12px;
 }
 #map-hint.show { opacity: 1; }
-.map-pt { position: absolute; width: 12px; height: 12px; border-radius: 50%;
+.map-pt { position: absolute; width: 14px; height: 14px; border-radius: 50%;
   background: var(--rl-harvest); border: 2px solid #fff; transform: translate(-50%,-50%);
-  box-shadow: 0 0 3px #000; }
+  box-shadow: 0 0 3px #000; cursor: grab; }
+.map-pt:active { cursor: grabbing; }
 #map-poly { position: absolute; inset: 0; pointer-events: none; }
 #map-poly polyline, #map-poly polygon { fill: color-mix(in srgb, var(--rl-harvest) 25%, transparent); stroke: var(--rl-harvest); stroke-width: 2; }
 
