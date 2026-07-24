@@ -14,7 +14,7 @@ export function render(app) {
       <button class="btn" data-action="add-zone"><ha-icon icon="mdi:plus"></ha-icon>${t("dash.addzone")}</button>
     </div>`;
   }
-  return [alerts(app), zonesSection(app), waterSection(app), tasksSection(app), forecastSection(app), weatherSection(app)].join("");
+  return [alerts(app), zonesSection(app), waterSection(app), tasksSection(app), forecastSection(app), verifySection(app), weatherSection(app)].join("");
 }
 
 function alerts(app) {
@@ -335,6 +335,50 @@ function chartMini(rows, metric, mode) {
     .map((r, i) => (i % step ? "" : `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${xLabel(r, mode)}</text>`))
     .join("");
   return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="margin-top:4px">${out}</svg>`;
+}
+
+/* Ranking trafności prognoz (weryfikator: modele vs czujniki/IMGW). */
+function verifySection(app) {
+  const v = app.verifyStats;
+  if (v === undefined) {
+    // leniwe pobranie przy pierwszym renderze pulpitu
+    app.verifyStats = null;
+    app.ws("verify/stats").then((r) => {
+      app.verifyStats = r;
+      if (app.tab === "dashboard") app.render();
+    }).catch(() => {});
+    return "";
+  }
+  if (!v || !v.sources?.length) {
+    return `
+      <div class="section-title"><ha-icon icon="mdi:scale-balance"></ha-icon>${t("verify.title")}</div>
+      <div class="card"><div class="ai-hint"><ha-icon icon="mdi:timer-sand"></ha-icon>${t("verify.collecting")}</div></div>`;
+  }
+  const best = v.sources.find((x) => x.mae_temp != null);
+  return `
+    <div class="section-title"><ha-icon icon="mdi:scale-balance"></ha-icon>${t("verify.title")}</div>
+    <div class="card">
+      <table style="width:100%;border-collapse:collapse;font-size:14px">
+        <tr style="color:var(--secondary-text-color);font-size:12px;text-align:left">
+          <th style="padding:4px 8px">${t("verify.source")}</th>
+          <th style="padding:4px 8px">${t("verify.mae")}</th>
+          <th style="padding:4px 8px">${t("verify.rainerr")}</th>
+          <th style="padding:4px 8px">${t("verify.days")}</th>
+        </tr>
+        ${v.sources
+          .map(
+            (row) => `<tr style="border-top:1px solid var(--divider-color)">
+            <td style="padding:6px 8px">${row === best ? "🏆 " : ""}${esc(row.label)}</td>
+            <td style="padding:6px 8px">${row.mae_temp != null ? row.mae_temp.toFixed(2) + " °C" : "—"}</td>
+            <td style="padding:6px 8px">${row.rain_err != null ? row.rain_err.toFixed(1) + " mm" : "—"}</td>
+            <td style="padding:6px 8px">${row.days}</td>
+          </tr>`
+          )
+          .join("")}
+      </table>
+      <div style="font-size:12px;color:var(--secondary-text-color);margin-top:8px">
+        ${t("verify.note")}${v.since ? ` ${t("verify.since")} ${esc(v.since)}.` : ""}</div>
+    </div>`;
 }
 
 function weatherSection(app) {

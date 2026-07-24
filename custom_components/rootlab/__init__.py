@@ -26,6 +26,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     api.async_register(hass)
     async_setup_scheduler(hass)
     _async_setup_weekly_tasks(hass)
+    from .verification import async_setup_verification
+
+    async_setup_verification(hass)
 
     async def _options_updated(hass_, updated_entry):
         hass_.bus.async_fire("rootlab_updated")
