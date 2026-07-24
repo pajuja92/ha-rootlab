@@ -19,6 +19,7 @@ const ACTIONS = Object.assign(
   plants.actions,
   tasks.actions,
   water.actions,
+  stats.actions,
   knowledge.actions,
   editor.actions,
   crisis.actions
@@ -28,7 +29,7 @@ const TABS = [
   { id: "plants", icon: "mdi:sprout" },
   { id: "tasks", icon: "mdi:clipboard-check-outline" },
   { id: "water", icon: "mdi:water" },
-  { id: "stats", icon: "mdi:chart-box-outline" },
+  { id: "stats", icon: "mdi:weather-partly-cloudy" },
   { id: "knowledge", icon: "mdi:book-open-variant" },
   { id: "editor", icon: "mdi:vector-square" },
 ];

@@ -1,5 +1,9 @@
+/* Zakładka Pogoda: karty prognozy per model (te same co na pulpicie) —
+   dodawanie / usuwanie / przesuwanie, per-karta tryb godzinowy/dzienny
+   i wykresy rozdzielone. Poniżej: weryfikacja modeli (ranking, dziś). */
 import { t } from "../i18n.js";
 import { esc } from "../util.js";
+import { OM_MODELS, haEntityName, forecastBody } from "./dashboard.js";
 
 const COLORS = [
   "var(--rl-harvest)",
@@ -11,7 +15,156 @@ const COLORS = [
   "var(--secondary-text-color)",
 ];
 
+/* ---------------- karty prognozy ---------------- */
+
+const ALL_SOURCES = () => ["ha", ...Object.keys(OM_MODELS)];
+
+function cardList() {
+  try {
+    const c = JSON.parse(localStorage.getItem("rootlab_weather_cards"));
+    if (Array.isArray(c)) return c.filter((s) => ALL_SOURCES().includes(s));
+  } catch (e) { /* pierwszy raz / uszkodzony zapis */ }
+  return ALL_SOURCES(); // domyślnie wszystkie modele
+}
+const saveCards = (c) => localStorage.setItem("rootlab_weather_cards", JSON.stringify(c));
+
+function cardState() {
+  try {
+    return JSON.parse(localStorage.getItem("rootlab_wcard_state")) || {};
+  } catch (e) {
+    return {};
+  }
+}
+const saveCardState = (s) => localStorage.setItem("rootlab_wcard_state", JSON.stringify(s));
+
+const srcLabel = (app, src) => (src === "ha" ? haEntityName(app) : OM_MODELS[src] || src);
+
+function ensureForecasts(app) {
+  app.forecasts = app.forecasts || {};
+  for (const src of cardList()) {
+    if (src in app.forecasts) continue;
+    app.forecasts[src] = "loading";
+    app
+      .ws("forecast", { source: src })
+      .then((r) => {
+        app.forecasts[src] = r;
+        if (app.tab === "stats") app.render();
+      })
+      .catch(() => {
+        app.forecasts[src] = null;
+        if (app.tab === "stats") app.render();
+      });
+  }
+}
+
+function weatherCard(app, src, idx, total) {
+  const st = cardState()[src] || {};
+  const mode = st.mode || "hourly";
+  const split = !!st.split;
+  const fc = (app.forecasts || {})[src];
+  let body;
+  if (fc === "loading" || fc === undefined) {
+    body = `<div class="ai-hint"><ha-icon icon="mdi:timer-sand"></ha-icon>…</div>`;
+  } else if (fc === null) {
+    body = `<div class="ai-hint"><ha-icon icon="mdi:weather-cloudy-alert"></ha-icon>${t("forecast.unavailable")}</div>`;
+  } else {
+    const rows = fc[mode];
+    body = rows?.length
+      ? forecastBody(app, rows, mode, split)
+      : `<div class="ai-hint"><ha-icon icon="mdi:weather-cloudy-alert"></ha-icon>${t("forecast.unavailable")}</div>`;
+  }
+  const ib = (action, icon, title, extra = "", disabled = false) =>
+    `<button class="btn small plain" data-action="${action}" data-src="${src}" ${extra}
+      ${disabled ? "disabled" : ""} title="${title}"><ha-icon icon="${icon}" style="--mdc-icon-size:16px"></ha-icon></button>`;
+  return `
+    <div class="section-title"><ha-icon icon="mdi:chart-line"></ha-icon>${esc(srcLabel(app, src))}</div>
+    <div class="card" style="margin-bottom:var(--rl-gap)">
+      <div class="chart-tabs">
+        <button class="btn small ${mode === "hourly" ? "" : "plain"}" data-action="wcard-mode" data-src="${src}" data-mode="hourly">${t("forecast.hourly")}</button>
+        <button class="btn small ${mode === "daily" ? "" : "plain"}" data-action="wcard-mode" data-src="${src}" data-mode="daily">${t("forecast.daily")}</button>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn small ${split ? "" : "plain"}" data-action="wcard-split" data-src="${src}" title="${t("forecast.split")}">
+          <ha-icon icon="mdi:chart-multiple" style="--mdc-icon-size:16px"></ha-icon></button>
+        ${ib("wcard-move", "mdi:arrow-up", t("weather.up"), 'data-dir="-1"', idx === 0)}
+        ${ib("wcard-move", "mdi:arrow-down", t("weather.down"), 'data-dir="1"', idx === total - 1)}
+        ${ib("wcard-del", "mdi:close", t("weather.remove"))}
+      </div>
+      ${body}
+    </div>`;
+}
+
+/* ---------------- widok ---------------- */
+
 export function render(app) {
+  ensureForecasts(app);
+  const list = cardList();
+  const cardsHtml = list.map((src, i) => weatherCard(app, src, i, list.length)).join("");
+  const empty = list.length
+    ? ""
+    : `<div class="card" style="margin-bottom:var(--rl-gap)"><div class="ai-hint"><ha-icon icon="mdi:weather-partly-cloudy"></ha-icon>${t("weather.empty")}</div></div>`;
+  const addable = ALL_SOURCES().filter((s) => !list.includes(s));
+  const addBtn = addable.length
+    ? `<div style="margin-bottom:var(--rl-gap)">
+        <button class="btn small" data-action="wcard-add"><ha-icon icon="mdi:plus" style="--mdc-icon-size:16px"></ha-icon>${t("weather.add")}</button>
+      </div>`
+    : "";
+  return cardsHtml + empty + addBtn + verificationSection(app);
+}
+
+export const actions = {
+  "wcard-mode": (app, el) => {
+    const s = cardState();
+    s[el.dataset.src] = { ...(s[el.dataset.src] || {}), mode: el.dataset.mode };
+    saveCardState(s);
+    app.render();
+  },
+  "wcard-split": (app, el) => {
+    const s = cardState();
+    const cur = s[el.dataset.src] || {};
+    cur.split = !cur.split;
+    s[el.dataset.src] = cur;
+    saveCardState(s);
+    app.render();
+  },
+  "wcard-move": (app, el) => {
+    const c = cardList();
+    const i = c.indexOf(el.dataset.src);
+    const j = i + parseInt(el.dataset.dir, 10);
+    if (i < 0 || j < 0 || j >= c.length) return;
+    [c[i], c[j]] = [c[j], c[i]];
+    saveCards(c);
+    app.render();
+  },
+  "wcard-del": (app, el) => {
+    saveCards(cardList().filter((s) => s !== el.dataset.src));
+    app.render();
+  },
+  "wcard-add": (app) => {
+    const addable = ALL_SOURCES().filter((s) => !cardList().includes(s));
+    if (!addable.length) return;
+    app.dialog(
+      `<h2>${t("weather.add")}</h2>
+      <form>
+        <label>${t("forecast.source")}</label>
+        <select name="src">
+          ${addable.map((s) => `<option value="${s}">${esc(srcLabel(app, s))}</option>`).join("")}
+        </select>
+        <div class="dialog-actions">
+          <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
+          <button type="submit" class="btn">${t("save")}</button>
+        </div>
+      </form>`,
+      (fd) => {
+        saveCards([...cardList(), fd.get("src")]);
+        app.render();
+      }
+    );
+  },
+};
+
+/* ---------------- weryfikacja modeli (dawna zakładka Statystyki) -------- */
+
+function verificationSection(app) {
   const v = app.verifyStats;
   if (v === undefined) {
     app.verifyStats = null;

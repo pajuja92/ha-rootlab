@@ -518,3 +518,13 @@ export const actions = {
     app.render();
   },
 };
+
+/* Współdzielone z zakładką Pogoda — te same karty prognozy co na pulpicie. */
+export { OM_MODELS, haEntityName };
+export function forecastBody(app, rows, mode, split) {
+  return (
+    (split ? chartsSplit(rows, mode) : chartCombined(rows, mode)) +
+    legendHtml(rows, mode, split) +
+    (mode === "hourly" ? summaryChips(app, rows) : "")
+  );
+}

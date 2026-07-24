@@ -1,5 +1,8 @@
 const PL = {
-  "tab.dashboard": "Pulpit", "tab.plants": "Rośliny", "tab.tasks": "Zadania", "tab.water": "Woda", "tab.editor": "Plan ogrodu", "tab.knowledge": "Wiedza", "tab.stats": "Statystyki",
+  "tab.dashboard": "Pulpit", "tab.plants": "Rośliny", "tab.tasks": "Zadania", "tab.water": "Woda", "tab.editor": "Plan ogrodu", "tab.knowledge": "Wiedza", "tab.stats": "Pogoda",
+  "weather.add": "Dodaj kartę prognozy", "weather.remove": "Usuń kartę",
+  "weather.up": "Przenieś wyżej", "weather.down": "Przenieś niżej",
+  "weather.empty": "Brak kart prognozy — dodaj model przyciskiem poniżej.",
   save: "Zapisz", cancel: "Anuluj", edit: "Edytuj", delete: "Usuń", add: "Dodaj", stop: "Stop", close: "Zamknij", none: "— brak —",
   "combo.noresults": "Brak wyników", "combo.ph": "Wpisz, aby wyszukać…",
   "zones.title": "Strefy", "zones.add": "Strefa", "zone.new": "Nowa strefa", "zone.edit": "Edytuj strefę",
@@ -147,7 +150,10 @@ const PL = {
 };
 
 const EN = {
-  "tab.dashboard": "Dashboard", "tab.plants": "Plants", "tab.tasks": "Tasks", "tab.water": "Water", "tab.editor": "Garden plan", "tab.knowledge": "Knowledge", "tab.stats": "Statistics",
+  "tab.dashboard": "Dashboard", "tab.plants": "Plants", "tab.tasks": "Tasks", "tab.water": "Water", "tab.editor": "Garden plan", "tab.knowledge": "Knowledge", "tab.stats": "Weather",
+  "weather.add": "Add forecast card", "weather.remove": "Remove card",
+  "weather.up": "Move up", "weather.down": "Move down",
+  "weather.empty": "No forecast cards — add a model with the button below.",
   save: "Save", cancel: "Cancel", edit: "Edit", delete: "Delete", add: "Add", stop: "Stop", close: "Close", none: "— none —",
   "combo.noresults": "No results", "combo.ph": "Type to search…",
   "zones.title": "Zones", "zones.add": "Zone", "zone.new": "New zone", "zone.edit": "Edit zone",
