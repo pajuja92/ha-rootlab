@@ -251,6 +251,17 @@ dialog.wide { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 64
 .chart-svg .temp-line.min { stroke: var(--rl-water); }
 .chart-svg .rain-bar { fill: var(--rl-water); opacity: 0.55; }
 .chart-svg .gridline { stroke: var(--divider-color); stroke-width: 0.5; opacity: 0.6; }
+.chart-svg .prob-line { stroke: var(--rl-water); stroke-dasharray: 6 4; fill: none; stroke-width: 1.5; }
+.chart-svg .hum-line { stroke: var(--rl-green); fill: none; stroke-width: 2; }
+.chart-svg .press-line { stroke: var(--rl-ai); fill: none; stroke-width: 2; }
+.chart-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--secondary-text-color); margin-top: 6px; }
+.chart-legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.chart-legend i.bar { width: 8px; height: 10px; opacity: 0.55; }
+.chart-legend i.dash { height: 2px; background: repeating-linear-gradient(90deg, var(--rl-water) 0 4px, transparent 4px 7px); }
+.fc-tip { visibility: hidden; pointer-events: none; }
+.fc-day:hover .fc-tip { visibility: visible; }
+.fc-tip rect { fill: var(--card-background-color); stroke: var(--divider-color); }
+.fc-tip text { font-size: 10px; fill: var(--primary-text-color); }
 /* Galeria zdjęć rośliny */
 .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 8px; }
 .photo-grid .ph { position: relative; border-radius: 8px; overflow: hidden; aspect-ratio: 1; }
