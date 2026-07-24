@@ -204,19 +204,22 @@ def async_setup_verification(hass):
     d["unsub"].append(async_track_time_change(hass, _daily, hour=0, minute=10, second=0))
 
 
+def _source_label(hass, source):
+    if source == HA_SOURCE:
+        entity_id = hass.data[DOMAIN]["entry"].options.get("weather_entity")
+        state = hass.states.get(entity_id) if entity_id else None
+        return (state and state.attributes.get("friendly_name")) or entity_id or "HA"
+    return OPEN_METEO_MODELS.get(source, source)
+
+
 def stats_payload(hass):
-    """Ranking do UI: źródło, MAE temperatury, średni błąd dobowej sumy opadów."""
+    """Ranking + dzisiejsze prognozy vs pomiary (dla zakładki Statystyki)."""
     verify = _verify(hass)
-    entity_id = hass.data[DOMAIN]["entry"].options.get("weather_entity")
     out = []
     for source, stat in verify.get("stats", {}).items():
         if source == "_since" or not isinstance(stat, dict):
             continue
-        if source == HA_SOURCE:
-            state = hass.states.get(entity_id) if entity_id else None
-            label = (state and state.attributes.get("friendly_name")) or entity_id or "HA"
-        else:
-            label = OPEN_METEO_MODELS.get(source, source)
+        label = _source_label(hass, source)
         out.append(
             {
                 "source": source,
@@ -229,4 +232,18 @@ def stats_payload(hass):
             }
         )
     out.sort(key=lambda x: (x["mae_temp"] is None, x["mae_temp"] or 0))
-    return {"since": verify.get("stats", {}).get("_since"), "sources": out}
+    snapshot = verify.get("snapshot") or {}
+    actuals = verify.get("actuals") or {}
+    today = None
+    if snapshot.get("sources"):
+        today = {
+            "date": snapshot.get("date"),
+            "sources": [
+                {"source": key, "label": _source_label(hass, key), "temps": val.get("temps")}
+                for key, val in snapshot["sources"].items()
+            ],
+            "actual_temps": actuals.get("temps", {})
+            if actuals.get("date") == snapshot.get("date")
+            else {},
+        }
+    return {"since": verify.get("stats", {}).get("_since"), "sources": out, "today": today}
