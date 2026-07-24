@@ -158,6 +158,21 @@ function tasksSection(app) {
 
 /* --- Prognoza (encja weather HA): wykres łączony lub osobne, legenda, tooltipy --- */
 
+const OM_MODELS = {
+  best_match: "Open-Meteo (auto)",
+  icon_seamless: "ICON (DWD)",
+  ecmwf_ifs025: "ECMWF IFS",
+  gfs_seamless: "GFS (NOAA)",
+  ukmo_seamless: "UKMO (Met Office)",
+};
+const fcSource = () => localStorage.getItem("rootlab_fc_source") || "ha";
+const haEntityName = (app) => {
+  const entityId = app.data.settings?.weather_entity;
+  return entityId
+    ? app.hass.states[entityId]?.attributes?.friendly_name || entityId
+    : t("forecast.src.ha");
+};
+
 const S = (rows, key) => rows.map((r) => num(r[key]));
 const avg = (vals) => {
   const xs = vals.filter((v) => v != null);
@@ -167,11 +182,14 @@ const avg = (vals) => {
 function forecastSection(app) {
   const mode = app.forecastMode || "hourly";
   const split = !!app.forecastSplit;
+  const src = fcSource();
   let body;
   if (app.forecast === undefined) {
     body = "…";
-  } else if (app.forecast === null || !app.data.settings?.has_weather_entity) {
+  } else if (app.forecast === null && src === "ha" && !app.data.settings?.has_weather_entity) {
     body = `<div class="ai-hint"><ha-icon icon="mdi:weather-cloudy-clock"></ha-icon>${t("forecast.none")}</div>`;
+  } else if (app.forecast === null) {
+    body = `<div class="ai-hint"><ha-icon icon="mdi:weather-cloudy-alert"></ha-icon>${t("forecast.unavailable")}</div>`;
   } else {
     const rows = app.forecast[mode];
     if (!rows?.length) {
@@ -191,6 +209,12 @@ function forecastSection(app) {
         <button class="btn small ${mode === "hourly" ? "" : "plain"}" data-action="forecast-mode" data-mode="hourly">${t("forecast.hourly")}</button>
         <button class="btn small ${mode === "daily" ? "" : "plain"}" data-action="forecast-mode" data-mode="daily">${t("forecast.daily")}</button>
         <div class="spacer" style="flex:1"></div>
+        <select class="inline" data-bind="fc-source" title="${t("forecast.source")}" style="font-size:13px;padding:6px 10px">
+          <option value="ha" ${src === "ha" ? "selected" : ""}>${esc(haEntityName(app))}</option>
+          ${Object.entries(OM_MODELS)
+            .map(([key, label]) => `<option value="${key}" ${src === key ? "selected" : ""}>${label}</option>`)
+            .join("")}
+        </select>
         <button class="btn small ${split ? "" : "plain"}" data-action="forecast-split" title="${t("forecast.split")}">
           <ha-icon icon="mdi:chart-multiple" style="--mdc-icon-size:16px"></ha-icon>${t("forecast.split")}</button>
       </div>
@@ -199,13 +223,11 @@ function forecastSection(app) {
 }
 
 function sourceLine(app) {
-  const entityId = app.data.settings?.weather_entity;
-  const entityName = entityId
-    ? app.hass.states[entityId]?.attributes?.friendly_name || entityId
-    : "—";
+  const src = fcSource();
+  const name = src === "ha" ? haEntityName(app) : `${OM_MODELS[src] || src} · open-meteo.com`;
   const station = app.weather?.stacja ? `IMGW ${app.weather.stacja}` : "";
   return `<div style="font-size:12px;color:var(--secondary-text-color);margin-top:8px">
-    ${t("forecast.source")}: ${esc(entityName)}${station ? ` · ${t("dash.weather")}: ${esc(station)}` : ""}</div>`;
+    ${t("forecast.source")}: ${esc(name)}${station ? ` · ${t("dash.weather")}: ${esc(station)}` : ""}</div>`;
 }
 
 function summaryChips(app, rows) {
@@ -457,6 +479,20 @@ function weatherSection(app) {
         ${t("weather.station")}: ${esc(w.stacja)} · ${t("weather.measured")} ${esc(w.data_pomiaru)} ${esc(w.godzina_pomiaru)}:00 (IMGW)</div>`;
   }
   return `<div class="section-title"><ha-icon icon="mdi:weather-partly-cloudy"></ha-icon>${t("dash.weather")}</div><div class="card">${body}</div>`;
+}
+
+export function bind(app, root) {
+  root.querySelector('[data-bind="fc-source"]')?.addEventListener("change", async (ev) => {
+    localStorage.setItem("rootlab_fc_source", ev.target.value);
+    app.forecast = undefined;
+    app.render();
+    try {
+      app.forecast = await app.ws("forecast", { source: ev.target.value });
+    } catch (e) {
+      app.forecast = null;
+    }
+    app.render();
+  });
 }
 
 export const actions = {

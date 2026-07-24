@@ -247,3 +247,72 @@ def stats_payload(hass):
             else {},
         }
     return {"since": verify.get("stats", {}).get("_since"), "sources": out, "today": today}
+
+
+async def fetch_openmeteo_forecast(hass, model):
+    """Prognoza z konkretnego modelu Open-Meteo w formacie encji weather HA
+    (hourly 24h + daily 7 dni; wilgotność/ciśnienie dobowe = średnie z godzinowych)."""
+    lat, lon = _location(hass)
+    session = async_get_clientsession(hass)
+    suffix = "" if model == "best_match" else f"_{model}"
+    url = (
+        "https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}"
+        "&hourly=temperature_2m,precipitation,precipitation_probability,"
+        "relative_humidity_2m,surface_pressure"
+        "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,"
+        "precipitation_probability_max"
+        f"&models={model}&forecast_days=7&timezone=auto"
+    )
+    async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+        resp.raise_for_status()
+        payload = await resp.json()
+    hourly = payload.get("hourly", {})
+    daily = payload.get("daily", {})
+    get = lambda src, key: src.get(f"{key}{suffix}") or src.get(key) or []
+    times = hourly.get("time", [])
+    h_temp = get(hourly, "temperature_2m")
+    h_rain = get(hourly, "precipitation")
+    h_prob = get(hourly, "precipitation_probability")
+    h_hum = get(hourly, "relative_humidity_2m")
+    h_press = get(hourly, "surface_pressure")
+    hourly_rows = []
+    day_agg = {}
+    for i, iso in enumerate(times):
+        row = {
+            "datetime": iso,
+            "temperature": h_temp[i] if i < len(h_temp) else None,
+            "precipitation": h_rain[i] if i < len(h_rain) else None,
+            "precipitation_probability": h_prob[i] if i < len(h_prob) else None,
+            "humidity": h_hum[i] if i < len(h_hum) else None,
+            "pressure": h_press[i] if i < len(h_press) else None,
+        }
+        if len(hourly_rows) < 24:
+            hourly_rows.append(row)
+        day = iso[:10]
+        agg = day_agg.setdefault(day, {"hum": [], "press": []})
+        if row["humidity"] is not None:
+            agg["hum"].append(row["humidity"])
+        if row["pressure"] is not None:
+            agg["press"].append(row["pressure"])
+    d_times = daily.get("time", [])
+    d_tmax = get(daily, "temperature_2m_max")
+    d_tmin = get(daily, "temperature_2m_min")
+    d_rain = get(daily, "precipitation_sum")
+    d_prob = get(daily, "precipitation_probability_max")
+    mean = lambda xs: round(sum(xs) / len(xs), 1) if xs else None
+    daily_rows = []
+    for i, iso in enumerate(d_times[:7]):
+        agg = day_agg.get(iso, {"hum": [], "press": []})
+        daily_rows.append(
+            {
+                "datetime": iso,
+                "temperature": d_tmax[i] if i < len(d_tmax) else None,
+                "templow": d_tmin[i] if i < len(d_tmin) else None,
+                "precipitation": d_rain[i] if i < len(d_rain) else None,
+                "precipitation_probability": d_prob[i] if i < len(d_prob) else None,
+                "humidity": mean(agg["hum"]),
+                "pressure": mean(agg["press"]),
+            }
+        )
+    return {"hourly": hourly_rows, "daily": daily_rows}

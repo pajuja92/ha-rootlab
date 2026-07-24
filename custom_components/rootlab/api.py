@@ -11,7 +11,7 @@ import homeassistant.util.dt as dt_util
 from . import ai
 from .const import DOMAIN
 from .store import async_save
-from .verification import stats_payload
+from .verification import OPEN_METEO_MODELS, fetch_openmeteo_forecast, stats_payload
 
 KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices"]
 # pola pomijane w liście (duże base64) — dostępne przez dedykowane komendy
@@ -254,9 +254,20 @@ async def ws_weather(hass, connection, msg):
     connection.send_result(msg["id"], await d["weather"].fetch(station))
 
 
-@websocket_api.websocket_command({vol.Required("type"): "rootlab/forecast"})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rootlab/forecast",
+        vol.Optional("source", default="ha"): str,
+    }
+)
 @websocket_api.async_response
 async def ws_forecast(hass, connection, msg):
+    if msg["source"] in OPEN_METEO_MODELS:
+        try:
+            connection.send_result(msg["id"], await fetch_openmeteo_forecast(hass, msg["source"]))
+        except Exception as err:  # noqa: BLE001
+            connection.send_error(msg["id"], "forecast_error", str(err))
+        return
     entity_id = hass.data[DOMAIN]["entry"].options.get("weather_entity")
     if not entity_id:
         connection.send_result(msg["id"], None)

@@ -105,7 +105,7 @@ class RootlabPanel extends HTMLElement {
       this.weather = null;
     }
     try {
-      this.forecast = await this.ws("forecast");
+      this.forecast = await this.ws("forecast", { source: localStorage.getItem("rootlab_fc_source") || "ha" });
     } catch (e) {
       this.forecast = null;
     }
@@ -158,9 +158,10 @@ class RootlabPanel extends HTMLElement {
     } catch (e) {
       return;
     }
-    if (this.data.settings?.has_weather_entity && this.forecast == null) {
+    const fcSource = localStorage.getItem("rootlab_fc_source") || "ha";
+    if (this.forecast == null && (fcSource !== "ha" || this.data.settings?.has_weather_entity)) {
       try {
-        this.forecast = await this.ws("forecast");
+        this.forecast = await this.ws("forecast", { source: fcSource });
       } catch (e) {
         this.forecast = null;
       }
