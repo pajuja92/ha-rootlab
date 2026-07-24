@@ -125,6 +125,12 @@ class RootlabOptionsFlow(OptionsFlow):
                 vol.Optional("weather_entity"): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="weather")
                 ),
+                vol.Optional("truth_temp_entity"): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor", device_class="temperature")
+                ),
+                vol.Optional("truth_rain_entity"): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
                 vol.Optional("ai_provider"): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=AI_PROVIDERS,
@@ -153,7 +159,8 @@ class RootlabOptionsFlow(OptionsFlow):
             ),
             "ai_provider": options.get("ai_provider", "anthropic"),
         }
-        for key in ("weather_entity", "api_key", "ai_model", "ai_base_url", "ai_task_entity"):
+        for key in ("weather_entity", "api_key", "ai_model", "ai_base_url", "ai_task_entity",
+                    "truth_temp_entity", "truth_rain_entity"):
             if options.get(key):
                 defaults[key] = options[key]
         return self.async_show_form(

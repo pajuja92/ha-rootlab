@@ -11,6 +11,7 @@ import homeassistant.util.dt as dt_util
 from . import ai
 from .const import DOMAIN
 from .store import async_save
+from .verification import stats_payload
 
 KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices"]
 # pola pomijane w liście (duże base64) — dostępne przez dedykowane komendy
@@ -32,7 +33,7 @@ def _public(hass):
     # lokalizacja ogrodu jest definiowana w Edytorze (layout), nie w opcjach
     location = data["layout"].get("location") or {}
     return {
-        **data,
+        **{k: v for k, v in data.items() if k != "verify"},
         "plants": [
             {k: v for k, v in p.items() if k not in HEAVY_PLANT_FIELDS} for p in data["plants"]
         ],
@@ -75,6 +76,7 @@ def async_register(hass):
         ws_crisis_diagnose,
         ws_crisis_add_plan,
         ws_ai_ask,
+        ws_verify_stats,
         ws_plant_photos,
         ws_photo_add,
         ws_photo_delete,
@@ -434,6 +436,12 @@ async def ws_ai_ask(hass, connection, msg):
 
 
 # --- Zdjęcia roślin ---
+
+
+@websocket_api.websocket_command({vol.Required("type"): "rootlab/verify/stats"})
+@callback
+def ws_verify_stats(hass, connection, msg):
+    connection.send_result(msg["id"], stats_payload(hass))
 
 
 @websocket_api.websocket_command(
