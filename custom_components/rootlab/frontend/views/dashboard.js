@@ -100,10 +100,17 @@ function tasksSection(app) {
     </div>`;
 }
 
-/* --- Prognoza (encja weather HA) --- */
+/* --- Prognoza (encja weather HA): wykres łączony lub osobne, legenda, tooltipy --- */
+
+const S = (rows, key) => rows.map((r) => num(r[key]));
+const avg = (vals) => {
+  const xs = vals.filter((v) => v != null);
+  return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+};
 
 function forecastSection(app) {
   const mode = app.forecastMode || "hourly";
+  const split = !!app.forecastSplit;
   let body;
   if (app.forecast === undefined) {
     body = "…";
@@ -111,9 +118,15 @@ function forecastSection(app) {
     body = `<div class="ai-hint"><ha-icon icon="mdi:weather-cloudy-clock"></ha-icon>${t("forecast.none")}</div>`;
   } else {
     const rows = app.forecast[mode];
-    body = rows?.length
-      ? chart(rows, mode)
-      : `<div class="ai-hint"><ha-icon icon="mdi:weather-cloudy-alert"></ha-icon>${t("forecast.unavailable")}</div>`;
+    if (!rows?.length) {
+      body = `<div class="ai-hint"><ha-icon icon="mdi:weather-cloudy-alert"></ha-icon>${t("forecast.unavailable")}</div>`;
+    } else {
+      body =
+        (split ? chartsSplit(rows, mode) : chartCombined(rows, mode)) +
+        legendHtml(rows, mode, split) +
+        (mode === "hourly" ? summaryChips(app, rows) : "") +
+        sourceLine(app);
+    }
   }
   return `
     <div class="section-title"><ha-icon icon="mdi:chart-line"></ha-icon>${t("dash.forecast")}</div>
@@ -121,50 +134,98 @@ function forecastSection(app) {
       <div class="chart-tabs">
         <button class="btn small ${mode === "hourly" ? "" : "plain"}" data-action="forecast-mode" data-mode="hourly">${t("forecast.hourly")}</button>
         <button class="btn small ${mode === "daily" ? "" : "plain"}" data-action="forecast-mode" data-mode="daily">${t("forecast.daily")}</button>
+        <div class="spacer" style="flex:1"></div>
+        <button class="btn small ${split ? "" : "plain"}" data-action="forecast-split" title="${t("forecast.split")}">
+          <ha-icon icon="mdi:chart-multiple" style="--mdc-icon-size:16px"></ha-icon>${t("forecast.split")}</button>
       </div>
       ${body}
     </div>`;
 }
 
-function chart(rows, mode) {
-  const W = 720, H = 190, padL = 30, padR = 8, padT = 14, padB = 26;
+function sourceLine(app) {
+  const entityId = app.data.settings?.weather_entity;
+  const entityName = entityId
+    ? app.hass.states[entityId]?.attributes?.friendly_name || entityId
+    : "—";
+  const station = app.weather?.stacja ? `IMGW ${app.weather.stacja}` : "";
+  return `<div style="font-size:12px;color:var(--secondary-text-color);margin-top:8px">
+    ${t("forecast.source")}: ${esc(entityName)}${station ? ` · ${t("dash.weather")}: ${esc(station)}` : ""}</div>`;
+}
+
+function summaryChips(app, rows) {
+  const hum = avg(S(rows, "humidity"));
+  const press = avg(S(rows, "pressure"));
+  const rain = S(rows, "precipitation").filter((v) => v != null).reduce((a, b) => a + b, 0);
+  const prob = Math.max(0, ...S(rows, "precipitation_probability").filter((v) => v != null));
+  const chip = (icon, label, val) =>
+    val == null
+      ? ""
+      : `<span class="sensor-chip" title="${esc(label)}"><ha-icon icon="${icon}"></ha-icon>${esc(label)}: ${esc(val)}</span>`;
+  return `<div class="sensors" style="margin-top:10px">
+    ${chip("mdi:cloud-percent-outline", t("forecast.avghum"), hum != null ? Math.round(hum) + " %" : null)}
+    ${chip("mdi:gauge", t("forecast.avgpress"), press != null ? Math.round(press) + " hPa" : null)}
+    ${chip("mdi:weather-pouring", t("forecast.rainsum"), `${Math.round(rain * 10) / 10} mm`)}
+    ${chip("mdi:umbrella-outline", t("forecast.probmax"), `${Math.round(prob)} %`)}
+  </div>`;
+}
+
+function legendHtml(rows, mode, split) {
+  const has = (key) => S(rows, key).some((v) => v != null);
+  const items = [];
+  items.push(`<span><i style="background:var(--rl-harvest)"></i>${t("forecast.legend.temp")}</span>`);
+  if (mode === "daily" && has("templow"))
+    items.push(`<span><i style="background:var(--rl-water)"></i>${t("forecast.legend.tmin")}</span>`);
+  if (has("precipitation"))
+    items.push(`<span><i class="bar" style="background:var(--rl-water)"></i>${t("forecast.legend.rain")}</span>`);
+  if (has("precipitation_probability"))
+    items.push(`<span><i class="dash"></i>${t("forecast.legend.prob")}</span>`);
+  if (split && has("humidity"))
+    items.push(`<span><i style="background:var(--rl-green)"></i>${t("forecast.hum")}</span>`);
+  if (split && has("pressure"))
+    items.push(`<span><i style="background:var(--rl-ai)"></i>${t("forecast.press")}</span>`);
+  return `<div class="chart-legend">${items.join("")}</div>`;
+}
+
+const xLabel = (r, mode) => {
+  const d = new Date(r.datetime);
+  return mode === "hourly" ? `${d.getHours()}:00` : t("days")[(d.getDay() + 6) % 7];
+};
+
+/* Wykres łączony: temperatura (linia), opad (słupki), szansa opadów (kreskowana). */
+function chartCombined(rows, mode) {
+  const W = 720, H = 200, padL = 30, padR = 30, padT = 16, padB = 26;
   const iw = W - padL - padR, ih = H - padT - padB;
   const temps = rows.flatMap((r) => [num(r.temperature), num(r.templow)]).filter((v) => v != null);
   if (!temps.length) return `<div class="ai-hint">${t("forecast.unavailable")}</div>`;
   let tMin = Math.min(...temps), tMax = Math.max(...temps);
   if (tMax - tMin < 4) { tMax += 2; tMin -= 2; }
-  const rains = rows.map((r) => num(r.precipitation) ?? 0);
+  const rains = S(rows, "precipitation").map((v) => v ?? 0);
   const rMax = Math.max(1, ...rains);
-  const x = (i) => padL + (i + 0.5) * (iw / rows.length);
+  const slot = iw / rows.length;
+  const x = (i) => padL + (i + 0.5) * slot;
   const yT = (v) => padT + (1 - (v - tMin) / (tMax - tMin)) * ih;
-  const yR = (v) => (v / rMax) * (ih * 0.5);
+  const yP = (v) => padT + (1 - v / 100) * ih; // skala % (prawa oś)
 
   const bars = rows
     .map((r, i) => {
       const rv = num(r.precipitation) ?? 0;
       if (!rv) return "";
-      const bh = yR(rv);
-      return `<rect class="rain-bar" x="${x(i) - iw / rows.length * 0.3}" y="${padT + ih - bh}" width="${(iw / rows.length) * 0.6}" height="${bh}"><title>${rv} mm</title></rect>`;
+      const bh = (rv / rMax) * (ih * 0.5);
+      return `<rect class="rain-bar" x="${x(i) - slot * 0.3}" y="${padT + ih - bh}" width="${slot * 0.6}" height="${bh}"><title>${rv} mm</title></rect>`;
     })
     .join("");
-  const line = (key, cls) => {
+  const line = (key, cls, yFn) => {
     const pts = rows
-      .map((r, i) => (num(r[key]) != null ? `${x(i).toFixed(1)},${yT(num(r[key])).toFixed(1)}` : null))
+      .map((r, i) => (num(r[key]) != null ? `${x(i).toFixed(1)},${yFn(num(r[key])).toFixed(1)}` : null))
       .filter(Boolean);
-    return pts.length > 1 ? `<polyline class="temp-line ${cls}" points="${pts.join(" ")}"/>` : "";
+    return pts.length > 1 ? `<polyline class="${cls}" points="${pts.join(" ")}"/>` : "";
   };
+  const step = mode === "hourly" ? 4 : 1;
   const labels = rows
-    .map((r, i) => {
-      const step = mode === "hourly" ? 4 : 1;
-      if (i % step) return "";
-      const d = new Date(r.datetime);
-      const txt = mode === "hourly" ? `${d.getHours()}:00` : t("days")[(d.getDay() + 6) % 7];
-      return `<text x="${x(i)}" y="${H - 8}" text-anchor="middle">${txt}</text>`;
-    })
+    .map((r, i) => (i % step ? "" : `<text x="${x(i)}" y="${H - 8}" text-anchor="middle">${xLabel(r, mode)}</text>`))
     .join("");
   const tempLabels = rows
     .map((r, i) => {
-      const step = mode === "hourly" ? 4 : 1;
       const v = num(r.temperature);
       if (i % step || v == null) return "";
       return `<text x="${x(i)}" y="${yT(v) - 6}" text-anchor="middle" style="fill:var(--rl-harvest)">${Math.round(v)}°</text>`;
@@ -176,9 +237,104 @@ function chart(rows, mode) {
         <text x="2" y="${yT(v) + 3}">${Math.round(v)}°</text>`
     )
     .join("");
+  const probAxis = [0, 50, 100]
+    .map((v) => `<text x="${W - padR + 4}" y="${yP(v) + 3}" style="fill:var(--rl-water)">${v}%</text>`)
+    .join("");
+  // tygodniowy: szczegóły dnia w dymku po najechaniu (nie zaśmiecamy widoku)
+  const tips =
+    mode === "daily"
+      ? rows
+          .map((r, i) => {
+            const linesTip = [
+              new Date(r.datetime).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "numeric" }),
+              num(r.temperature) != null ? `↑ ${Math.round(num(r.temperature))}°  ${num(r.templow) != null ? "↓ " + Math.round(num(r.templow)) + "°" : ""}` : null,
+              num(r.precipitation_probability) != null ? `☔ ${Math.round(num(r.precipitation_probability))} %` : null,
+              num(r.precipitation) != null ? `🌧 ${num(r.precipitation)} mm` : null,
+              num(r.humidity) != null ? `💧 ${Math.round(num(r.humidity))} %` : null,
+              num(r.pressure) != null ? `◎ ${Math.round(num(r.pressure))} hPa` : null,
+            ].filter(Boolean);
+            const tw = 132;
+            const tx = Math.min(Math.max(x(i) - tw / 2, padL), W - padR - tw);
+            return `<g class="fc-day">
+              <rect class="hit" x="${padL + i * slot}" y="0" width="${slot}" height="${H}" fill="transparent"/>
+              <g class="fc-tip">
+                <rect x="${tx}" y="6" width="${tw}" height="${linesTip.length * 13 + 10}" rx="6"/>
+                ${linesTip.map((ln, j) => `<text x="${tx + 8}" y="${21 + j * 13}">${esc(ln)}</text>`).join("")}
+              </g>
+            </g>`;
+          })
+          .join("")
+      : "";
   return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
-    ${grid}${bars}${line("templow", "min")}${line("temperature", "")}${tempLabels}${labels}
+    ${grid}${probAxis}${bars}${line("templow", "temp-line min", yT)}${line("temperature", "temp-line", yT)}
+    ${line("precipitation_probability", "prob-line", yP)}${tempLabels}${labels}${tips}
   </svg>`;
+}
+
+/* Tryb rozdzielony: osobny mini-wykres na każdą dostępną wielkość. */
+function chartsSplit(rows, mode) {
+  const metrics = [
+    { label: `${t("forecast.legend.temp")} (°C)`, series: [["temperature", "temp-line"], ["templow", "temp-line min"]] },
+    { label: `${t("forecast.legend.rain")} + ${t("forecast.legend.prob")}`, bars: "precipitation", prob: true },
+    { label: `${t("forecast.hum")} (%)`, series: [["humidity", "hum-line"]] },
+    { label: `${t("forecast.press")} (hPa)`, series: [["pressure", "press-line"]] },
+  ];
+  return metrics
+    .map((metric) => {
+      const keys = (metric.series || []).map(([k]) => k).concat(metric.bars ? [metric.bars] : []);
+      if (!keys.some((k) => S(rows, k).some((v) => v != null))) return "";
+      return chartMini(rows, metric, mode);
+    })
+    .filter(Boolean)
+    .join("");
+}
+
+function chartMini(rows, metric, mode) {
+  const W = 720, H = 130, padL = 34, padR = 30, padT = 18, padB = 22;
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const slot = iw / rows.length;
+  const x = (i) => padL + (i + 0.5) * slot;
+  const vals = (metric.series || []).flatMap(([k]) => S(rows, k)).filter((v) => v != null);
+  let out = `<text x="${padL}" y="11" style="fill:var(--primary-text-color);font-size:11px">${esc(metric.label)}</text>`;
+  if (metric.bars) {
+    const rains = S(rows, metric.bars).map((v) => v ?? 0);
+    const rMax = Math.max(1, ...rains);
+    out += rows
+      .map((r, i) => {
+        const rv = num(r[metric.bars]) ?? 0;
+        if (!rv) return "";
+        const bh = (rv / rMax) * ih;
+        return `<rect class="rain-bar" x="${x(i) - slot * 0.3}" y="${padT + ih - bh}" width="${slot * 0.6}" height="${bh}"><title>${rv} mm</title></rect>`;
+      })
+      .join("");
+    out += `<text x="2" y="${padT + 4}" style="fill:var(--rl-water)">${rMax} mm</text>`;
+    if (metric.prob) {
+      const yP = (v) => padT + (1 - v / 100) * ih;
+      const pts = rows
+        .map((r, i) => (num(r.precipitation_probability) != null ? `${x(i).toFixed(1)},${yP(num(r.precipitation_probability)).toFixed(1)}` : null))
+        .filter(Boolean);
+      if (pts.length > 1) out += `<polyline class="prob-line" points="${pts.join(" ")}"/>`;
+      out += `<text x="${W - padR + 4}" y="${padT + 4}" style="fill:var(--rl-water)">100%</text>`;
+    }
+  } else if (vals.length) {
+    let vMin = Math.min(...vals), vMax = Math.max(...vals);
+    if (vMax - vMin < 2) { vMax += 1; vMin -= 1; }
+    const y = (v) => padT + (1 - (v - vMin) / (vMax - vMin)) * ih;
+    out += [vMin, vMax]
+      .map((v) => `<line class="gridline" x1="${padL}" x2="${W - padR}" y1="${y(v)}" y2="${y(v)}"/><text x="2" y="${y(v) + 3}">${Math.round(v)}</text>`)
+      .join("");
+    for (const [key, cls] of metric.series) {
+      const pts = rows
+        .map((r, i) => (num(r[key]) != null ? `${x(i).toFixed(1)},${y(num(r[key])).toFixed(1)}` : null))
+        .filter(Boolean);
+      if (pts.length > 1) out += `<polyline class="temp-line ${cls}" points="${pts.join(" ")}"/>`;
+    }
+  }
+  const step = mode === "hourly" ? 4 : 1;
+  out += rows
+    .map((r, i) => (i % step ? "" : `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${xLabel(r, mode)}</text>`))
+    .join("");
+  return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="margin-top:4px">${out}</svg>`;
 }
 
 function weatherSection(app) {
@@ -207,4 +363,5 @@ export const actions = {
   "weather-skip": (app) => app.ws("irrigation/skip", { date: todayISO() }).then((d) => { app.data = d; app.render(); }),
   "weather-dismiss": (app) => { app.rainDismissed = true; app.render(); },
   "forecast-mode": (app, el) => { app.forecastMode = el.dataset.mode; app.render(); },
+  "forecast-split": (app) => { app.forecastSplit = !app.forecastSplit; app.render(); },
 };

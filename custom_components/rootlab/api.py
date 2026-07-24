@@ -51,6 +51,7 @@ def _public(hass):
             "latitude": location.get("latitude", hass.config.latitude),
             "ai_provider": options.get("ai_provider", "anthropic"),
             "has_weather_entity": bool(options.get("weather_entity")),
+            "weather_entity": options.get("weather_entity"),
         },
     }
 

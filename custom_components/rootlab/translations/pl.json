@@ -21,7 +21,8 @@
           "api_key": "Klucz API dostawcy AI",
           "ai_model": "Model AI (puste = domyślny dostawcy)",
           "ai_base_url": "Adres API (dla Ollama / custom)",
-          "ai_task_entity": "Encja Zadania AI (dla dostawcy „Zadanie AI z HA\")"
+          "ai_task_entity": "Encja Zadania AI (dla dostawcy „Zadanie AI z HA\")",
+          "station_location": "Albo wskaż punkt na mapie (wybiorę najbliższą stację IMGW)"
         },
         "data_description": {
           "imgw_station": "Stacja pomiarowa IMGW dla bieżącej temperatury i opadów (np. warszawa, krakow, gdansk). Lista podpowiada dostępne stacje.",
@@ -30,7 +31,8 @@
           "api_key": "Klucz API wybranego dostawcy. Przy zapisie jest weryfikowany u dostawcy; niepotrzebny dla „Zadanie AI z HA\" i Ollamy.",
           "ai_model": "Który model dostawcy ma odpowiadać. Puste = sprawdzony domyślny (np. gemini-3.5-flash dla Google). Po zapisaniu poprawnego klucza pole zmienia się w listę modeli pobraną z Twojego konta — można też wpisać nazwę ręcznie.",
           "ai_base_url": "Tylko dla Ollamy (adres serwera, np. http://192.168.1.10:11434/v1) lub własnego endpointu zgodnego z OpenAI. Dla pozostałych dostawców zostaw puste.",
-          "ai_task_entity": "Użyj dowolnej integracji AI skonfigurowanej w HA (np. Google, OpenAI, Anthropic, Ollama) — z logowaniem obsługiwanym przez tę integrację."
+          "ai_task_entity": "Użyj dowolnej integracji AI skonfigurowanej w HA (np. Google, OpenAI, Anthropic, Ollama) — z logowaniem obsługiwanym przez tę integrację.",
+          "station_location": "Znacznik startuje w lokalizacji Twojego domu z HA. Po zapisie pole stacji ustawi się na najbliższą stację synoptyczną."
         }
       }
     },

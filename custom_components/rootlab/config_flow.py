@@ -6,6 +6,7 @@ from homeassistant.helpers import selector
 
 from .ai import async_list_models
 from .const import DOMAIN
+from .weather import nearest_station
 
 # dostawcy, dla ktorych klucz da sie zweryfikowac lista modeli
 _KEY_PROVIDERS = {
@@ -74,6 +75,12 @@ class RootlabOptionsFlow(OptionsFlow):
                     errors["api_key"] = "invalid_auth"
                     placeholders["error_detail"] = str(err)[:200]
             if not errors:
+                # mapa → najbliższa stacja IMGW
+                loc = user_input.get("station_location")
+                if loc and loc.get("latitude"):
+                    user_input["imgw_station"] = nearest_station(
+                        loc["latitude"], loc["longitude"]
+                    )
                 return self.async_create_entry(title="", data=user_input)
 
         options = dict(self.config_entry.options)
@@ -114,6 +121,7 @@ class RootlabOptionsFlow(OptionsFlow):
         schema = vol.Schema(
             {
                 vol.Optional("imgw_station"): station_selector,
+                vol.Optional("station_location"): selector.LocationSelector(),
                 vol.Optional("weather_entity"): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="weather")
                 ),
@@ -136,6 +144,13 @@ class RootlabOptionsFlow(OptionsFlow):
         )
         defaults = {
             "imgw_station": options.get("imgw_station", "warszawa"),
+            "station_location": options.get(
+                "station_location",
+                {
+                    "latitude": self.hass.config.latitude,
+                    "longitude": self.hass.config.longitude,
+                },
+            ),
             "ai_provider": options.get("ai_provider", "anthropic"),
         }
         for key in ("weather_entity", "api_key", "ai_model", "ai_base_url", "ai_task_entity"):
