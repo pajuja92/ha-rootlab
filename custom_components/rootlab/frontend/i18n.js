@@ -1,5 +1,5 @@
 const PL = {
-  "tab.dashboard": "Pulpit", "tab.plants": "Rośliny", "tab.tasks": "Zadania", "tab.water": "Woda", "tab.editor": "Edytor", "tab.knowledge": "Wiedza",
+  "tab.dashboard": "Pulpit", "tab.plants": "Rośliny", "tab.tasks": "Zadania", "tab.water": "Woda", "tab.editor": "Plan ogrodu", "tab.knowledge": "Wiedza", "tab.stats": "Statystyki",
   save: "Zapisz", cancel: "Anuluj", edit: "Edytuj", delete: "Usuń", add: "Dodaj", stop: "Stop", close: "Zamknij", none: "— brak —",
   "combo.noresults": "Brak wyników", "combo.ph": "Wpisz, aby wyszukać…",
   "zones.title": "Strefy", "zones.add": "Strefa", "zone.new": "Nowa strefa", "zone.edit": "Edytuj strefę",
@@ -39,6 +39,10 @@ const PL = {
   "verify.collecting": "Weryfikator zbiera dane — prognozy z modeli ICON, ECMWF, GFS, UKMO i Twojej encji są zapisywane każdej nocy i porównywane z rzeczywistymi pomiarami. Pierwsze wyniki po ~2 dniach.",
   "verify.note": "Prawda gruntowa: Twoje czujniki (opcje integracji) albo najbliższa stacja IMGW. Im niższy błąd, tym lepsza prognoza dla Twojej lokalizacji.",
   "verify.since": "Zbierane od",
+  "stats.today": "Dziś: prognozy vs pomiary (temperatura)",
+  "stats.nodata": "Brak dzisiejszego snapshotu — prognozy zapisują się każdej nocy po 00:10.",
+  "stats.actual": "pomiar (prawda)",
+  "dash.customize": "Dostosuj pulpit", "dash.done": "Gotowe",
   "weather.unavailable": "Stacja IMGW milczy w tej chwili — dane wrócą przy następnym odświeżeniu.",
   "weather.station": "Stacja", "weather.measured": "pomiar z", "weather.temp": "Temperatura",
   "weather.hum": "Wilgotność", "weather.rain": "Opad", "weather.wind": "Wiatr", "weather.pressure": "Ciśnienie",
@@ -142,7 +146,7 @@ const PL = {
 };
 
 const EN = {
-  "tab.dashboard": "Dashboard", "tab.plants": "Plants", "tab.tasks": "Tasks", "tab.water": "Water", "tab.editor": "Editor", "tab.knowledge": "Knowledge",
+  "tab.dashboard": "Dashboard", "tab.plants": "Plants", "tab.tasks": "Tasks", "tab.water": "Water", "tab.editor": "Garden plan", "tab.knowledge": "Knowledge", "tab.stats": "Statistics",
   save: "Save", cancel: "Cancel", edit: "Edit", delete: "Delete", add: "Add", stop: "Stop", close: "Close", none: "— none —",
   "combo.noresults": "No results", "combo.ph": "Type to search…",
   "zones.title": "Zones", "zones.add": "Zone", "zone.new": "New zone", "zone.edit": "Edit zone",
@@ -182,6 +186,10 @@ const EN = {
   "verify.collecting": "The verifier is collecting data — forecasts from ICON, ECMWF, GFS, UKMO and your entity are stored nightly and compared with real measurements. First results after ~2 days.",
   "verify.note": "Ground truth: your sensors (integration options) or the nearest IMGW station. Lower error = better forecast for your location.",
   "verify.since": "Collecting since",
+  "stats.today": "Today: forecasts vs measurements (temperature)",
+  "stats.nodata": "No snapshot for today yet — forecasts are stored nightly after 00:10.",
+  "stats.actual": "measured (truth)",
+  "dash.customize": "Customize dashboard", "dash.done": "Done",
   "weather.unavailable": "The IMGW station is silent right now — data will return on the next refresh.",
   "weather.station": "Station", "weather.measured": "measured at", "weather.temp": "Temperature",
   "weather.hum": "Humidity", "weather.rain": "Rainfall", "weather.wind": "Wind", "weather.pressure": "Pressure",

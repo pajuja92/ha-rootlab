@@ -8,10 +8,11 @@ import * as dashboard from "./views/dashboard.js";
 import * as editor from "./views/editor.js";
 import * as knowledge from "./views/knowledge.js";
 import * as plants from "./views/plants.js";
+import * as stats from "./views/stats.js";
 import * as tasks from "./views/tasks.js";
 import * as water from "./views/water.js";
 
-const VIEWS = { dashboard, plants, tasks, water, knowledge, editor };
+const VIEWS = { dashboard, plants, tasks, water, stats, knowledge, editor };
 const ACTIONS = Object.assign(
   {},
   dashboard.actions,
@@ -27,6 +28,7 @@ const TABS = [
   { id: "plants", icon: "mdi:sprout" },
   { id: "tasks", icon: "mdi:clipboard-check-outline" },
   { id: "water", icon: "mdi:water" },
+  { id: "stats", icon: "mdi:chart-box-outline" },
   { id: "knowledge", icon: "mdi:book-open-variant" },
   { id: "editor", icon: "mdi:vector-square" },
 ];
@@ -187,8 +189,8 @@ class RootlabPanel extends HTMLElement {
       <style>${CSS}</style>
       <div class="appbar">
         <ha-menu-button></ha-menu-button>
-        <h1 class="title">🌱 <b>Root</b><span>Lab</span></h1>
         <nav class="tabs">
+          <h1 class="title">🌱 <b>Root</b><span>Lab</span></h1>
           ${TABS.map(
             (tb) => `<button class="tab" data-tab="${tb.id}" ${tb.id === this.tab ? "data-active" : ""}>
               <ha-icon icon="${tb.icon}"></ha-icon>${t(`tab.${tb.id}`)}</button>`

@@ -14,7 +14,63 @@ export function render(app) {
       <button class="btn" data-action="add-zone"><ha-icon icon="mdi:plus"></ha-icon>${t("dash.addzone")}</button>
     </div>`;
   }
-  return [alerts(app), zonesSection(app), waterSection(app), tasksSection(app), forecastSection(app), verifySection(app), weatherSection(app)].join("");
+  return alerts(app) + widgetsBody(app);
+}
+
+/* --- Widgety pulpitu: kolejność i widoczność edytowalne (localStorage) --- */
+
+const WIDGETS = [
+  { id: "zones", titleKey: "zones.title", render: zonesSection },
+  { id: "water", titleKey: "dash.water", render: waterSection },
+  { id: "tasks", titleKey: "dash.tasks", render: tasksSection },
+  { id: "forecast", titleKey: "dash.forecast", render: forecastSection },
+  { id: "verify", titleKey: "verify.title", render: verifySection },
+  { id: "weather", titleKey: "dash.weather", render: weatherSection },
+];
+
+function dashCfg() {
+  try {
+    const cfg = JSON.parse(localStorage.getItem("rootlab_dash"));
+    if (Array.isArray(cfg?.order) && Array.isArray(cfg?.hidden)) {
+      // dopnij nowe widgety, których konfiguracja jeszcze nie zna
+      for (const w of WIDGETS) if (!cfg.order.includes(w.id)) cfg.order.push(w.id);
+      return cfg;
+    }
+  } catch (e) { /* uszkodzona konfiguracja → domyślna */ }
+  return { order: WIDGETS.map((w) => w.id), hidden: [] };
+}
+const saveDashCfg = (cfg) => localStorage.setItem("rootlab_dash", JSON.stringify(cfg));
+
+function widgetsBody(app) {
+  const cfg = dashCfg();
+  const edit = !!app.dashEdit;
+  const toolbar = `<div class="toolbar" style="margin-bottom:8px"><div class="spacer"></div>
+    <button class="btn small ${edit ? "" : "ghost"}" data-action="dash-edit">
+      <ha-icon icon="${edit ? "mdi:check" : "mdi:tune"}" style="--mdc-icon-size:16px"></ha-icon>${edit ? t("dash.done") : t("dash.customize")}</button>
+  </div>`;
+  const body = cfg.order
+    .map((id) => {
+      const w = WIDGETS.find((x) => x.id === id);
+      if (!w) return "";
+      const hidden = cfg.hidden.includes(id);
+      if (!edit && hidden) return "";
+      let content = hidden ? "" : w.render(app);
+      if (!content && edit) {
+        content = `<div class="section-title">${t(w.titleKey)}</div>
+          <div class="card" style="opacity:.6;font-size:13px;color:var(--secondary-text-color)">—</div>`;
+      }
+      if (!edit) return content;
+      return `<div class="widget-wrap ${hidden ? "w-hidden" : ""}">
+        ${content || `<div class="section-title">${t(w.titleKey)}</div>`}
+        <div class="widget-ctl">
+          <button class="icon-btn" data-action="dash-move" data-id="${id}" data-dir="-1" title="↑"><ha-icon icon="mdi:arrow-up"></ha-icon></button>
+          <button class="icon-btn" data-action="dash-move" data-id="${id}" data-dir="1" title="↓"><ha-icon icon="mdi:arrow-down"></ha-icon></button>
+          <button class="icon-btn" data-action="dash-vis" data-id="${id}"><ha-icon icon="${hidden ? "mdi:eye-off" : "mdi:eye"}"></ha-icon></button>
+        </div>
+      </div>`;
+    })
+    .join("");
+  return toolbar + body;
 }
 
 function alerts(app) {
@@ -408,4 +464,21 @@ export const actions = {
   "weather-dismiss": (app) => { app.rainDismissed = true; app.render(); },
   "forecast-mode": (app, el) => { app.forecastMode = el.dataset.mode; app.render(); },
   "forecast-split": (app) => { app.forecastSplit = !app.forecastSplit; app.render(); },
+  "dash-edit": (app) => { app.dashEdit = !app.dashEdit; app.render(); },
+  "dash-move": (app, el) => {
+    const cfg = dashCfg();
+    const i = cfg.order.indexOf(el.dataset.id);
+    const j = i + parseInt(el.dataset.dir, 10);
+    if (i < 0 || j < 0 || j >= cfg.order.length) return;
+    [cfg.order[i], cfg.order[j]] = [cfg.order[j], cfg.order[i]];
+    saveDashCfg(cfg);
+    app.render();
+  },
+  "dash-vis": (app, el) => {
+    const cfg = dashCfg();
+    const id = el.dataset.id;
+    cfg.hidden = cfg.hidden.includes(id) ? cfg.hidden.filter((x) => x !== id) : [...cfg.hidden, id];
+    saveDashCfg(cfg);
+    app.render();
+  },
 };

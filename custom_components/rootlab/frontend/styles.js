@@ -34,9 +34,9 @@ export const CSS = `
   color: var(--app-header-text-color, #fff);
   position: sticky; top: 0; z-index: 10;
 }
-.appbar .title { font-size: 20px; margin: 0 12px 0 4px; white-space: nowrap; }
+.appbar .title { font-size: 20px; margin: 0 12px 0 4px; white-space: nowrap; flex-shrink: 0; align-self: center; }
 .appbar .title b { font-weight: 600; }
-.tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; align-items: center; flex: 1; }
 .tab {
   display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px;
   border: none; border-radius: 999px; background: transparent; color: inherit;
@@ -322,6 +322,13 @@ dialog.wide { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 64
   cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
 .compass .needle, .compass circle { cursor: grab; }
+.widget-wrap { position: relative; border: 1px dashed color-mix(in srgb, var(--rl-ai) 60%, transparent); border-radius: var(--rl-radius); padding: 8px; margin-bottom: 12px; }
+.widget-wrap.w-hidden { opacity: 0.5; }
+.widget-ctl {
+  position: absolute; top: 6px; right: 8px; z-index: 6; display: flex; gap: 2px;
+  background: var(--card-background-color); border: 1px solid var(--divider-color);
+  border-radius: 999px; padding: 2px;
+}
 #toast {
   position: fixed; bottom: 28px; left: 50%; transform: translate(-50%, 12px);
   background: var(--card-background-color); border: 1px solid var(--rl-green);
