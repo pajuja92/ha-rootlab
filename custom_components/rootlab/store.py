@@ -30,6 +30,9 @@ async def async_load_data(hass):
         data["irrigation"].setdefault(key, copy.deepcopy(default))
     for key, default in DEFAULTS["layout"].items():
         data["layout"].setdefault(key, copy.deepcopy(default))
+    for item in data["layout"]["items"]:
+        if item.get("kind") == "object":  # dawny „Obiekt" → „Krzew"
+            item["kind"] = "shrub"
     return store, data
 
 

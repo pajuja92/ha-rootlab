@@ -45,7 +45,7 @@ export function render(app) {
       <button class="btn small plain" data-action="water-unskip">${t("water.skip.undo")}</button></div>`;
   }
   if (!irr.sections.length) {
-    return `${toolbar}<div class="empty"><ha-icon icon="mdi:water"></ha-icon><p>${t("water.empty")}</p></div>`;
+    return `${toolbar}<div class="empty"><ha-icon icon="mdi:water"></ha-icon><p>${t("water.empty")}</p></div>${devicesSection(app)}`;
   }
   return `${toolbar}${banner}
     <div class="card">

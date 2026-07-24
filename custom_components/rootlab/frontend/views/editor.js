@@ -11,25 +11,26 @@ const CIRCLE_DEFAULTS = {
   plant: { diameter_m: 0.5, height_m: 0.6, crown_base_m: 0 },
   tree: { diameter_m: 3, height_m: 5, crown_base_m: 2 },
   shrub: { diameter_m: 1, height_m: 1.2, crown_base_m: 0.2 },
-  object: { diameter_m: 2, height_m: 2.5, crown_base_m: 0 },
+  compost: { diameter_m: 1.2, height_m: 1, crown_base_m: 0 },
 };
 const KIND_FILL = {
   plant: "var(--rl-green)",
   tree: "color-mix(in srgb, var(--rl-green) 70%, black)",
   shrub: "var(--rl-soil)",
-  object: "var(--secondary-text-color)",
+  compost: "color-mix(in srgb, var(--rl-soil) 65%, black)",
 };
+const KIND_GLYPH = { tree: "🌳", shrub: "🌿", compost: "♻️" };
 const AREA_EMOJI = { greenhouse: "🏠", bed: "🥕", lawn: "🌱" };
 
 const st = (app) =>
   (app.editorState ??= {
-    palette: "greenhouse",
+    palette: "tree",
     detailPalette: "",
     month: new Date().getMonth() + 1,
     hour: 12,
-    mode: "view", // domyślnie podgląd
+    mode: "view",
     sat: true,
-    zoneDetail: null, // id obszaru otwartego w widoku szczegółowym
+    zoneDetail: null,
   });
 
 const gardenLat = (app) =>
@@ -37,14 +38,31 @@ const gardenLat = (app) =>
 const gardenLon = (app) =>
   app.data.layout.location?.longitude || app.hass.config.longitude || 21;
 
-/* Pozycja Słońca dla suwaków miesiąc+godzina (15. dzień miesiąca, czas lokalny). */
 function sunFor(app) {
   const s = st(app);
   const now = new Date();
   const date = new Date(now.getFullYear(), s.month - 1, 15, s.hour, 0, 0);
   return solarPosition(gardenLat(app), gardenLon(app), date);
 }
+
 const isArea = (i) => "w" in i;
+const isPath = (i) => Array.isArray(i.path);
+const isSpray = (i) => i.kind === "irrigation" && i.mode === "sprinkler";
+const isCircle = (i) => !isArea(i) && !isPath(i) && !isSpray(i);
+
+/* Jedna reprezentacja na roślinę / sekcję nawadniania. */
+const placedPlantIds = (app) =>
+  new Set(app.data.layout.items.filter((i) => i.plant_id).map((i) => i.plant_id));
+const placedSectionIds = (app) =>
+  new Set(app.data.layout.items.filter((i) => i.kind === "irrigation").map((i) => i.section_id));
+const unplacedPlants = (app) => {
+  const placed = placedPlantIds(app);
+  return app.data.plants.filter((p) => !placed.has(p.id));
+};
+const unplacedSections = (app) => {
+  const placed = placedSectionIds(app);
+  return (app.data.irrigation.sections || []).filter((s) => !placed.has(s.id));
+};
 
 export function render(app) {
   const s = st(app);
@@ -55,6 +73,14 @@ export function render(app) {
   }
   const layout = app.data.layout;
   const satActive = s.sat && layout.location;
+  const plantOpts = unplacedPlants(app)
+    .map((p) => `<option value="plant:${p.id}" ${s.palette === "plant:" + p.id ? "selected" : ""}>${esc(p.emoji || "🌱")} ${esc(p.name)}</option>`)
+    .join("");
+  const irrOpts = unplacedSections(app)
+    .map(
+      (sec) => `<option value="irr:${sec.id}" ${s.palette === "irr:" + sec.id ? "selected" : ""}>💧 ${esc(sec.name)} (${t("water.kind." + (sec.kind || "other"))})</option>`
+    )
+    .join("");
   return `
     <div class="toolbar">
       <div class="mode-toggle">
@@ -64,8 +90,18 @@ export function render(app) {
       ${
         s.mode === "edit"
           ? `<select class="inline" data-bind="palette">
-              ${AREA_KINDS.map((k) => `<option value="${k}" ${s.palette === k ? "selected" : ""}>${AREA_EMOJI[k]} ${t("editor.palette." + k)}</option>`).join("")}
-            </select>`
+        <optgroup label="${t("editor.group.areas")}">
+          ${AREA_KINDS.map((k) => `<option value="${k}" ${s.palette === k ? "selected" : ""}>${AREA_EMOJI[k]} ${t("editor.palette." + k)}</option>`).join("")}
+        </optgroup>
+        <optgroup label="${t("editor.group.objects")}">
+          <option value="tree" ${s.palette === "tree" ? "selected" : ""}>🌳 ${t("editor.palette.tree")}</option>
+          <option value="shrub" ${s.palette === "shrub" ? "selected" : ""}>🌿 ${t("editor.palette.shrub")}</option>
+          <option value="compost" ${s.palette === "compost" ? "selected" : ""}>♻️ ${t("editor.palette.compost")}</option>
+          <option value="fence" ${s.palette === "fence" ? "selected" : ""}>🪵 ${t("editor.palette.fence")}</option>
+        </optgroup>
+        ${irrOpts ? `<optgroup label="${t("editor.group.irrigation")}">${irrOpts}</optgroup>` : ""}
+        ${plantOpts ? `<optgroup label="${t("tab.plants")}">${plantOpts}</optgroup>` : ""}
+      </select>`
           : ""
       }
       <span class="month-slider">
@@ -99,9 +135,34 @@ function circleNode(app, i, caps) {
   const shaded = caps.some(({ c, cap }) => isShaded(i, c, cap));
   const inGh = i.kind === "plant" && greenhouses.some((g) => insideRect(i, g));
   const r = Math.max(i.diameter_m / 2, 0.25);
-  return `<g class="item" data-id="${i.id}" transform="translate(${i.x} ${i.y})">
-    <circle r="${r}" fill="${KIND_FILL[i.kind] || KIND_FILL.object}" fill-opacity="0.75"/>
-    <text y="${r + 0.6}">${esc(i.label)}${inGh ? " 🏠" : ""}${shaded ? " ☁" : ""}</text>
+  const plant = i.plant_id ? app.data.plants.find((p) => p.id === i.plant_id) : null;
+  const glyph = plant ? plant.emoji || "🌱" : KIND_GLYPH[i.kind] || "";
+  const assignable = ["plant", "tree", "shrub"].includes(i.kind) && !i.plant_id;
+  const hoverText = `${esc(plant ? plant.name : i.label)}${inGh ? " 🏠" : ""}${shaded ? " ☁" : ""}${assignable ? " ❓" : ""}`;
+  return `<g class="item circle-item ${shaded ? "is-shaded" : ""}" data-id="${i.id}" transform="translate(${i.x} ${i.y})">
+    <circle r="${r}" fill="${KIND_FILL[i.kind] || KIND_FILL.shrub}" fill-opacity="0.8"/>
+    ${assignable ? `<circle class="unassigned-ring" r="${r + 0.12}"/>` : ""}
+    ${glyph ? `<text class="glyph" y="${Math.min(r * 0.45, 0.5)}" text-anchor="middle" style="font-size:${Math.max(Math.min(r * 1.1, 1.4), 0.45)}px">${glyph}</text>` : ""}
+    <text class="hover-label" y="${r + 0.65}">${hoverText}</text>
+  </g>`;
+}
+
+function pathNode(item) {
+  const pts = item.path.map((p) => p.join(",")).join(" ");
+  const mid = item.path[Math.floor(item.path.length / 2)] || [0, 0];
+  const cls = item.kind === "fence" ? "fence" : "drip";
+  return `<g class="item path-item" data-id="${item.id}">
+    <polyline class="path ${cls}" points="${pts}"/>
+    <polyline points="${pts}" fill="none" stroke="transparent" stroke-width="0.7"/>
+    <text class="hover-label" x="${mid[0]}" y="${mid[1] - 0.4}">${item.kind === "fence" ? "🪵" : "💧"} ${esc(item.label)}</text>
+  </g>`;
+}
+
+function sprayNode(item) {
+  return `<g class="item spray-item" data-id="${item.id}" transform="translate(${item.x} ${item.y})">
+    <circle class="spray" r="${item.radius_m || 2}"/>
+    <circle class="spray-head" r="0.22"/>
+    <text class="hover-label" y="-${(item.radius_m || 2) + 0.3}">💦 ${esc(item.label)}</text>
   </g>`;
 }
 
@@ -109,7 +170,7 @@ function svg(app, satActive) {
   const s = st(app);
   const { width_m: W, height_m: H, north_deg: north = 0, items } = app.data.layout;
   const sun = sunFor(app);
-  const circles = items.filter((i) => !isArea(i));
+  const circles = items.filter(isCircle);
   const caps = circles.map((c) => ({ c, cap: shadowCapsule(c, sun, north) }));
   const areas = items.filter(isArea);
 
@@ -135,6 +196,8 @@ function svg(app, satActive) {
     )
     .join("");
 
+  const paths = items.filter(isPath).map(pathNode).join("");
+  const sprays = items.filter(isSpray).map(sprayNode).join("");
   const nodes = circles.map((i) => circleNode(app, i, caps)).join("");
 
   const n = northVector(north);
@@ -148,28 +211,28 @@ function svg(app, satActive) {
     <defs><pattern id="rl-grid" width="1" height="1" patternUnits="userSpaceOnUse">
       <path d="M 1 0 L 0 0 0 1" fill="none" class="grid-line"/></pattern></defs>
     <rect width="${W}" height="${H}" fill="url(#rl-grid)"/>
-    ${areaNodes}${shadows}${nodes}${compass}
+    ${areaNodes}${sprays}${paths}${shadows}${nodes}${compass}
     <rect id="draw-preview" class="draw-preview" style="display:none" />
+    <polyline id="path-preview" style="display:none" />
+    <circle id="spray-preview" style="display:none" />
   </svg>`;
 }
 
-/* --- Widok szczegółowy strefy: sadzenie roślin w konkretnych miejscach --- */
+/* --- Widok szczegółowy strefy --- */
 
 function renderDetail(app, area) {
   const s = st(app);
   const layout = app.data.layout;
   const zone = app.data.zones.find((z) => z.id === area.zone_id);
-  const planted = new Set(layout.items.filter((i) => i.plant_id).map((i) => i.plant_id));
-  const plantOpts = app.data.plants
+  const plantOpts = unplacedPlants(app)
     .map(
-      (p) => `<option value="plant:${p.id}" ${s.detailPalette === "plant:" + p.id ? "selected" : ""}>
-        ${esc(p.emoji || "🌱")} ${esc(p.name)}${planted.has(p.id) ? ` · ${t("editor.planted")}` : ""}</option>`
+      (p) => `<option value="plant:${p.id}" ${s.detailPalette === "plant:" + p.id ? "selected" : ""}>${esc(p.emoji || "🌱")} ${esc(p.name)}</option>`
     )
     .join("");
   const pad = Math.max(1, Math.min(area.w, area.h) * 0.1);
   const north = layout.north_deg || 0;
   const sun = sunFor(app);
-  const circles = layout.items.filter((i) => !isArea(i));
+  const circles = layout.items.filter(isCircle);
   const caps = circles.map((c) => ({ c, cap: shadowCapsule(c, sun, north) }));
   const inside = circles.filter((i) => insideRect(i, area));
   const shadows = caps
@@ -191,7 +254,7 @@ function renderDetail(app, area) {
         <optgroup label="${t("editor.group.objects")}">
           <option value="tree" ${s.detailPalette === "tree" ? "selected" : ""}>🌳 ${t("editor.palette.tree")}</option>
           <option value="shrub" ${s.detailPalette === "shrub" ? "selected" : ""}>🌿 ${t("editor.palette.shrub")}</option>
-          <option value="object" ${s.detailPalette === "object" ? "selected" : ""}>📦 ${t("editor.palette.object")}</option>
+          <option value="compost" ${s.detailPalette === "compost" ? "selected" : ""}>♻️ ${t("editor.palette.compost")}</option>
         </optgroup>
       </select>
       <button class="btn ghost" data-action="editor-area-edit" data-id="${area.id}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${t("edit")}</button>
@@ -227,7 +290,6 @@ function svgPoint(svgEl, ev) {
   return pt.matrixTransform(svgEl.getScreenCTM().inverse());
 }
 
-/* Podkład satelitarny pod planem: skala px/m planu dopasowana do metrów/px kafelków. */
 function renderUnderlay(app, root) {
   const under = root.getElementById("sat-under");
   if (!under) return;
@@ -313,6 +375,11 @@ export function bind(app, root) {
     }
   };
 
+  const sectionFor = (pal) => app.data.irrigation.sections.find((x) => x.id === pal.slice(4));
+  const isPathPalette = () =>
+    s.palette === "fence" || (s.palette.startsWith("irr:") && sectionFor(s.palette)?.kind === "drip");
+  const isSprayPalette = () => s.palette.startsWith("irr:") && sectionFor(s.palette)?.kind !== "drip";
+
   svgEl.addEventListener("pointerdown", (ev) => {
     const p = svgPoint(svgEl, ev);
     const compass = ev.target.closest(".compass");
@@ -334,9 +401,19 @@ export function bind(app, root) {
       drag = { type: "resize", item, moved: false };
     } else if (node) {
       const item = layout.items.find((i) => i.id === node.dataset.id);
-      drag = { type: "move", item, node, dx: item.x - p.x, dy: item.y - p.y, moved: false };
-    } else {
+      if (isPath(item)) {
+        drag = { type: "click-item", item };
+      } else {
+        drag = { type: "move", item, node, dx: item.x - p.x, dy: item.y - p.y, moved: false };
+      }
+    } else if (AREA_KINDS.includes(s.palette)) {
       drag = { type: "draw", x0: p.x, y0: p.y, moved: false };
+    } else if (isPathPalette()) {
+      drag = { type: "path", pts: [[clamp(p.x, layout.width_m), clamp(p.y, layout.height_m)]] };
+    } else if (isSprayPalette()) {
+      drag = { type: "spray", x0: p.x, y0: p.y, r: 0 };
+    } else {
+      drag = { type: "place", x: p.x, y: p.y };
     }
   });
 
@@ -369,6 +446,23 @@ export function bind(app, root) {
       pr.setAttribute("y", Math.min(drag.y0, p.y));
       pr.setAttribute("width", Math.abs(p.x - drag.x0));
       pr.setAttribute("height", Math.abs(p.y - drag.y0));
+    } else if (drag.type === "path") {
+      const last = drag.pts[drag.pts.length - 1];
+      const nx = clamp(p.x, layout.width_m);
+      const ny = clamp(p.y, layout.height_m);
+      if (Math.hypot(nx - last[0], ny - last[1]) > 0.4) {
+        drag.pts.push([nx, ny]);
+        const pr = root.getElementById("path-preview");
+        pr.style.display = "";
+        pr.setAttribute("points", drag.pts.map((pt) => pt.join(",")).join(" "));
+      }
+    } else if (drag.type === "spray") {
+      drag.r = Math.max(0.3, Math.hypot(p.x - drag.x0, p.y - drag.y0));
+      const pr = root.getElementById("spray-preview");
+      pr.style.display = "";
+      pr.setAttribute("cx", drag.x0);
+      pr.setAttribute("cy", drag.y0);
+      pr.setAttribute("r", drag.r);
     }
   });
 
@@ -379,11 +473,15 @@ export function bind(app, root) {
     if (d.type === "rotate") {
       layout.north_deg = d.deg;
       saveLayout(app, t("toast.saved"));
+    } else if (d.type === "click-item") {
+      pathDialog(app, d.item);
     } else if (d.type === "move" || d.type === "resize") {
       if (d.moved) saveLayout(app);
       else if (isArea(d.item)) {
         s.zoneDetail = d.item.id;
         app.render();
+      } else if (isSpray(d.item)) {
+        sprayDialog(app, d.item);
       } else {
         circleDialog(app, d.item);
       }
@@ -401,10 +499,56 @@ export function bind(app, root) {
         };
         layout.items.push(item);
         saveLayout(app, t("toast.added"));
-        areaDialog(app, item); // od razu nazwij i powiąż ze strefą
+        areaDialog(app, item);
       } else {
         app.render();
       }
+    } else if (d.type === "path") {
+      if (d.pts.length >= 2) {
+        let item;
+        if (s.palette === "fence") {
+          item = { id: uid(), kind: "fence", label: t("editor.palette.fence"), path: d.pts };
+        } else {
+          const section = sectionFor(s.palette);
+          if (!section) {
+            app.render();
+            return;
+          }
+          item = {
+            id: uid(),
+            kind: "irrigation",
+            mode: "drip",
+            section_id: section.id,
+            label: section.name,
+            path: d.pts,
+          };
+          s.palette = "tree"; // sekcja ma już reprezentację
+        }
+        layout.items.push(item);
+        saveLayout(app, t("toast.added"));
+      } else {
+        app.render();
+      }
+    } else if (d.type === "spray") {
+      const section = sectionFor(s.palette);
+      if (section && d.r >= 0.5) {
+        layout.items.push({
+          id: uid(),
+          kind: "irrigation",
+          mode: "sprinkler",
+          section_id: section.id,
+          label: section.name,
+          x: Math.round(d.x0 * 10) / 10,
+          y: Math.round(d.y0 * 10) / 10,
+          radius_m: Math.round(d.r * 10) / 10,
+        });
+        s.palette = "tree";
+        saveLayout(app, t("toast.added"));
+      } else {
+        app.render();
+      }
+    } else if (d.type === "place") {
+      addCircle(app, d);
     }
   };
   svgEl.addEventListener("pointerup", finish);
@@ -449,31 +593,44 @@ function bindDetail(app, root) {
       else circleDialog(app, d.item);
       return;
     }
-    // posadzenie: tylko wewnątrz obszaru i tylko gdy coś wybrano w palecie
     if (!s.detailPalette) return;
     if (d.x < area.x || d.x > area.x + area.w || d.y < area.y || d.y > area.y + area.h) return;
-    let kind = s.detailPalette;
-    let plantId = null;
-    let label;
-    if (kind.startsWith("plant:")) {
-      plantId = kind.slice(6);
-      const plant = app.data.plants.find((x) => x.id === plantId);
-      if (!plant) return;
-      kind = "plant";
-      label = plant.name;
-    } else {
-      label = t(`editor.palette.${kind}`);
-    }
-    layout.items.push({
-      id: uid(),
-      kind,
-      plant_id: plantId,
-      label,
-      x: Math.round(d.x * 10) / 10,
-      y: Math.round(d.y * 10) / 10,
-      ...CIRCLE_DEFAULTS[kind],
-    });
-    saveLayout(app, t("toast.added"));
+    placeFromPalette(app, s.detailPalette, d, () => (s.detailPalette = ""));
+  });
+}
+
+function placeFromPalette(app, palette, p, onPlaced = null) {
+  const layout = app.data.layout;
+  let kind = palette;
+  let plantId = null;
+  let label;
+  if (kind.startsWith("plant:")) {
+    plantId = kind.slice(6);
+    const plant = app.data.plants.find((x) => x.id === plantId);
+    if (!plant || placedPlantIds(app).has(plantId)) return; // 1 reprezentacja na roślinę
+    kind = "plant";
+    label = plant.name;
+  } else {
+    label = t(`editor.palette.${kind}`);
+  }
+  if (!CIRCLE_DEFAULTS[kind]) return;
+  layout.items.push({
+    id: uid(),
+    kind,
+    plant_id: plantId,
+    label,
+    x: Math.round(p.x * 10) / 10,
+    y: Math.round(p.y * 10) / 10,
+    ...CIRCLE_DEFAULTS[kind],
+  });
+  onPlaced?.();
+  saveLayout(app, t("toast.added"));
+}
+
+function addCircle(app, p) {
+  const s = st(app);
+  placeFromPalette(app, s.palette, p, () => {
+    if (s.palette.startsWith("plant:")) s.palette = "tree"; // roślina ma już reprezentację
   });
 }
 
@@ -490,20 +647,33 @@ function viewClick(app, itemId) {
     }
     return;
   }
-  if (item.kind === "plant" && item.plant_id && app.data.plants.some((p) => p.id === item.plant_id)) {
+  if (item.plant_id && app.data.plants.some((p) => p.id === item.plant_id)) {
     openPlantCard(app, item.plant_id);
     return;
   }
+  if (item.kind === "irrigation") {
+    const section = app.data.irrigation.sections.find((x) => x.id === item.section_id);
+    app.dialog(
+      `<h2>💧 ${esc(item.label)}</h2>
+      <p style="color:var(--secondary-text-color)">${t("water.kind." + (section?.kind || "other"))}${item.radius_m ? ` · ⌀ ${Math.round(item.radius_m * 2 * 10) / 10} m` : ""}</p>
+      <div class="dialog-actions"><button type="button" class="btn plain" data-cancel>${t("close")}</button></div>`,
+      () => {}
+    );
+    return;
+  }
+  const glyph = KIND_GLYPH[item.kind] || "🪵";
+  const dims = isPath(item) ? "" : `⌀ ${item.diameter_m} m · ↑ ${item.height_m} m`;
   app.dialog(
-    `<h2>📦 ${esc(item.label)}</h2>
-    <p style="color:var(--secondary-text-color)">⌀ ${item.diameter_m} m · ↑ ${item.height_m} m</p>
+    `<h2>${glyph} ${esc(item.label)}</h2>
+    ${dims ? `<p style="color:var(--secondary-text-color)">${dims}</p>` : ""}
+    ${["plant", "tree", "shrub"].includes(item.kind) && !item.plant_id ? `<div class="warn-hint"><ha-icon icon="mdi:link-variant-off"></ha-icon>${t("editor.unassigned")}</div>` : ""}
     <div class="dialog-actions"><button type="button" class="btn plain" data-cancel>${t("close")}</button></div>`,
     () => {}
   );
 }
 
 function areaInfoDialog(app, item) {
-  const inside = app.data.layout.items.filter((i) => !isArea(i) && insideRect(i, item));
+  const inside = app.data.layout.items.filter((i) => isCircle(i) && insideRect(i, item));
   app.dialog(
     `<h2>${AREA_EMOJI[item.kind] || "📦"} ${esc(item.label)}</h2>
     <p style="color:var(--secondary-text-color)">${item.w} × ${item.h} m · ${t("editor.area.unlinked")}</p>
@@ -543,7 +713,6 @@ function areaDialog(app, item) {
       item.zone_id = fd.get("zone_id") || null;
       item.w = parseFloat(fd.get("w")) || item.w;
       item.h = parseFloat(fd.get("h")) || item.h;
-      // powiązanie: nazwa strefy z zakładki Rośliny, jeśli wybrano
       const zone = app.data.zones.find((z) => z.id === item.zone_id);
       if (zone && (!item.label || item.label === t("editor.palette." + item.kind))) item.label = zone.name;
       saveLayout(app, t("toast.saved"));
@@ -559,6 +728,10 @@ function areaDialog(app, item) {
 }
 
 function circleDialog(app, item) {
+  const linkable = ["plant", "tree", "shrub"].includes(item.kind);
+  const linked = item.plant_id ? app.data.plants.find((p) => p.id === item.plant_id) : null;
+  const linkOpts = unplacedPlants(app).map((p) => ({ value: p.id, label: `${p.emoji || "🌱"} ${p.name}`, secondary: p.species }));
+  if (linked) linkOpts.unshift({ value: linked.id, label: `${linked.emoji || "🌱"} ${linked.name}` });
   const dlg = app.dialog(
     `<h2>${t("editor.item.edit")}</h2>
     <form>
@@ -567,6 +740,13 @@ function circleDialog(app, item) {
       <label>${t("editor.diameter")}</label><input name="diameter" type="number" step="0.1" min="0.1" max="30" value="${item.diameter_m}">
       <label>${t("editor.heightm")}</label><input name="height" type="number" step="0.1" min="0" max="40" value="${item.height_m}">
       <label>${t("editor.crownbase")}</label><input name="crownbase" type="number" step="0.1" min="0" max="40" value="${crownBase(item)}">
+      ${
+        linkable
+          ? `<label>${t("editor.assign")}</label>
+             ${combo({ name: "link_plant", value: item.plant_id || "", options: linkOpts })}
+             ${!linked ? `<label>${t("editor.assign.new")}</label><input name="new_plant" maxlength="60" placeholder="${t("plant.name.ph")}">` : ""}`
+          : ""
+      }
       <div class="dialog-actions">
         <button type="button" class="btn plain" id="circle-del" style="margin-right:auto;color:var(--rl-crisis)">${t("delete")}</button>
         ${item.plant_id ? `<button type="button" class="btn ghost" data-action="plant-card" data-id="${item.plant_id}">${t("plant.details")}</button>` : ""}
@@ -574,15 +754,96 @@ function circleDialog(app, item) {
         <button type="submit" class="btn">${t("save")}</button>
       </div>
     </form>`,
-    (fd) => {
+    async (fd) => {
       item.label = fd.get("label").trim();
       item.diameter_m = parseFloat(fd.get("diameter")) || item.diameter_m;
       item.height_m = parseFloat(fd.get("height")) || 0;
       item.crown_base_m = Math.min(parseFloat(fd.get("crownbase")) || 0, item.height_m);
+      if (linkable) {
+        const linkId = fd.get("link_plant");
+        const newName = (fd.get("new_plant") || "").trim();
+        if (newName && !linkId) {
+          // nowa roślina: w szczegółach strefy dziedziczy jej strefę, na planie głównym — do uzupełnienia
+          const areaId = st(app).zoneDetail;
+          const area = areaId ? app.data.layout.items.find((i) => i.id === areaId) : null;
+          const pid = uid();
+          try {
+            await app.ws("item/save", {
+              kind: "plants",
+              item: { id: pid, name: newName, zone_id: area?.zone_id || null, sensors: {} },
+            });
+          } catch (e) {
+            app.toast(`⚠ ${e.message || e}`, true);
+            return;
+          }
+          item.plant_id = pid;
+          item.kind = "plant";
+          item.label = newName;
+        } else if (linkId) {
+          const plant = app.data.plants.find((p) => p.id === linkId);
+          if (plant) {
+            item.plant_id = plant.id;
+            item.kind = "plant";
+            item.label = plant.name;
+          }
+        } else {
+          item.plant_id = null;
+        }
+      }
       saveLayout(app, t("toast.saved"));
     }
   );
   dlg.querySelector("#circle-del").addEventListener("click", () => {
+    if (!confirm(t("editor.item.delete.confirm"))) return;
+    app.data.layout.items = app.data.layout.items.filter((i) => i.id !== item.id);
+    dlg.close();
+    saveLayout(app, t("toast.deleted"));
+  });
+}
+
+function sprayDialog(app, item) {
+  const dlg = app.dialog(
+    `<h2>💦 ${esc(item.label)}</h2>
+    <form>
+      <label>${t("editor.spray.radius")}</label>
+      <input name="radius" type="number" step="0.1" min="0.5" max="30" value="${item.radius_m || 2}">
+      <div class="dialog-actions">
+        <button type="button" class="btn plain" id="spray-del" style="margin-right:auto;color:var(--rl-crisis)">${t("delete")}</button>
+        <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
+        <button type="submit" class="btn">${t("save")}</button>
+      </div>
+    </form>`,
+    (fd) => {
+      item.radius_m = parseFloat(fd.get("radius")) || item.radius_m;
+      saveLayout(app, t("toast.saved"));
+    }
+  );
+  dlg.querySelector("#spray-del").addEventListener("click", () => {
+    if (!confirm(t("editor.item.delete.confirm"))) return;
+    app.data.layout.items = app.data.layout.items.filter((i) => i.id !== item.id);
+    dlg.close();
+    saveLayout(app, t("toast.deleted"));
+  });
+}
+
+function pathDialog(app, item) {
+  const dlg = app.dialog(
+    `<h2>${item.kind === "fence" ? "🪵" : "💧"} ${esc(item.label)}</h2>
+    <form>
+      <label>${t("editor.label")}</label>
+      <input name="label" required maxlength="40" value="${esc(item.label)}">
+      <div class="dialog-actions">
+        <button type="button" class="btn plain" id="path-del" style="margin-right:auto;color:var(--rl-crisis)">${t("delete")}</button>
+        <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
+        <button type="submit" class="btn">${t("save")}</button>
+      </div>
+    </form>`,
+    (fd) => {
+      item.label = fd.get("label").trim();
+      saveLayout(app, t("toast.saved"));
+    }
+  );
+  dlg.querySelector("#path-del").addEventListener("click", () => {
     if (!confirm(t("editor.item.delete.confirm"))) return;
     app.data.layout.items = app.data.layout.items.filter((i) => i.id !== item.id);
     dlg.close();

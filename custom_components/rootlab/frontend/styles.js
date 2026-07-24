@@ -205,6 +205,18 @@ dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; mar
 .editor-svg .item { cursor: grab; }
 .editor-svg .item.selected circle { stroke: var(--rl-ai); stroke-width: 0.12; }
 .editor-svg .shadow { fill: rgba(0, 0, 0, 0.18); pointer-events: none; }
+.editor-svg .item .hover-label { opacity: 0; transition: opacity .15s; }
+.editor-svg .item:hover .hover-label { opacity: 1; }
+.editor-svg .item.is-shaded > circle { filter: brightness(0.5); }
+.editor-svg .glyph { pointer-events: none; }
+.editor-svg .path { fill: none; }
+.editor-svg .path.fence { stroke: var(--rl-soil); stroke-width: 0.22; stroke-linecap: round; stroke-linejoin: round; }
+.editor-svg .path.drip { stroke: var(--rl-water); stroke-width: 0.16; stroke-dasharray: 0.45 0.3; stroke-linecap: round; }
+.editor-svg .spray { fill: color-mix(in srgb, var(--rl-water) 18%, transparent); stroke: var(--rl-water); stroke-width: 0.07; stroke-dasharray: 0.3 0.2; }
+.editor-svg .spray-head { fill: var(--rl-water); }
+.editor-svg .unassigned-ring { fill: none; stroke: var(--rl-harvest); stroke-width: 0.08; stroke-dasharray: 0.25 0.18; }
+#path-preview { fill: none; stroke: var(--rl-ai); stroke-width: 0.14; stroke-dasharray: 0.3 0.2; }
+#spray-preview { fill: color-mix(in srgb, var(--rl-ai) 15%, transparent); stroke: var(--rl-ai); stroke-width: 0.08; stroke-dasharray: 0.3 0.2; }
 .editor-svg .shadow-line { stroke: rgba(0, 0, 0, 0.22); fill: none; stroke-linecap: round; pointer-events: none; }
 .editor-svg text { font-size: 0.45px; fill: var(--primary-text-color); text-anchor: middle; pointer-events: none; }
 .editor-hint { font-size: 13px; color: var(--secondary-text-color); margin: 8px 4px; }
