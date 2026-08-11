@@ -77,11 +77,13 @@ def async_register(hass):
         ws_crisis_diagnose,
         ws_crisis_add_plan,
         ws_crisis_archive,
+        ws_crisis_delete,
         ws_prompts_save,
         ws_ai_ask,
         ws_verify_stats,
         ws_plant_photos,
         ws_photo_add,
+        ws_photo_archive,
         ws_photo_delete,
     ):
         websocket_api.async_register_command(hass, cmd)
@@ -453,6 +455,17 @@ async def ws_crisis_archive(hass, connection, msg):
 
 
 @websocket_api.websocket_command(
+    {vol.Required("type"): "rootlab/crisis/delete", vol.Required("history_id"): str}
+)
+@websocket_api.async_response
+async def ws_crisis_delete(hass, connection, msg):
+    data = hass.data[DOMAIN]["data"]
+    data["crisis_history"] = [e for e in data["crisis_history"] if e["id"] != msg["history_id"]]
+    await async_save(hass)
+    connection.send_result(msg["id"], _public(hass))
+
+
+@websocket_api.websocket_command(
     {vol.Required("type"): "rootlab/prompts/save", vol.Required("prompts"): dict}
 )
 @websocket_api.async_response
@@ -484,6 +497,19 @@ async def ws_ai_ask(hass, connection, msg):
     except Exception as err:  # noqa: BLE001
         _ai_error(connection, msg["id"], err)
         return
+    if plant:
+        # pytania do AI lądują w historii rośliny (karta rośliny → Historia)
+        asks = plant.setdefault("asks", [])
+        asks.append(
+            {
+                "id": uuid.uuid4().hex,
+                "question": msg["question"],
+                "answer": answer,
+                "created": dt_util.now().strftime("%Y-%m-%d %H:%M"),
+            }
+        )
+        plant["asks"] = asks[-30:]
+        await async_save(hass)
     connection.send_result(msg["id"], {"answer": answer})
 
 
@@ -524,15 +550,30 @@ async def ws_photo_add(hass, connection, msg):
     if not plant:
         connection.send_error(msg["id"], "not_found", "Nie ma takiej rośliny")
         return
-    # snapshot odczytów czujników rośliny w chwili dodania zdjęcia
-    readings = {}
-    for key, entity_id in (plant.get("sensors") or {}).items():
-        if not entity_id:
-            continue
+    # snapshot odczytów w chwili dodania zdjęcia: czujniki rośliny + encje urządzeń jej strefy
+    def _reading(entity_id):
         state = hass.states.get(entity_id)
-        if state and state.state not in ("unavailable", "unknown"):
-            unit = state.attributes.get("unit_of_measurement", "")
-            readings[key] = f"{state.state} {unit}".strip()
+        if not state or state.state in ("unavailable", "unknown"):
+            return None
+        unit = state.attributes.get("unit_of_measurement", "")
+        return f"{state.state} {unit}".strip(), state
+
+    readings, seen = {}, set()
+    for key, entity_id in (plant.get("sensors") or {}).items():
+        if entity_id and (got := _reading(entity_id)):
+            readings[key] = got[0]
+            seen.add(entity_id)
+    for device in hass.data[DOMAIN]["data"]["devices"]:
+        if not plant.get("zone_id") or device.get("zone_id") != plant["zone_id"]:
+            continue
+        for entity_id in (device.get("entities") or {}).values():
+            if not entity_id or entity_id in seen:
+                continue
+            got = _reading(entity_id)
+            if got:
+                label = got[1].attributes.get("friendly_name") or entity_id
+                readings[label] = got[0]
+                seen.add(entity_id)
     photos = plant.setdefault("photos", [])
     photos.append(
         {
@@ -547,6 +588,29 @@ async def ws_photo_add(hass, connection, msg):
     plant["photos"] = photos[-15:]  # limit rozmiaru storage
     await async_save(hass)
     connection.send_result(msg["id"], plant["photos"])
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rootlab/plant/photo/archive",
+        vol.Required("plant_id"): str,
+        vol.Required("photo_id"): str,
+        vol.Required("archived"): bool,
+    }
+)
+@websocket_api.async_response
+async def ws_photo_archive(hass, connection, msg):
+    plant = next(
+        (p for p in hass.data[DOMAIN]["data"]["plants"] if p["id"] == msg["plant_id"]), None
+    )
+    if not plant:
+        connection.send_error(msg["id"], "not_found", "Nie ma takiej rośliny")
+        return
+    for photo in plant.get("photos", []):
+        if photo["id"] == msg["photo_id"]:
+            photo["archived"] = msg["archived"]
+    await async_save(hass)
+    connection.send_result(msg["id"], plant.get("photos", []))
 
 
 @websocket_api.websocket_command(

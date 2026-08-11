@@ -239,32 +239,63 @@ export async function openPlantCard(app, plantId) {
 }
 
 const PHOTO_CONDITIONS = ["healthy", "ok", "weak", "sick"];
+const SENSOR_LABEL_KEYS = { soil: "plant.sensor.soil", temp: "plant.sensor.temp", hum: "plant.sensor.hum" };
+const HIST_ICON = { diag: "mdi:leaf-off", note: "mdi:note-text-outline", photo: "mdi:camera-outline", ask: "mdi:chat-question-outline" };
 
-function photoMeta(f) {
-  const parts = [
-    f.created,
-    f.condition ? t("photo.cond." + f.condition) : "",
-    f.caption || "",
-  ].filter(Boolean);
-  const readings = f.readings && Object.keys(f.readings).length
-    ? Object.entries(f.readings).map(([k, v]) => `${t("plant.sensor." + k)}: ${v}`).join(", ")
+function readingBadges(f) {
+  return Object.entries(f.readings || {})
+    .map(
+      ([k, v]) =>
+        `<span class="sensor-chip" style="padding:2px 8px;font-size:12px">${esc(SENSOR_LABEL_KEYS[k] ? t(SENSOR_LABEL_KEYS[k]) : k)}: ${esc(v)}</span>`
+    )
+    .join(" ");
+}
+
+/* Wspólna oś czasu rośliny: diagnozy AI, notatki, zdjęcia, pytania do AI. */
+function historyEntries(app, plant, photos) {
+  const diag = (app.data.crisis_history || [])
+    .filter((h) => h.plant_id === plant.id)
+    .map((h) => ({ type: "diag", id: h.id, created: h.created || "", archived: !!h.archived, h }));
+  const notes = (plant.notes || []).map((n) => ({ type: "note", id: n.id, created: n.date || "", archived: !!n.archived, n }));
+  const phs = photos.map((f) => ({ type: "photo", id: f.id, created: f.created || "", archived: !!f.archived, f }));
+  const asks = (plant.asks || []).map((a) => ({ type: "ask", id: a.id, created: a.created || "", archived: !!a.archived, a }));
+  return [...diag, ...notes, ...phs, ...asks].sort((x, y) => y.created.localeCompare(x.created));
+}
+
+function historyRow(e, editMode) {
+  let body = "";
+  if (e.type === "diag") {
+    body = `<b>${esc(e.h.diagnosis.problem)}</b> (${t("crisis.confidence")}: ${t("crisis.confidence." + e.h.diagnosis.confidence)})<br>
+      <span style="font-size:12px">${esc(e.h.diagnosis.summary || "")}</span>`;
+  } else if (e.type === "note") {
+    body = `${t("hist.note")}<br><span style="font-size:13px">${esc((e.n.text || "").slice(0, 1000))}</span>`;
+  } else if (e.type === "ask") {
+    body = `<b>${esc(e.a.question)}</b><br><span style="font-size:13px">${esc((e.a.answer || "").slice(0, 1000))}</span>`;
+  } else {
+    const head = [e.f.condition ? t("photo.cond." + e.f.condition) : "", e.f.caption || ""].filter(Boolean).join(" · ");
+    body = `${esc(head)}${head ? "<br>" : ""}${readingBadges(e.f)}`;
+  }
+  const thumb =
+    e.type === "photo"
+      ? `<img src="data:image/jpeg;base64,${e.f.image}" data-he-zoom alt="" style="width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;flex:none">`
+      : `<ha-icon icon="${HIST_ICON[e.type]}" style="--mdc-icon-size:18px;color:var(--secondary-text-color);flex:none;margin-top:2px"></ha-icon>`;
+  const buttons = editMode
+    ? `<span style="margin-left:auto;flex:none;display:flex;gap:2px">
+        <button class="icon-btn" data-he-arch data-type="${e.type}" data-id="${e.id}" ${e.archived ? 'data-restore="1"' : ""} title="${t(e.archived ? "hist.restore" : "hist.archive")}">
+          <ha-icon icon="mdi:archive-arrow-${e.archived ? "up" : "down"}-outline" style="--mdc-icon-size:16px"></ha-icon></button>
+        <button class="icon-btn" data-he-del data-type="${e.type}" data-id="${e.id}" title="${t("delete")}">
+          <ha-icon icon="mdi:trash-can-outline" style="--mdc-icon-size:16px"></ha-icon></button>
+      </span>`
     : "";
-  return parts.join(" · ") + (readings ? `\n${readings}` : "");
+  const bar = editMode ? `border-right:4px solid var(${e.archived ? "--rl-harvest" : "--rl-green"});` : "";
+  return `<div class="history-item" style="display:flex;gap:10px;align-items:flex-start;${bar}${e.archived ? "opacity:.7;" : ""}">
+    ${thumb}
+    <div style="min-width:0;flex:1"><span style="color:var(--secondary-text-color);font-size:12px">${esc(e.created)}</span><br>${body}</div>
+    ${buttons}</div>`;
 }
 
-function historyRow(app, h, archived) {
-  return `<div class="history-item" ${archived ? 'style="opacity:.65"' : ""}>${esc(h.created)} — <b>${esc(h.diagnosis.problem)}</b>
-    (${t("crisis.confidence")}: ${t("crisis.confidence." + h.diagnosis.confidence)})
-    <button class="icon-btn" data-hist-arch="${h.id}" ${archived ? 'data-restore="1"' : ""} title="${t(archived ? "hist.restore" : "hist.archive")}" style="float:right">
-      <ha-icon icon="mdi:archive-arrow-${archived ? "up" : "down"}-outline" style="--mdc-icon-size:16px"></ha-icon></button><br>
-    <span style="font-size:12px">${esc(h.diagnosis.summary || "")}</span></div>`;
-}
-
-function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false) {
-  const allHist = (app.data.crisis_history || []).filter((h) => h.plant_id === plant.id);
-  const history = allHist.filter((h) => !h.archived).slice(-5).reverse();
-  const archivedHist = allHist.filter((h) => h.archived).reverse();
-  const notes = (plant.notes || []).slice().reverse();
+function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false, histEdit = false) {
+  const entries = historyEntries(app, plant, photos).filter((e) => histEdit || !e.archived);
   const sensors = SENSOR_FIELDS.filter((f) => plant.sensors?.[f.key])
     .map((f) => {
       const st = sensorState(app.hass, plant.sensors[f.key]);
@@ -297,41 +328,20 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false) {
     <div class="mic-wrap">
       <textarea id="pc-note" placeholder="${t("plant.note.ph")}" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--divider-color);border-radius:8px;background:var(--primary-background-color);color:var(--primary-text-color);font:inherit;min-height:44px"></textarea>
     </div>
-    <button type="button" class="btn small ghost" id="pc-note-add"><ha-icon icon="mdi:plus"></ha-icon>${t("plant.note.add")}</button>
-    ${notes
-      .map(
-        (n) => `<div class="note-row"><span class="date">${esc(n.date)}</span><span class="txt">${esc(n.text)}</span>
-          <button class="icon-btn" data-note-del="${n.id}" title="${t("delete")}"><ha-icon icon="mdi:trash-can-outline"></ha-icon></button></div>`
-      )
-      .join("")}
+    <div class="actions" style="justify-content:flex-start">
+      <button type="button" class="btn small ghost" id="pc-note-add"><ha-icon icon="mdi:plus"></ha-icon>${t("plant.note.add")}</button>
+      <input type="file" id="pc-photo-file" accept="image/*" hidden>
+      <button type="button" class="btn small ghost" id="pc-photo-add"><ha-icon icon="mdi:camera-plus-outline"></ha-icon>${t("plant.photo.add")}</button>
+    </div>
 
-    <div class="section-title">${t("plant.photos")}</div>
-    <input type="file" id="pc-photo-file" accept="image/*" hidden>
-    <button type="button" class="btn small ghost" id="pc-photo-add"><ha-icon icon="mdi:camera-plus-outline"></ha-icon>${t("plant.photo.add")}</button>
+    <div class="section-title" style="display:flex;align-items:center">${t("plant.history")}
+      <label style="margin-left:auto;font-size:13px;font-weight:400;text-transform:none;letter-spacing:normal;display:flex;align-items:center;gap:6px;cursor:pointer">
+        <input type="checkbox" id="pc-hist-edit" ${histEdit ? "checked" : ""}>${t("hist.edit")}</label>
+    </div>
     ${
-      photos.length
-        ? `<div class="photo-grid">${photos
-            .slice()
-            .reverse()
-            .map(
-              (f) => `<div class="ph"><img src="data:image/jpeg;base64,${f.image}" alt="" title="${esc(photoMeta(f))}">
-                <button class="del" data-photo-del="${f.id}" title="${t("delete")}">✕</button></div>`
-            )
-            .join("")}</div>`
-        : ""
-    }
-
-    <div class="section-title">${t("plant.history")}</div>
-    ${
-      history.length
-        ? history.map((h) => historyRow(app, h, false)).join("")
+      entries.length
+        ? entries.map((e) => historyRow(e, histEdit)).join("")
         : `<div class="history-item">${t("plant.history.empty")}</div>`
-    }
-    ${
-      archivedHist.length
-        ? `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;color:var(--secondary-text-color)">${t("hist.archived", { n: archivedHist.length })}</summary>
-           ${archivedHist.map((h) => historyRow(app, h, true)).join("")}</details>`
-        : ""
     }`,
     () => {},
     { wide: true }
@@ -349,15 +359,19 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false) {
   dlg.querySelector("#pc-ask").addEventListener("click", async () => {
     const question = dlg.querySelector("#pc-question").value.trim();
     if (!question || aiBusy) return;
-    renderCard(app, plant, photos, null, true);
+    renderCard(app, plant, photos, null, true, histEdit);
     let answer;
     try {
       answer = (await app.ws("ai/ask", { question, plant_id: plant.id })).answer;
+      // backend dopisał pytanie do historii rośliny — odśwież dane
+      try {
+        app.data = await app.ws("data");
+      } catch (e) {}
     } catch (e) {
       answer = (e.message || String(e));
     }
     app._lastQuestion = question;
-    renderCard(app, plant, photos, answer, false);
+    renderCard(app, app.data.plants.find((p) => p.id === plant.id) || plant, photos, answer, false, histEdit);
   });
   dlg.querySelector("#pc-kn")?.addEventListener("click", async (ev) => {
     await app.ws("item/save", {
@@ -384,36 +398,8 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false) {
       return;
     }
     app.toast(t("toast.added"));
-    renderCard(app, app.data.plants.find((p) => p.id === plant.id), photos);
+    renderCard(app, app.data.plants.find((p) => p.id === plant.id), photos, aiAnswer, false, histEdit);
   });
-  dlg.querySelectorAll("[data-note-del]").forEach((el) =>
-    el.addEventListener("click", async () => {
-      if (!confirm(t("note.delete.confirm"))) return;
-      try {
-        const notes = (plant.notes || []).filter((n) => n.id !== el.dataset.noteDel);
-        app.data = await app.ws("item/save", { kind: "plants", item: { id: plant.id, notes } });
-      } catch (e) {
-        app.toast(`⚠ ${e.message || e}`, true);
-        return;
-      }
-      renderCard(app, app.data.plants.find((p) => p.id === plant.id), photos);
-    })
-  );
-  dlg.querySelectorAll("[data-hist-arch]").forEach((el) =>
-    el.addEventListener("click", async () => {
-      try {
-        app.data = await app.ws("crisis/archive", {
-          history_id: el.dataset.histArch,
-          archived: !el.dataset.restore,
-        });
-      } catch (e) {
-        app.toast(`⚠ ${e.message || e}`, true);
-        return;
-      }
-      app.toast(t(el.dataset.restore ? "hist.restored" : "hist.archived.toast"));
-      renderCard(app, plant, photos);
-    })
-  );
   const fileInput = dlg.querySelector("#pc-photo-file");
   dlg.querySelector("#pc-photo-add").addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async (ev) => {
@@ -427,15 +413,71 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false) {
     }
     photoDialog(app, plant, img);
   });
-  dlg.querySelectorAll("[data-photo-del]").forEach((el) =>
+
+  /* --- Historia: tryb edycji, archiwizacja i usuwanie wpisów --- */
+  dlg.querySelector("#pc-hist-edit").addEventListener("change", (ev) => {
+    renderCard(app, plant, photos, aiAnswer, aiBusy, ev.target.checked);
+  });
+  dlg.querySelectorAll("[data-he-zoom]").forEach((img) =>
+    img.addEventListener("click", () => {
+      const small = img.style.width === "72px";
+      img.style.width = small ? "100%" : "72px";
+      img.style.height = small ? "auto" : "72px";
+    })
+  );
+  const refreshCard = (updatedPhotos) =>
+    renderCard(
+      app,
+      app.data.plants.find((p) => p.id === plant.id) || plant,
+      updatedPhotos || photos,
+      aiAnswer,
+      false,
+      true
+    );
+  dlg.querySelectorAll("[data-he-arch]").forEach((el) =>
     el.addEventListener("click", async () => {
-      if (!confirm(t("photo.delete.confirm"))) return;
+      const { type, id } = el.dataset;
+      const archived = !el.dataset.restore;
+      let updatedPhotos = null;
       try {
-        const updated = await app.ws("plant/photo/delete", { plant_id: plant.id, photo_id: el.dataset.photoDel });
-        renderCard(app, plant, updated);
+        if (type === "diag") {
+          app.data = await app.ws("crisis/archive", { history_id: id, archived });
+        } else if (type === "photo") {
+          updatedPhotos = await app.ws("plant/photo/archive", { plant_id: plant.id, photo_id: id, archived });
+        } else {
+          const field = type === "note" ? "notes" : "asks";
+          const list = (plant[field] || []).map((x) => (x.id === id ? { ...x, archived } : x));
+          app.data = await app.ws("item/save", { kind: "plants", item: { id: plant.id, [field]: list } });
+        }
       } catch (e) {
         app.toast(`⚠ ${e.message || e}`, true);
+        return;
       }
+      app.toast(t(archived ? "hist.archived.toast" : "hist.restored"));
+      refreshCard(updatedPhotos);
+    })
+  );
+  dlg.querySelectorAll("[data-he-del]").forEach((el) =>
+    el.addEventListener("click", async () => {
+      if (!confirm(t("hist.delete.confirm"))) return;
+      const { type, id } = el.dataset;
+      let updatedPhotos = null;
+      try {
+        if (type === "diag") {
+          app.data = await app.ws("crisis/delete", { history_id: id });
+        } else if (type === "photo") {
+          updatedPhotos = await app.ws("plant/photo/delete", { plant_id: plant.id, photo_id: id });
+        } else {
+          const field = type === "note" ? "notes" : "asks";
+          const list = (plant[field] || []).filter((x) => x.id !== id);
+          app.data = await app.ws("item/save", { kind: "plants", item: { id: plant.id, [field]: list } });
+        }
+      } catch (e) {
+        app.toast(`⚠ ${e.message || e}`, true);
+        return;
+      }
+      app.toast(t("toast.deleted"));
+      refreshCard(updatedPhotos);
     })
   );
 }

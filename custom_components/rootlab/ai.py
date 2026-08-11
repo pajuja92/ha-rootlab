@@ -442,8 +442,18 @@ def _plant_history(hass, plant):
                 )
             )
     for n in plant.get("notes") or []:
+        if n.get("archived"):
+            continue
         entries.append((n.get("date", ""), f"notatka: {n.get('text')}"))
+    for a in plant.get("asks") or []:
+        if a.get("archived"):
+            continue
+        entries.append(
+            (a.get("created", ""), f"pytanie użytkownika: {a.get('question')} / odpowiedź: {(a.get('answer') or '')[:200]}")
+        )
     for f in plant.get("photos") or []:
+        if f.get("archived"):
+            continue
         details = []
         if f.get("condition"):
             details.append("stan: " + _COND_PL.get(f["condition"], f["condition"]))
