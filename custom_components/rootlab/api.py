@@ -394,7 +394,7 @@ async def ws_crisis_diagnose(hass, connection, msg):
         "description": msg["description"],
         "image": msg["image"],
         "diagnosis": diagnosis,
-        "created": dt_util.now().date().isoformat(),
+        "created": dt_util.now().strftime("%Y-%m-%d %H:%M"),
     }
     data["crisis_history"] = (data["crisis_history"] + [entry])[-50:]
     await async_save(hass)

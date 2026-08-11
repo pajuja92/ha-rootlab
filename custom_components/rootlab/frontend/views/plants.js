@@ -390,7 +390,9 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false, histEdi
   dlg.querySelector("#pc-note-add").addEventListener("click", async () => {
     const text = dlg.querySelector("#pc-note").value.trim();
     if (!text) return;
-    const notes = [...(plant.notes || []), { id: uid(), date: new Date().toISOString().slice(0, 10), text }];
+    // sv-SE = "YYYY-MM-DD HH:MM:SS" w czasie lokalnym — spójne sortowanie z resztą historii
+    const stamp = new Date().toLocaleString("sv-SE").slice(0, 16);
+    const notes = [...(plant.notes || []), { id: uid(), date: stamp, text }];
     try {
       app.data = await app.ws("item/save", { kind: "plants", item: { id: plant.id, notes } });
     } catch (e) {
