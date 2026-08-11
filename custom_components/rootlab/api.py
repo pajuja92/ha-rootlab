@@ -557,7 +557,7 @@ async def ws_chat_send(hass, connection, msg):
 )
 @websocket_api.async_response
 async def ws_chat_tasks(hass, connection, msg):
-    """Zadania wynikające z rozmowy — od razu dodawane do listy zadań."""
+    """Propozycje zadań z rozmowy — NIE zapisuje, frontend wdraża wybrane przez tasks/apply."""
     data = hass.data[DOMAIN]["data"]
     chat = next((c for c in data["chats"] if c["id"] == msg["chat_id"]), None)
     if not chat:
@@ -569,9 +569,7 @@ async def ws_chat_tasks(hass, connection, msg):
     except Exception as err:  # noqa: BLE001
         _ai_error(connection, msg["id"], err)
         return
-    data["tasks"].extend(fresh)
-    await async_save(hass)
-    connection.send_result(msg["id"], {"added": len(fresh), "data": _public(hass)})
+    connection.send_result(msg["id"], {"tasks": fresh})
 
 
 # --- Zdjęcia roślin ---
