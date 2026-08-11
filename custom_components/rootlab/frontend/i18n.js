@@ -34,7 +34,7 @@ const PL = {
   "chat.info.sensors": "Czujniki", "chat.info.nosensors": "brak podłączonych",
   "chat.info.diags": "Diagnozy w historii", "chat.info.nodiags": "brak",
   "zone.planting": "Nasadzenie w strefie", "plant.planting": "Nasadzenie",
-  "planting.soil": "Gleba (w gruncie)", "planting.pot": "Donica", "planting.raised": "Podwyższone grządki",
+  "planting.soil": "Grunt", "planting.pot": "Donica", "planting.raised": "Podwyższone grządki",
   "planting.parent": "Ze strefy", "planting.none": "nie zdefiniowano",
   "weather.add": "Dodaj kartę prognozy", "weather.remove": "Usuń kartę",
   "weather.up": "Przenieś wyżej", "weather.down": "Przenieś niżej",
