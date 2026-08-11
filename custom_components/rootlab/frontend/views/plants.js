@@ -120,7 +120,10 @@ function plantCard(app, p) {
   </div>`;
 }
 
+const PLANTING_KINDS = ["soil", "pot", "raised"];
+
 function zoneDialog(app, zone) {
+  const plantingOpts = PLANTING_KINDS.map((v) => ({ value: v, label: t("planting." + v) }));
   app.dialog(
     `<h2>${zone ? t("zone.edit") : t("zone.new")}</h2>
     <form>
@@ -128,12 +131,20 @@ function zoneDialog(app, zone) {
       <input name="name" required maxlength="60" value="${esc(zone?.name)}" placeholder="${t("zone.name.ph")}" autofocus>
       <label>${t("zone.emoji")}</label>
       <input name="emoji" maxlength="4" value="${esc(zone?.emoji)}" placeholder="🏡">
+      <label>${t("zone.planting")}</label>
+      ${combo({ name: "planting", value: zone?.planting || "", options: plantingOpts })}
       <div class="dialog-actions">
         <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
         <button type="submit" class="btn">${t("save")}</button>
       </div>
     </form>`,
-    (fd) => app.saveItem("zones", { id: zone?.id ?? null, name: fd.get("name").trim(), emoji: fd.get("emoji").trim() })
+    (fd) =>
+      app.saveItem("zones", {
+        id: zone?.id ?? null,
+        name: fd.get("name").trim(),
+        emoji: fd.get("emoji").trim(),
+        planting: fd.get("planting") || null,
+      })
   );
 }
 
@@ -143,6 +154,7 @@ function plantDialog(app, plant, draft = null) {
     species: plant?.species || "",
     emoji: plant?.emoji || "",
     zone_id: plant?.zone_id || "",
+    planting: plant?.planting || "",
     sensors: { ...(plant?.sensors || {}) },
   };
   // urządzenia strefy: jedno z daną rolą → predefiniowane; więcej → ⭐ na górze listy
@@ -176,6 +188,22 @@ function plantDialog(app, plant, draft = null) {
       <input name="emoji" maxlength="4" value="${esc(draft.emoji)}" placeholder="🍅">
       <label>${t("plant.zone")}</label>
       ${combo({ name: "zone_id", value: draft.zone_id, options: zoneOpts })}
+      <label>${t("plant.planting")}</label>
+      ${combo({
+        name: "planting",
+        value: draft.planting,
+        allowEmpty: false,
+        options: [
+          {
+            value: "",
+            label: `${t("planting.parent")} (${(() => {
+              const zp = app.data.zones.find((z) => z.id === draft.zone_id)?.planting;
+              return zp ? t("planting." + zp) : t("planting.none");
+            })()})`,
+          },
+          ...PLANTING_KINDS.map((v) => ({ value: v, label: t("planting." + v) })),
+        ],
+      })}
       ${anySugg ? `<p style="font-size:12px;color:var(--secondary-text-color);margin:6px 0 0">${t("plant.sensors.auto")}</p>` : ""}
       ${SENSOR_FIELDS.map(
         (f) =>
@@ -198,6 +226,7 @@ function plantDialog(app, plant, draft = null) {
         species: fd.get("species").trim(),
         emoji: fd.get("emoji").trim(),
         zone_id: fd.get("zone_id") || null,
+        planting: fd.get("planting") || null,
         sensors: Object.fromEntries(SENSOR_FIELDS.map((f) => [f.key, fd.get(`sensor_${f.key}`) || null])),
       })
   );
@@ -216,6 +245,7 @@ function plantDialog(app, plant, draft = null) {
       species: dlg.querySelector('input[name="species"]').value,
       emoji: dlg.querySelector('input[name="emoji"]').value,
       zone_id: ev.target.value,
+      planting: dlg.querySelector('input[name="planting"]').value,
       sensors: Object.fromEntries(
         SENSOR_FIELDS.map((f) => [f.key, dlg.querySelector(`input[name="sensor_${f.key}"]`).value])
       ),

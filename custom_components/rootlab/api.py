@@ -525,6 +525,7 @@ async def ws_ai_ask(hass, connection, msg):
         vol.Required("type"): "rootlab/chat/send",
         vol.Required("chat_id"): str,
         vol.Required("message"): str,
+        vol.Optional("context", default=None): vol.Any(None, str),
     }
 )
 @websocket_api.async_response
@@ -536,7 +537,7 @@ async def ws_chat_send(hass, connection, msg):
         return
     plant = next((p for p in data["plants"] if p["id"] == chat.get("plant_id")), None)
     try:
-        reply = await ai.async_chat(hass, chat, plant, msg["message"])
+        reply = await ai.async_chat(hass, chat, plant, msg["message"], msg["context"])
     except Exception as err:  # noqa: BLE001
         _ai_error(connection, msg["id"], err)
         return

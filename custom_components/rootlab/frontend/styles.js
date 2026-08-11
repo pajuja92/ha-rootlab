@@ -414,6 +414,9 @@ dialog input[type=checkbox], dialog input[type=radio] { width: auto; accent-colo
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
 /* --- Diagnoza AI: czat --- */
+.chat-layout { display: grid; grid-template-columns: 320px 1fr; gap: var(--rl-gap); align-items: start; }
+.chat-layout.solo { grid-template-columns: 1fr; }
+@media (max-width: 900px) { .chat-layout { grid-template-columns: 1fr; } }
 .chat-msgs { display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow-y: auto; padding: 4px 0; }
 .chat-msg { max-width: 82%; padding: 10px 14px; border-radius: 14px; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
 .chat-msg.user { align-self: flex-end; background: var(--rl-green); color: #fff; border-bottom-right-radius: 4px; }

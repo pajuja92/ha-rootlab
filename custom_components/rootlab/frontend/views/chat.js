@@ -73,15 +73,22 @@ function renderList(app, chats) {
   );
 }
 
-/* Wszystko, co wiemy o roślinie: strefa, obszary planu, zacienienie teraz, czujniki, diagnozy. */
-function plantInfo(app, plant) {
+/* Fakty o roślinie (strefa, nasadzenie, plan, cień, czujniki, diagnozy) — wspólne dla
+   panelu w UI i kontekstu wysyłanego AI przy każdej wiadomości. */
+function plantFacts(app, plant) {
   const zone = app.data.zones.find((z) => z.id === plant.zone_id);
-  const sensors = SENSOR_FIELDS.filter((f) => plant.sensors?.[f.key])
-    .map((f) => {
-      const s = sensorState(app.hass, plant.sensors[f.key]);
-      return `<span class="sensor-chip ${s.unavailable ? "unavailable" : ""}" style="padding:2px 8px;font-size:12px" title="${t(f.labelKey)}"><ha-icon icon="${f.icon}" style="--mdc-icon-size:14px"></ha-icon>${esc(s.text)}</span>`;
-    })
-    .join(" ");
+  const own = plant.planting;
+  const inherited = zone?.planting;
+  const plantingLabel = own
+    ? t("planting." + own)
+    : inherited
+      ? `${t("planting." + inherited)} (${t("planting.parent").toLowerCase()})`
+      : t("planting.none");
+  const sensorPairs = SENSOR_FIELDS.filter((f) => plant.sensors?.[f.key]).map((f) => ({
+    icon: f.icon,
+    label: t(f.labelKey),
+    ...sensorState(app.hass, plant.sensors[f.key]),
+  }));
   const layout = app.data.layout || {};
   const items = layout.items || [];
   const isArea = (i) => "w" in i;
@@ -95,7 +102,7 @@ function plantInfo(app, plant) {
       ? areas
           .map((a) => {
             const az = app.data.zones.find((z) => z.id === a.zone_id);
-            return `${a.label ? esc(a.label) : t("editor.palette." + a.kind)}${az ? ` (${esc(az.name)})` : ""}`;
+            return `${a.label || t("editor.palette." + a.kind)}${az ? ` (${az.name})` : ""}`;
           })
           .join(", ")
       : t("chat.info.outside");
@@ -114,7 +121,7 @@ function plantInfo(app, plant) {
           return p ? `${p.emoji || "🌱"} ${p.name}` : c.label || t("editor.palette." + c.kind);
         });
       shadeLine = shadedBy.length
-        ? `☁ ${t("chat.info.shadedby")}: ${esc(shadedBy.join(", "))}`
+        ? `☁ ${t("chat.info.shadedby")}: ${shadedBy.join(", ")}`
         : `☀ ${t("chat.info.sunny")}`;
     }
   }
@@ -122,21 +129,52 @@ function plantInfo(app, plant) {
   const lastDiags = diags
     .slice(-3)
     .reverse()
+    .map((h) => `${h.created} — ${h.diagnosis.problem} (${t("crisis.confidence." + h.diagnosis.confidence)})`);
+  return {
+    zoneLabel: zone ? `${zone.emoji || "🪴"} ${zone.name}` : t("zone.none"),
+    plantingLabel,
+    planLine,
+    shadeLine,
+    sensorPairs,
+    diagsCount: diags.length,
+    lastDiags,
+  };
+}
+
+function plantInfo(app, plant) {
+  const f = plantFacts(app, plant);
+  const sensors = f.sensorPairs
     .map(
-      (h) =>
-        `<div style="font-size:12px;color:var(--secondary-text-color)">· ${esc(h.created)} — ${esc(h.diagnosis.problem)} (${t("crisis.confidence." + h.diagnosis.confidence)})</div>`
+      (s) =>
+        `<span class="sensor-chip ${s.unavailable ? "unavailable" : ""}" style="padding:2px 8px;font-size:12px" title="${esc(s.label)}"><ha-icon icon="${s.icon}" style="--mdc-icon-size:14px"></ha-icon>${esc(s.text)}</span>`
     )
-    .join("");
-  return `<details class="chat-info" open style="margin:0 0 10px">
-    <summary style="cursor:pointer;font-size:13px;color:var(--secondary-text-color)">ℹ️ ${t("chat.info")}</summary>
-    <div style="font-size:13px;display:grid;gap:4px;margin-top:8px">
-      <div><b>${t("plant.zone")}:</b> ${zone ? `${esc(zone.emoji || "🪴")} ${esc(zone.name)}` : t("zone.none")}</div>
-      <div><b>${t("chat.info.plan")}:</b> ${planLine}</div>
-      ${shadeLine ? `<div>${shadeLine}</div>` : ""}
+    .join(" ");
+  return `<div class="section-title" style="margin-top:0">ℹ️ ${t("chat.info")}</div>
+    <div style="font-size:13px;display:grid;gap:6px">
+      <div><b>${t("plant.zone")}:</b> ${esc(f.zoneLabel)}</div>
+      <div><b>${t("plant.planting")}:</b> ${esc(f.plantingLabel)}</div>
+      <div><b>${t("chat.info.plan")}:</b> ${esc(f.planLine)}</div>
+      ${f.shadeLine ? `<div>${esc(f.shadeLine)}</div>` : ""}
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><b>${t("chat.info.sensors")}:</b> ${sensors || t("chat.info.nosensors")}</div>
-      <div><b>${t("chat.info.diags")}:</b> ${diags.length || t("chat.info.nodiags")}</div>${lastDiags}
-    </div>
-  </details>`;
+      <div><b>${t("chat.info.diags")}:</b> ${f.diagsCount || t("chat.info.nodiags")}</div>
+      ${f.lastDiags.map((d) => `<div style="font-size:12px;color:var(--secondary-text-color)">· ${esc(d)}</div>`).join("")}
+    </div>`;
+}
+
+/* Tekstowa wersja panelu — dokładnie to, co widzi użytkownik, trafia do AI. */
+export function plantInfoText(app, plant) {
+  const f = plantFacts(app, plant);
+  return [
+    `Strefa: ${f.zoneLabel}`,
+    `Nasadzenie: ${f.plantingLabel}`,
+    `Na planie ogrodu: ${f.planLine}`,
+    f.shadeLine,
+    `Czujniki: ${f.sensorPairs.map((s) => `${s.label}: ${s.text}`).join(", ") || "brak podłączonych"}`,
+    `Diagnozy w historii: ${f.diagsCount}`,
+    ...f.lastDiags.map((d) => `- ${d}`),
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function renderChat(app, chat) {
@@ -157,17 +195,19 @@ function renderChat(app, chat) {
       <button class="btn small ai" data-action="chat-tasks"><ha-icon icon="mdi:clipboard-plus-outline"></ha-icon>${t("chat.tasks")}</button>
       <button class="btn small ghost" data-action="chat-kn"><ha-icon icon="mdi:book-plus-outline"></ha-icon>${t("knowledge.save")}</button>
     </div>
-    <div class="card">
-      <h3 style="margin:0 0 8px">${esc(chat.title || t("chat.untitled"))}</h3>
-      ${plant ? plantInfo(app, plant) : ""}
-      <div class="chat-msgs" id="chat-msgs">
-        ${bubbles + pending || `<div class="chat-msg ai">${t("chat.nomsgs")}</div>`}
-      </div>
-      <div style="display:flex;gap:8px;align-items:flex-end;margin-top:10px">
-        <div class="mic-wrap" style="flex:1">
-          <textarea id="chat-input" placeholder="${t("chat.input.ph")}" style="width:100%;box-sizing:border-box;padding:10px 40px 10px 12px;border:1px solid var(--divider-color);border-radius:8px;background:var(--primary-background-color);color:var(--primary-text-color);font:inherit;min-height:48px"></textarea>
+    <div class="chat-layout ${plant ? "" : "solo"}">
+      ${plant ? `<div class="card chat-side">${plantInfo(app, plant)}</div>` : ""}
+      <div class="card">
+        <h3 style="margin:0 0 8px">${esc(chat.title || t("chat.untitled"))}</h3>
+        <div class="chat-msgs" id="chat-msgs">
+          ${bubbles + pending || `<div class="chat-msg ai">${t("chat.nomsgs")}</div>`}
         </div>
-        <button class="btn ai" id="chat-send" ${s.busy ? "disabled" : ""}><ha-icon icon="mdi:send"></ha-icon></button>
+        <div style="display:flex;gap:8px;align-items:flex-end;margin-top:10px">
+          <div class="mic-wrap" style="flex:1">
+            <textarea id="chat-input" placeholder="${t("chat.input.ph")}" style="width:100%;box-sizing:border-box;padding:10px 40px 10px 12px;border:1px solid var(--divider-color);border-radius:8px;background:var(--primary-background-color);color:var(--primary-text-color);font:inherit;min-height:48px"></textarea>
+          </div>
+          <button class="btn ai" id="chat-send" ${s.busy ? "disabled" : ""}><ha-icon icon="mdi:send"></ha-icon></button>
+        </div>
       </div>
     </div>`;
 }
@@ -196,8 +236,15 @@ async function send(app) {
   s.busy = true;
   s.pending = text;
   app.render();
+  const chat = (app.data.chats || []).find((c) => c.id === s.openId);
+  const plant = app.data.plants.find((p) => p.id === chat?.plant_id);
   try {
-    const updated = await app.ws("chat/send", { chat_id: s.openId, message: text });
+    const updated = await app.ws("chat/send", {
+      chat_id: s.openId,
+      message: text,
+      // AI dostaje dokładnie to, co pokazuje panel „Informacje o roślinie" (plan, cień, czujniki)
+      context: plant ? plantInfoText(app, plant) : null,
+    });
     const i = app.data.chats.findIndex((c) => c.id === s.openId);
     if (i >= 0) app.data.chats[i] = updated;
   } catch (e) {

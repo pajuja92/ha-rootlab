@@ -1,5 +1,5 @@
 DOMAIN = "rootlab"
-VERSION = "0.4.0-beta.17"
+VERSION = "0.4.0-beta.18"
 PANEL_URL = "/rootlab"
 PANEL_TITLE = "RootLab"
 PANEL_ICON = "mdi:sprout"

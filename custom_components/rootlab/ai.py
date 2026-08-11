@@ -318,9 +318,13 @@ async def _ha_ai_task(hass, prompt, schema):
     return _parse_json_loose(text) if schema else text.strip()
 
 
+_PLANTING_PL = {"soil": "w gruncie", "pot": "w donicy", "raised": "na podwyższonej grządce"}
+
+
 def _garden_context(hass, plant_ids=None):
     data = hass.data[DOMAIN]["data"]
     zones = {z["id"]: z["name"] for z in data["zones"]}
+    zone_planting = {z["id"]: z.get("planting") for z in data["zones"]}
     greenhouses = [
         i for i in data["layout"]["items"] if i.get("kind") == "greenhouse" and "w" in i
     ]
@@ -346,6 +350,9 @@ def _garden_context(hass, plant_ids=None):
             "zone": zones.get(p.get("zone_id")),
             "readings": readings,
         }
+        planting = p.get("planting") or zone_planting.get(p.get("zone_id"))
+        if planting:
+            info["planting"] = _PLANTING_PL.get(planting, planting)
         pos = positions.get(p["id"])
         if pos and any(
             g["x"] <= pos["x"] <= g["x"] + g["w"] and g["y"] <= pos["y"] <= g["y"] + g["h"]
@@ -495,7 +502,7 @@ def _transcript(chat):
     )
 
 
-async def async_chat(hass, chat, plant, message):
+async def async_chat(hass, chat, plant, message, context=None):
     """Kolejna wiadomość w rozmowie diagnostycznej — zwraca odpowiedź asystenta."""
     parts = []
     if plant:
@@ -505,6 +512,9 @@ async def async_chat(hass, chat, plant, message):
         history = _plant_history(hass, plant)
         if history:
             parts.append("Historia rośliny:\n" + history)
+    if context:
+        # panel „Informacje o roślinie" z frontendu — m.in. plan ogrodu i bieżące zacienienie
+        parts.append("Informacje z planu ogrodu i karty rośliny (stan bieżący):\n" + context)
     transcript = _transcript(chat)
     if transcript:
         parts.append("Dotychczasowa rozmowa:\n" + transcript)
