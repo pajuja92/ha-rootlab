@@ -27,12 +27,32 @@ OPENAI_COMPAT = {
 }
 ANTHROPIC_MODEL = "claude-opus-4-8"
 
-SYSTEM = (
-    "Jesteś spokojnym ogrodnikiem-ekspertem w aplikacji RootLab (Home Assistant). "
-    "Doradzasz, nie rozkazujesz; jesteś konkretny, ale ciepły; piszesz krótko, per Ty. "
-    "Nie antropomorfizujesz siebie i nie używasz wykrzykników w ostrzeżeniach. "
-    "Odpowiadasz po polsku."
-)
+# Edytowalne w zakładce Ustawienia (storage: data["ai_prompts"]); dynamiczne
+# fragmenty (dane ogrodu, kategorie, historia, schemat JSON) dokleja kod.
+PROMPT_DEFAULTS = {
+    "system": (
+        "Jesteś spokojnym ogrodnikiem-ekspertem w aplikacji RootLab (Home Assistant). "
+        "Doradzasz, nie rozkazujesz; jesteś konkretny, ale ciepły; piszesz krótko, per Ty. "
+        "Nie antropomorfizujesz siebie i nie używasz wykrzykników w ostrzeżeniach. "
+        "Odpowiadasz po polsku."
+    ),
+    "tasks": (
+        "Na podstawie danych ogrodu ułóż listę zadań na najbliższe 14 dni. "
+        "Uwzględnij porę roku, odczyty czujników, warunki (szklarnia) i pogodę. "
+        "Maks. 3 zadania na roślinę, tylko naprawdę potrzebne."
+    ),
+    "diagnose": (
+        "Zdiagnozuj problem z rośliną i podaj plan naprawczy (2-5 kroków, każdy z terminem "
+        "w dniach od dziś, pole due_in_days). Jeśli pewność jest niska, powiedz to wprost. "
+        "Uwzględnij historię rośliny — wcześniejsze diagnozy, notatki, zdjęcia i odczyty."
+    ),
+    "ask": "Odpowiedz zwięźle (do ok. 200 słów), praktycznie.",
+}
+
+
+def _prompt(hass, key):
+    custom = (hass.data[DOMAIN]["data"].get("ai_prompts") or {}).get(key)
+    return (custom or PROMPT_DEFAULTS[key]).strip()
 
 TASKS_SCHEMA = {
     "type": "object",
@@ -214,7 +234,7 @@ async def _anthropic(hass, prompt, schema, image_b64, media_type):
         model=_options(hass).get("ai_model") or ANTHROPIC_MODEL,
         max_tokens=16000,
         thinking={"type": "adaptive"},
-        system=SYSTEM,
+        system=_prompt(hass, "system"),
         messages=[{"role": "user", "content": content}],
         **kwargs,
     )
@@ -241,7 +261,7 @@ async def _openai_compat(hass, provider, prompt, schema, image_b64, media_type):
                 "image_url": {"url": f"data:{media_type or 'image/jpeg'};base64,{image_b64}"},
             },
         )
-    system = SYSTEM + (
+    system = _prompt(hass, "system") + (
         " Odpowiadasz WYŁĄCZNIE poprawnym JSON zgodnym z podanym schematem, bez komentarzy."
         if schema
         else ""
@@ -279,7 +299,7 @@ async def _ha_ai_task(hass, prompt, schema):
     entity_id = _options(hass).get("ai_task_entity")
     if not entity_id:
         raise NoApiKeyError
-    instructions = SYSTEM + "\n\n" + prompt
+    instructions = _prompt(hass, "system") + "\n\n" + prompt
     if schema:
         instructions += (
             "\n\nOdpowiedz WYŁĄCZNIE poprawnym JSON zgodnym ze schematem, bez płotków markdown:\n"
@@ -361,11 +381,9 @@ async def async_generate_tasks(hass, categories=None, plant_ids=None, include_ge
         context["weather_imgw"] = weather
     parsed = await _complete(
         hass,
-        "Na podstawie danych ogrodu ułóż listę zadań na najbliższe 14 dni. "
+        _prompt(hass, "tasks") + "\n"
         "Dozwolone kategorie: " + "; ".join(cat_desc[c] for c in cats) + ". "
         + ("" if include_general else "Każde zadanie musi dotyczyć konkretnej rośliny z danych (plant_id nie może być null). ")
-        + "Uwzględnij porę roku, odczyty czujników, warunki (szklarnia) i pogodę. "
-        "Maks. 3 zadania na roślinę, tylko naprawdę potrzebne. "
         + (f"Dodatkowe wytyczne od użytkownika (traktuj priorytetowo): {extra_prompt}. " if extra_prompt else "")
         + "Dane ogrodu:\n"
         + json.dumps(context, ensure_ascii=False),
@@ -407,14 +425,49 @@ async def async_generate_and_merge(hass):
     return len(fresh)
 
 
+_COND_PL = {"healthy": "zdrowa", "ok": "w porządku", "weak": "osłabiona", "sick": "chora"}
+
+
+def _plant_history(hass, plant):
+    """Chronologia rośliny do promptu diagnozy: diagnozy (bez zarchiwizowanych), notatki, zdjęcia."""
+    entries = []
+    for e in hass.data[DOMAIN]["data"]["crisis_history"]:
+        if e.get("plant_id") == plant["id"] and not e.get("archived"):
+            d = e.get("diagnosis") or {}
+            entries.append(
+                (
+                    e.get("created", ""),
+                    f"diagnoza: {d.get('problem')} (pewność: {d.get('confidence')}); "
+                    f"zgłoszone objawy: {e.get('description') or 'brak'}",
+                )
+            )
+    for n in plant.get("notes") or []:
+        entries.append((n.get("date", ""), f"notatka: {n.get('text')}"))
+    for f in plant.get("photos") or []:
+        details = []
+        if f.get("condition"):
+            details.append("stan: " + _COND_PL.get(f["condition"], f["condition"]))
+        if f.get("caption"):
+            details.append(f["caption"])
+        if f.get("readings"):
+            details.append("odczyty: " + ", ".join(f"{k}={v}" for k, v in f["readings"].items()))
+        entries.append((f.get("created", ""), "zdjęcie" + (f" ({'; '.join(details)})" if details else "")))
+    entries.sort(key=lambda e: e[0])
+    return "\n".join(f"- {when}: {txt}" for when, txt in entries[-15:])
+
+
 async def async_diagnose(hass, plant, description, image_b64, media_type):
-    """Diagnoza problemu z rośliną na podstawie zdjęcia i opisu."""
+    """Diagnoza problemu z rośliną: zdjęcie + opis + historia + aktualne odczyty."""
+    history = _plant_history(hass, plant)
+    context = _garden_context(hass, [plant["id"]])
     parsed = await _complete(
         hass,
-        "Zdiagnozuj problem z rośliną i podaj plan naprawczy (2-5 kroków, każdy z terminem "
-        "w dniach od dziś, pole due_in_days). Jeśli pewność jest niska, powiedz to wprost.\n"
+        _prompt(hass, "diagnose") + "\n"
         f"Roślina: {plant.get('name')} ({plant.get('species') or 'gatunek nieznany'}).\n"
-        f"Opis objawów od użytkownika: {description or 'brak opisu'}",
+        f"Opis objawów od użytkownika: {description or 'brak opisu'}\n"
+        + (f"Historia rośliny (od najstarszego):\n{history}\n" if history else "")
+        + "Aktualne dane rośliny:\n"
+        + json.dumps(context, ensure_ascii=False),
         schema=DIAGNOSIS_SCHEMA,
         image_b64=image_b64,
         media_type=media_type,
@@ -433,5 +486,5 @@ async def async_ask(hass, question, plant=None):
             f"Pytanie dotyczy rośliny: {plant.get('name')} "
             f"({plant.get('species') or 'gatunek nieznany'}).\n"
         )
-    prompt += f"Pytanie: {question}\nOdpowiedz zwięźle (do ok. 200 słów), praktycznie."
+    prompt += f"Pytanie: {question}\n" + _prompt(hass, "ask")
     return await _complete(hass, prompt)

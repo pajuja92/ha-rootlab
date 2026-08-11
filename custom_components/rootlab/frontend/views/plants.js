@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { combo, entityOptions, esc, optionsWithSuggestions, resizeImage, sensorState, zoneSuggestions } from "../util.js";
+import { combo, entityOptions, esc, optionsWithSuggestions, resizeImage, sensorState, uid, zoneSuggestions } from "../util.js";
 import { PLANT_PRESETS } from "../presets.js";
 import { openCrisis } from "../crisis.js";
 
@@ -238,8 +238,32 @@ export async function openPlantCard(app, plantId) {
   renderCard(app, plant, photos);
 }
 
+const PHOTO_CONDITIONS = ["healthy", "ok", "weak", "sick"];
+
+function photoMeta(f) {
+  const parts = [
+    f.created,
+    f.condition ? t("photo.cond." + f.condition) : "",
+    f.caption || "",
+  ].filter(Boolean);
+  const readings = f.readings && Object.keys(f.readings).length
+    ? Object.entries(f.readings).map(([k, v]) => `${t("plant.sensor." + k)}: ${v}`).join(", ")
+    : "";
+  return parts.join(" · ") + (readings ? `\n${readings}` : "");
+}
+
+function historyRow(app, h, archived) {
+  return `<div class="history-item" ${archived ? 'style="opacity:.65"' : ""}>${esc(h.created)} — <b>${esc(h.diagnosis.problem)}</b>
+    (${t("crisis.confidence")}: ${t("crisis.confidence." + h.diagnosis.confidence)})
+    <button class="icon-btn" data-hist-arch="${h.id}" ${archived ? 'data-restore="1"' : ""} title="${t(archived ? "hist.restore" : "hist.archive")}" style="float:right">
+      <ha-icon icon="mdi:archive-arrow-${archived ? "up" : "down"}-outline" style="--mdc-icon-size:16px"></ha-icon></button><br>
+    <span style="font-size:12px">${esc(h.diagnosis.summary || "")}</span></div>`;
+}
+
 function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false) {
-  const history = (app.data.crisis_history || []).filter((h) => h.plant_id === plant.id).slice(-5).reverse();
+  const allHist = (app.data.crisis_history || []).filter((h) => h.plant_id === plant.id);
+  const history = allHist.filter((h) => !h.archived).slice(-5).reverse();
+  const archivedHist = allHist.filter((h) => h.archived).reverse();
   const notes = (plant.notes || []).slice().reverse();
   const sensors = SENSOR_FIELDS.filter((f) => plant.sensors?.[f.key])
     .map((f) => {
@@ -290,7 +314,7 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false) {
             .slice()
             .reverse()
             .map(
-              (f) => `<div class="ph"><img src="data:image/jpeg;base64,${f.image}" alt="" title="${esc(f.created)} ${esc(f.caption || "")}">
+              (f) => `<div class="ph"><img src="data:image/jpeg;base64,${f.image}" alt="" title="${esc(photoMeta(f))}">
                 <button class="del" data-photo-del="${f.id}" title="${t("delete")}">✕</button></div>`
             )
             .join("")}</div>`
@@ -300,14 +324,14 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false) {
     <div class="section-title">${t("plant.history")}</div>
     ${
       history.length
-        ? history
-            .map(
-              (h) => `<div class="history-item">${esc(h.created)} — <b>${esc(h.diagnosis.problem)}</b>
-                (${t("crisis.confidence")}: ${t("crisis.confidence." + h.diagnosis.confidence)})<br>
-                <span style="font-size:12px">${esc(h.diagnosis.summary || "")}</span></div>`
-            )
-            .join("")
+        ? history.map((h) => historyRow(app, h, false)).join("")
         : `<div class="history-item">${t("plant.history.empty")}</div>`
+    }
+    ${
+      archivedHist.length
+        ? `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;color:var(--secondary-text-color)">${t("hist.archived", { n: archivedHist.length })}</summary>
+           ${archivedHist.map((h) => historyRow(app, h, true)).join("")}</details>`
+        : ""
     }`,
     () => {},
     { wide: true }
@@ -352,32 +376,100 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false) {
   dlg.querySelector("#pc-note-add").addEventListener("click", async () => {
     const text = dlg.querySelector("#pc-note").value.trim();
     if (!text) return;
-    const notes = [...(plant.notes || []), { id: crypto.randomUUID(), date: new Date().toISOString().slice(0, 10), text }];
-    app.data = await app.ws("item/save", { kind: "plants", item: { id: plant.id, notes } });
+    const notes = [...(plant.notes || []), { id: uid(), date: new Date().toISOString().slice(0, 10), text }];
+    try {
+      app.data = await app.ws("item/save", { kind: "plants", item: { id: plant.id, notes } });
+    } catch (e) {
+      app.toast(`⚠ ${e.message || e}`, true);
+      return;
+    }
+    app.toast(t("toast.added"));
     renderCard(app, app.data.plants.find((p) => p.id === plant.id), photos);
   });
   dlg.querySelectorAll("[data-note-del]").forEach((el) =>
     el.addEventListener("click", async () => {
       if (!confirm(t("note.delete.confirm"))) return;
-      const notes = (plant.notes || []).filter((n) => n.id !== el.dataset.noteDel);
-      app.data = await app.ws("item/save", { kind: "plants", item: { id: plant.id, notes } });
+      try {
+        const notes = (plant.notes || []).filter((n) => n.id !== el.dataset.noteDel);
+        app.data = await app.ws("item/save", { kind: "plants", item: { id: plant.id, notes } });
+      } catch (e) {
+        app.toast(`⚠ ${e.message || e}`, true);
+        return;
+      }
       renderCard(app, app.data.plants.find((p) => p.id === plant.id), photos);
+    })
+  );
+  dlg.querySelectorAll("[data-hist-arch]").forEach((el) =>
+    el.addEventListener("click", async () => {
+      try {
+        app.data = await app.ws("crisis/archive", {
+          history_id: el.dataset.histArch,
+          archived: !el.dataset.restore,
+        });
+      } catch (e) {
+        app.toast(`⚠ ${e.message || e}`, true);
+        return;
+      }
+      app.toast(t(el.dataset.restore ? "hist.restored" : "hist.archived.toast"));
+      renderCard(app, plant, photos);
     })
   );
   const fileInput = dlg.querySelector("#pc-photo-file");
   dlg.querySelector("#pc-photo-add").addEventListener("click", () => fileInput.click());
   fileInput.addEventListener("change", async (ev) => {
     if (!ev.target.files[0]) return;
-    const img = await resizeImage(ev.target.files[0], 900);
-    const updated = await app.ws("plant/photo/add", { plant_id: plant.id, image: img.data });
-    renderCard(app, plant, updated);
+    let img;
+    try {
+      img = await resizeImage(ev.target.files[0], 900);
+    } catch (e) {
+      app.toast(`⚠ ${t("photo.unreadable")}`, true);
+      return;
+    }
+    photoDialog(app, plant, img);
   });
   dlg.querySelectorAll("[data-photo-del]").forEach((el) =>
     el.addEventListener("click", async () => {
       if (!confirm(t("photo.delete.confirm"))) return;
-      const updated = await app.ws("plant/photo/delete", { plant_id: plant.id, photo_id: el.dataset.photoDel });
-      renderCard(app, plant, updated);
+      try {
+        const updated = await app.ws("plant/photo/delete", { plant_id: plant.id, photo_id: el.dataset.photoDel });
+        renderCard(app, plant, updated);
+      } catch (e) {
+        app.toast(`⚠ ${e.message || e}`, true);
+      }
     })
+  );
+}
+
+/* Nowe zdjęcie: podgląd + notatka + stan rośliny; backend dołoży godzinę i odczyty encji. */
+function photoDialog(app, plant, img) {
+  const condOpts = PHOTO_CONDITIONS.map((c) => ({ value: c, label: t("photo.cond." + c) }));
+  app.dialog(
+    `<h2>${t("photo.add.title")}</h2>
+    <form>
+      <img src="${img.preview}" alt="" style="max-width:100%;max-height:220px;border-radius:8px;display:block;margin:0 auto 10px">
+      <label>${t("photo.condition")}</label>
+      ${combo({ name: "condition", value: "ok", options: condOpts, allowEmpty: false })}
+      <label>${t("photo.note")}</label>
+      <textarea name="caption" placeholder="${t("plant.note.ph")}" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--divider-color);border-radius:8px;background:var(--primary-background-color);color:var(--primary-text-color);font:inherit;min-height:44px"></textarea>
+      <div class="dialog-actions">
+        <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
+        <button type="submit" class="btn">${t("save")}</button>
+      </div>
+    </form>`,
+    async (fd) => {
+      try {
+        const updated = await app.ws("plant/photo/add", {
+          plant_id: plant.id,
+          image: img.data,
+          caption: (fd.get("caption") || "").trim(),
+          condition: fd.get("condition"),
+        });
+        app.toast(t("toast.added"));
+        renderCard(app, plant, updated);
+      } catch (e) {
+        app.toast(`⚠ ${e.message || e}`, true);
+      }
+    }
   );
 }
 

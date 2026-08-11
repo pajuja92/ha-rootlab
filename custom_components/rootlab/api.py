@@ -48,6 +48,7 @@ def _public(hass):
             }
             for sid, run in d["active"].items()
         },
+        "ai_prompt_defaults": ai.PROMPT_DEFAULTS,
         "settings": {
             "latitude": location.get("latitude", hass.config.latitude),
             "ai_provider": options.get("ai_provider", "anthropic"),
@@ -75,6 +76,8 @@ def async_register(hass):
         ws_tasks_apply,
         ws_crisis_diagnose,
         ws_crisis_add_plan,
+        ws_crisis_archive,
+        ws_prompts_save,
         ws_ai_ask,
         ws_verify_stats,
         ws_plant_photos,
@@ -429,6 +432,44 @@ async def ws_crisis_add_plan(hass, connection, msg):
 
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "rootlab/crisis/archive",
+        vol.Required("history_id"): str,
+        vol.Required("archived"): bool,
+    }
+)
+@websocket_api.async_response
+async def ws_crisis_archive(hass, connection, msg):
+    """Archiwizacja diagnozy — pomijana w historii (UI i kontekst AI), do przywrócenia."""
+    entry = next(
+        (e for e in hass.data[DOMAIN]["data"]["crisis_history"] if e["id"] == msg["history_id"]),
+        None,
+    )
+    if not entry:
+        connection.send_error(msg["id"], "not_found", "Nie ma takiego zgłoszenia")
+        return
+    entry["archived"] = msg["archived"]
+    await async_save(hass)
+    connection.send_result(msg["id"], _public(hass))
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "rootlab/prompts/save", vol.Required("prompts"): dict}
+)
+@websocket_api.async_response
+async def ws_prompts_save(hass, connection, msg):
+    """Nadpisania promptów AI z zakładki Ustawienia — zapisywane tylko różnice od domyślnych."""
+    clean = {}
+    for key, default in ai.PROMPT_DEFAULTS.items():
+        val = str(msg["prompts"].get(key) or "").strip()
+        if val and val != default.strip():
+            clean[key] = val
+    hass.data[DOMAIN]["data"]["ai_prompts"] = clean
+    await async_save(hass)
+    connection.send_result(msg["id"], _public(hass))
+
+
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "rootlab/ai/ask",
         vol.Required("question"): str,
         vol.Optional("plant_id", default=None): vol.Any(None, str),
@@ -472,6 +513,7 @@ def ws_plant_photos(hass, connection, msg):
         vol.Required("plant_id"): str,
         vol.Required("image"): str,
         vol.Optional("caption", default=""): str,
+        vol.Optional("condition", default=None): vol.Any(None, str),
     }
 )
 @websocket_api.async_response
@@ -482,13 +524,24 @@ async def ws_photo_add(hass, connection, msg):
     if not plant:
         connection.send_error(msg["id"], "not_found", "Nie ma takiej rośliny")
         return
+    # snapshot odczytów czujników rośliny w chwili dodania zdjęcia
+    readings = {}
+    for key, entity_id in (plant.get("sensors") or {}).items():
+        if not entity_id:
+            continue
+        state = hass.states.get(entity_id)
+        if state and state.state not in ("unavailable", "unknown"):
+            unit = state.attributes.get("unit_of_measurement", "")
+            readings[key] = f"{state.state} {unit}".strip()
     photos = plant.setdefault("photos", [])
     photos.append(
         {
             "id": uuid.uuid4().hex,
             "image": msg["image"],
             "caption": msg["caption"],
-            "created": dt_util.now().date().isoformat(),
+            "condition": msg["condition"],
+            "readings": readings,
+            "created": dt_util.now().strftime("%Y-%m-%d %H:%M"),
         }
     )
     plant["photos"] = photos[-15:]  # limit rozmiaru storage

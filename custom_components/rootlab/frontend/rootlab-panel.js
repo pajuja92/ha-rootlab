@@ -8,11 +8,12 @@ import * as dashboard from "./views/dashboard.js";
 import * as editor from "./views/editor.js";
 import * as knowledge from "./views/knowledge.js";
 import * as plants from "./views/plants.js";
+import * as settings from "./views/settings.js";
 import * as stats from "./views/stats.js";
 import * as tasks from "./views/tasks.js";
 import * as water from "./views/water.js";
 
-const VIEWS = { dashboard, plants, tasks, water, stats, knowledge, editor };
+const VIEWS = { dashboard, plants, tasks, water, stats, knowledge, editor, settings };
 const ACTIONS = Object.assign(
   {},
   dashboard.actions,
@@ -22,6 +23,7 @@ const ACTIONS = Object.assign(
   stats.actions,
   knowledge.actions,
   editor.actions,
+  settings.actions,
   crisis.actions
 );
 const TABS = [
@@ -32,6 +34,7 @@ const TABS = [
   { id: "stats", icon: "mdi:weather-partly-cloudy" },
   { id: "knowledge", icon: "mdi:book-open-variant" },
   { id: "editor", icon: "mdi:vector-square" },
+  { id: "settings", icon: "mdi:cog-outline" },
 ];
 
 class RootlabPanel extends HTMLElement {
@@ -226,6 +229,9 @@ class RootlabPanel extends HTMLElement {
       if (ev.target === dlg) dlg.close(); // klik w tło zamyka
     });
     dlg.addEventListener("close", () => {
+      // zdarzenie close jest asynchroniczne — jeśli w międzyczasie otwarto kolejny
+      // dialog (np. karta rośliny → diagnoza), nie wolno sprzątać stanu
+      if (dlg.open) return;
       dlg.classList.remove("wide");
       crisis.onDialogClose?.(this);
       if (this._pendingReload) {

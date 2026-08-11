@@ -39,7 +39,7 @@ const CONF_COLOR = { high: "var(--rl-green)", medium: "var(--rl-harvest)", low: 
 
 function render(app) {
   const plants = app.data.plants;
-  const history = (app.data.crisis_history || []).filter((h) => h.plant_id === state.plantId).slice(-3).reverse();
+  const history = (app.data.crisis_history || []).filter((h) => h.plant_id === state.plantId && !h.archived).slice(-3).reverse();
   const plantOpts = plants.map((p) => ({ value: p.id, label: `${p.emoji || "🌱"} ${p.name}`, secondary: p.species }));
   const el = app.dialog(
     `<h2>🍂 ${t("crisis.title")}</h2>
