@@ -10,7 +10,9 @@ from .irrigation import async_setup_scheduler, async_stop_all
 from .store import async_load_data
 from .weather import ImgwClient
 
-FRONTEND_URL = f"/{DOMAIN}_files"
+# Wersja w ścieżce (nie w query): importy względne modułów (./i18n.js itd.)
+# dziedziczą bazowy URL, więc każde wydanie unieważnia cache WSZYSTKICH plików.
+FRONTEND_URL = f"/{DOMAIN}_files/{VERSION}"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -53,7 +55,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config={
             "_panel_custom": {
                 "name": "rootlab-panel",
-                "module_url": f"{FRONTEND_URL}/rootlab-panel.js?v={VERSION}",
+                "module_url": f"{FRONTEND_URL}/rootlab-panel.js",
                 "embed_iframe": False,
             }
         },
