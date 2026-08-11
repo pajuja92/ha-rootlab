@@ -63,6 +63,8 @@ export function wireCombos(root) {
               .join("")
           : `<div class="combo-empty">${t("combo.noresults")}</div>`);
       list.hidden = false;
+      // dialog ma overflow:auto — bez tego rozwinięta lista bywa ucięta dołem okna
+      list.scrollIntoView({ block: "nearest" });
     };
 
     input.addEventListener("focus", () => {
