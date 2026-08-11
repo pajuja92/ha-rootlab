@@ -488,6 +488,68 @@ async def async_diagnose(hass, plant, description, image_b64, media_type):
     return parsed
 
 
+def _transcript(chat):
+    return "\n".join(
+        f"{'Użytkownik' if m.get('role') == 'user' else 'Asystent'}: {m.get('content')}"
+        for m in chat.get("messages", [])
+    )
+
+
+async def async_chat(hass, chat, plant, message):
+    """Kolejna wiadomość w rozmowie diagnostycznej — zwraca odpowiedź asystenta."""
+    parts = []
+    if plant:
+        parts.append(
+            "Kontekst rośliny:\n" + json.dumps(_garden_context(hass, [plant["id"]]), ensure_ascii=False)
+        )
+        history = _plant_history(hass, plant)
+        if history:
+            parts.append("Historia rośliny:\n" + history)
+    transcript = _transcript(chat)
+    if transcript:
+        parts.append("Dotychczasowa rozmowa:\n" + transcript)
+    parts.append(
+        f"Użytkownik: {message}\n"
+        "Odpowiedz na ostatnią wiadomość konkretnie i praktycznie — pomóż doprecyzować "
+        "diagnozę i zaplanować kolejne kroki. Dopytuj, jeśli brakuje Ci informacji."
+    )
+    return await _complete(hass, "\n\n".join(parts))
+
+
+async def async_chat_tasks(hass, chat, plant):
+    """Lista zadań wynikających z rozmowy diagnostycznej."""
+    today = date.today().isoformat()
+    prompt = (
+        "Na podstawie rozmowy o problemie z rośliną ułóż listę konkretnych zadań do wykonania "
+        "(kategoria crisis dla pilnych interwencji, maintenance dla zwykłych zabiegów). "
+        f"Maks. 6 zadań, tylko wynikające wprost z rozmowy, terminy YYYY-MM-DD. Dziś: {today}.\n"
+        + (
+            f"Roślina: {plant['name']} (plant_id: {plant['id']}).\n"
+            if plant
+            else "Zadania ogólne (plant_id: null).\n"
+        )
+        + "Rozmowa:\n"
+        + _transcript(chat)
+    )
+    parsed = await _complete(hass, prompt, schema=TASKS_SCHEMA)
+    return [
+        {
+            "id": uuid.uuid4().hex,
+            "plant_id": plant["id"] if plant else None,
+            "category": task["category"]
+            if task.get("category") in ("maintenance", "protection", "crisis")
+            else "maintenance",
+            "title": task.get("title", ""),
+            "details": task.get("details", ""),
+            "due": task.get("due"),
+            "done": False,
+            "source": "chat",
+            "created": today,
+        }
+        for task in parsed.get("tasks", [])
+    ]
+
+
 async def async_ask(hass, question, plant=None):
     """Wolne pytanie do AI (porada) — zwraca tekst."""
     prompt = ""

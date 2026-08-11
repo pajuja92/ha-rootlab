@@ -1,6 +1,7 @@
 import { t } from "./i18n.js";
-import { combo, esc, resizeImage } from "./util.js";
+import { combo, esc, nowStamp, resizeImage } from "./util.js";
 import { attachMic } from "./stt.js";
+import { startChat } from "./views/chat.js";
 
 let state = null;
 let loadTimer = null;
@@ -19,6 +20,7 @@ export function openCrisis(app, plantId = null) {
     error: null,
     added: false,
     savedKn: false,
+    savedHist: false,
   };
   render(app);
 }
@@ -97,6 +99,12 @@ function diagnosisHtml() {
           ? `<span class="chip ai">✓ ${t("knowledge.saved")}</span>`
           : `<button type="button" class="btn ai small" id="cz-kn"><ha-icon icon="mdi:book-plus-outline"></ha-icon>${t("knowledge.save")}</button>`
       }
+      ${
+        state.savedHist
+          ? `<span class="chip ai">✓ ${t("crisis.savedhist")}</span>`
+          : `<button type="button" class="btn small ghost" id="cz-hist"><ha-icon icon="mdi:archive-arrow-up-outline"></ha-icon>${t("crisis.savehist")}</button>`
+      }
+      <button type="button" class="btn small ghost" id="cz-chat"><ha-icon icon="mdi:chat-outline"></ha-icon>${t("crisis.chat")}</button>
     </div>
   </div>`;
 }
@@ -139,6 +147,42 @@ function wire(app, el) {
     app.data = await app.ws("crisis/add_plan", { history_id: state.result.id });
     state.added = true;
     render(app);
+  });
+  q("#cz-hist")?.addEventListener("click", async () => {
+    try {
+      // diagnozy zapisują się jako zarchiwizowane — ten przycisk „utrwala" wpis w historii
+      app.data = await app.ws("crisis/archive", { history_id: state.result.id, archived: false });
+    } catch (e) {
+      app.toast(`⚠ ${e.message || e}`, true);
+      return;
+    }
+    state.savedHist = true;
+    render(app);
+  });
+  q("#cz-chat")?.addEventListener("click", async () => {
+    const d = state.result.diagnosis;
+    const stamp = nowStamp();
+    try {
+      await startChat(app, {
+        id: null,
+        plant_id: state.plantId,
+        title: (d.problem || "").slice(0, 60),
+        created: stamp,
+        updated: stamp,
+        messages: [
+          { role: "user", content: state.desc || t("crisis.chat.nophoto"), created: stamp },
+          {
+            role: "assistant",
+            content: `${d.problem}\n\n${d.summary}\n\n${d.steps.map((s, i) => `${i + 1}. ${s.title} (${t("tasks.in", { n: s.due_in_days })})`).join("\n")}`,
+            created: stamp,
+          },
+        ],
+      });
+    } catch (e) {
+      app.toast(`⚠ ${e.message || e}`, true);
+      return;
+    }
+    el.close(); // onDialogClose sprząta stan i przeładowuje — wyląduje na zakładce czatu
   });
   q("#cz-kn")?.addEventListener("click", async () => {
     const d = state.result.diagnosis;

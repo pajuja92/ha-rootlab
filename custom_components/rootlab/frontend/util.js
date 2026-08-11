@@ -10,6 +10,9 @@ export const todayISO = () => {
 
 export const uid = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, "") : String(Math.random()).slice(2));
 
+/* "YYYY-MM-DD HH:MM" w czasie lokalnym — wspólny stempel wpisów historii. */
+export const nowStamp = () => new Date().toLocaleString("sv-SE").slice(0, 16);
+
 /* Opcje encji dla comboboxa: [{value, label, secondary}] */
 export const entityOptions = (hass, domains) =>
   Object.values(hass.states)

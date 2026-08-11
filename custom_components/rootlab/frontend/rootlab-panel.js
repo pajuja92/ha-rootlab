@@ -4,6 +4,7 @@ import { CSS } from "./styles.js";
 import { t, setLang } from "./i18n.js";
 import { wireCombos } from "./util.js";
 import * as crisis from "./crisis.js";
+import * as chat from "./views/chat.js";
 import * as dashboard from "./views/dashboard.js";
 import * as editor from "./views/editor.js";
 import * as knowledge from "./views/knowledge.js";
@@ -13,11 +14,12 @@ import * as stats from "./views/stats.js";
 import * as tasks from "./views/tasks.js";
 import * as water from "./views/water.js";
 
-const VIEWS = { dashboard, plants, tasks, water, stats, knowledge, editor, settings };
+const VIEWS = { dashboard, plants, chat, tasks, water, stats, knowledge, editor, settings };
 const ACTIONS = Object.assign(
   {},
   dashboard.actions,
   plants.actions,
+  chat.actions,
   tasks.actions,
   water.actions,
   stats.actions,
@@ -29,6 +31,7 @@ const ACTIONS = Object.assign(
 const TABS = [
   { id: "dashboard", icon: "mdi:view-dashboard-outline" },
   { id: "plants", icon: "mdi:sprout" },
+  { id: "chat", icon: "mdi:stethoscope" },
   { id: "tasks", icon: "mdi:clipboard-check-outline" },
   { id: "water", icon: "mdi:water" },
   { id: "stats", icon: "mdi:weather-partly-cloudy" },

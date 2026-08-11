@@ -412,4 +412,11 @@ dialog input[type=checkbox], dialog input[type=radio] { width: auto; accent-colo
   .appbar .title span { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* --- Diagnoza AI: czat --- */
+.chat-msgs { display: flex; flex-direction: column; gap: 8px; max-height: 55vh; overflow-y: auto; padding: 4px 0; }
+.chat-msg { max-width: 82%; padding: 10px 14px; border-radius: 14px; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+.chat-msg.user { align-self: flex-end; background: var(--rl-green); color: #fff; border-bottom-right-radius: 4px; }
+.chat-msg.ai { align-self: flex-start; background: var(--secondary-background-color); border-bottom-left-radius: 4px; }
+.chat-msg .when { display: block; font-size: 11px; opacity: 0.7; margin-top: 4px; }
 `;

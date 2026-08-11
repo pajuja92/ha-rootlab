@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { combo, entityOptions, esc, optionsWithSuggestions, resizeImage, sensorState, uid, zoneSuggestions } from "../util.js";
+import { combo, entityOptions, esc, nowStamp, optionsWithSuggestions, resizeImage, sensorState, uid, zoneSuggestions } from "../util.js";
 import { PLANT_PRESETS } from "../presets.js";
 import { openCrisis } from "../crisis.js";
 
@@ -390,9 +390,7 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false, histEdi
   dlg.querySelector("#pc-note-add").addEventListener("click", async () => {
     const text = dlg.querySelector("#pc-note").value.trim();
     if (!text) return;
-    // sv-SE = "YYYY-MM-DD HH:MM:SS" w czasie lokalnym — spójne sortowanie z resztą historii
-    const stamp = new Date().toLocaleString("sv-SE").slice(0, 16);
-    const notes = [...(plant.notes || []), { id: uid(), date: stamp, text }];
+    const notes = [...(plant.notes || []), { id: uid(), date: nowStamp(), text }];
     try {
       app.data = await app.ws("item/save", { kind: "plants", item: { id: plant.id, notes } });
     } catch (e) {

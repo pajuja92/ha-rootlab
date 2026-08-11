@@ -13,7 +13,7 @@ from .const import DOMAIN
 from .store import async_save
 from .verification import OPEN_METEO_MODELS, fetch_openmeteo_forecast, stats_payload
 
-KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices"]
+KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices", "chats"]
 # pola pomijane w liście (duże base64) — dostępne przez dedykowane komendy
 HEAVY_PLANT_FIELDS = ("photos",)
 
@@ -80,6 +80,8 @@ def async_register(hass):
         ws_crisis_delete,
         ws_prompts_save,
         ws_ai_ask,
+        ws_chat_send,
+        ws_chat_tasks,
         ws_verify_stats,
         ws_plant_photos,
         ws_photo_add,
@@ -395,6 +397,8 @@ async def ws_crisis_diagnose(hass, connection, msg):
         "image": msg["image"],
         "diagnosis": diagnosis,
         "created": dt_util.now().strftime("%Y-%m-%d %H:%M"),
+        # do historii trafia dopiero po „Zapisz w historii" (crisis/archive → archived=False)
+        "archived": True,
     }
     data["crisis_history"] = (data["crisis_history"] + [entry])[-50:]
     await async_save(hass)
@@ -511,6 +515,63 @@ async def ws_ai_ask(hass, connection, msg):
         plant["asks"] = asks[-30:]
         await async_save(hass)
     connection.send_result(msg["id"], {"answer": answer})
+
+
+# --- Rozmowy diagnostyczne (zakładka Diagnoza AI) ---
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rootlab/chat/send",
+        vol.Required("chat_id"): str,
+        vol.Required("message"): str,
+    }
+)
+@websocket_api.async_response
+async def ws_chat_send(hass, connection, msg):
+    data = hass.data[DOMAIN]["data"]
+    chat = next((c for c in data["chats"] if c["id"] == msg["chat_id"]), None)
+    if not chat:
+        connection.send_error(msg["id"], "not_found", "Nie ma takiej rozmowy")
+        return
+    plant = next((p for p in data["plants"] if p["id"] == chat.get("plant_id")), None)
+    try:
+        reply = await ai.async_chat(hass, chat, plant, msg["message"])
+    except Exception as err:  # noqa: BLE001
+        _ai_error(connection, msg["id"], err)
+        return
+    now = dt_util.now().strftime("%Y-%m-%d %H:%M")
+    chat.setdefault("messages", []).append(
+        {"role": "user", "content": msg["message"], "created": now}
+    )
+    chat["messages"].append({"role": "assistant", "content": reply, "created": now})
+    chat["updated"] = now
+    if not chat.get("title"):
+        chat["title"] = msg["message"][:60]
+    await async_save(hass)
+    connection.send_result(msg["id"], chat)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "rootlab/chat/tasks", vol.Required("chat_id"): str}
+)
+@websocket_api.async_response
+async def ws_chat_tasks(hass, connection, msg):
+    """Zadania wynikające z rozmowy — od razu dodawane do listy zadań."""
+    data = hass.data[DOMAIN]["data"]
+    chat = next((c for c in data["chats"] if c["id"] == msg["chat_id"]), None)
+    if not chat:
+        connection.send_error(msg["id"], "not_found", "Nie ma takiej rozmowy")
+        return
+    plant = next((p for p in data["plants"] if p["id"] == chat.get("plant_id")), None)
+    try:
+        fresh = await ai.async_chat_tasks(hass, chat, plant)
+    except Exception as err:  # noqa: BLE001
+        _ai_error(connection, msg["id"], err)
+        return
+    data["tasks"].extend(fresh)
+    await async_save(hass)
+    connection.send_result(msg["id"], {"added": len(fresh), "data": _public(hass)})
 
 
 # --- Zdjęcia roślin ---
