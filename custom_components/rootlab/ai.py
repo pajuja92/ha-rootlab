@@ -197,35 +197,37 @@ def _parse_json_loose(text):
     return json.loads(text[start : end + 1])
 
 
-async def _complete(hass, prompt, schema=None, image_b64=None, media_type=None):
-    """Jedno zapytanie do skonfigurowanego dostawcy. schema=None → wolny tekst."""
+async def _complete(hass, prompt, schema=None, images=None, media_type=None):
+    """Jedno zapytanie do skonfigurowanego dostawcy. schema=None → wolny tekst.
+
+    images: lista base64 (bez prefiksu data:), wszystkie tego samego media_type.
+    """
     provider = _options(hass).get("ai_provider", "anthropic")
     if provider == "anthropic":
-        return await _anthropic(hass, prompt, schema, image_b64, media_type)
+        return await _anthropic(hass, prompt, schema, images, media_type)
     if provider == "ha_ai_task":
         return await _ha_ai_task(hass, prompt, schema)
-    return await _openai_compat(hass, provider, prompt, schema, image_b64, media_type)
+    return await _openai_compat(hass, provider, prompt, schema, images, media_type)
 
 
-async def _anthropic(hass, prompt, schema, image_b64, media_type):
+async def _anthropic(hass, prompt, schema, images, media_type):
     import anthropic
 
     api_key = _options(hass).get("api_key")
     if not api_key:
         raise NoApiKeyError
     client = anthropic.AsyncAnthropic(api_key=api_key, timeout=180.0)
-    content = []
-    if image_b64:
-        content.append(
-            {
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": media_type or "image/jpeg",
-                    "data": image_b64,
-                },
-            }
-        )
+    content = [
+        {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": media_type or "image/jpeg",
+                "data": img,
+            },
+        }
+        for img in images or []
+    ]
     content.append({"type": "text", "text": prompt})
     kwargs = {}
     if schema:
@@ -244,7 +246,7 @@ async def _anthropic(hass, prompt, schema, image_b64, media_type):
     return _parse_json_loose(text) if schema else text.strip()
 
 
-async def _openai_compat(hass, provider, prompt, schema, image_b64, media_type):
+async def _openai_compat(hass, provider, prompt, schema, images, media_type):
     options = _options(hass)
     default_base, default_model = OPENAI_COMPAT[provider]
     base = (options.get("ai_base_url") or default_base).rstrip("/")
@@ -252,15 +254,14 @@ async def _openai_compat(hass, provider, prompt, schema, image_b64, media_type):
     api_key = options.get("api_key")
     if not base or not model or (not api_key and provider != "ollama"):
         raise NoApiKeyError
-    user_content = [{"type": "text", "text": prompt}]
-    if image_b64:
-        user_content.insert(
-            0,
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:{media_type or 'image/jpeg'};base64,{image_b64}"},
-            },
-        )
+    user_content = [
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:{media_type or 'image/jpeg'};base64,{img}"},
+        }
+        for img in images or []
+    ]
+    user_content.append({"type": "text", "text": prompt})
     system = _prompt(hass, "system") + (
         " Odpowiadasz WYŁĄCZNIE poprawnym JSON zgodnym z podanym schematem, bez komentarzy."
         if schema
@@ -473,8 +474,8 @@ def _plant_history(hass, plant):
     return "\n".join(f"- {when}: {txt}" for when, txt in entries[-15:])
 
 
-async def async_diagnose(hass, plant, description, image_b64, media_type):
-    """Diagnoza problemu z rośliną: zdjęcie + opis + historia + aktualne odczyty."""
+async def async_diagnose(hass, plant, description, images, media_type):
+    """Diagnoza problemu z rośliną: zdjęcia (maks. 5) + opis + historia + aktualne odczyty."""
     history = _plant_history(hass, plant)
     context = _garden_context(hass, [plant["id"]])
     parsed = await _complete(
@@ -486,7 +487,7 @@ async def async_diagnose(hass, plant, description, image_b64, media_type):
         + "Aktualne dane rośliny:\n"
         + json.dumps(context, ensure_ascii=False),
         schema=DIAGNOSIS_SCHEMA,
-        image_b64=image_b64,
+        images=images,
         media_type=media_type,
     )
     if parsed.get("confidence") not in ("high", "medium", "low"):
@@ -502,7 +503,7 @@ def _transcript(chat):
     )
 
 
-async def async_chat(hass, chat, plant, message, context=None):
+async def async_chat(hass, chat, plant, message, context=None, images=None):
     """Kolejna wiadomość w rozmowie diagnostycznej — zwraca odpowiedź asystenta."""
     parts = []
     if plant:
@@ -523,7 +524,7 @@ async def async_chat(hass, chat, plant, message, context=None):
         "Odpowiedz na ostatnią wiadomość konkretnie i praktycznie — pomóż doprecyzować "
         "diagnozę i zaplanować kolejne kroki. Dopytuj, jeśli brakuje Ci informacji."
     )
-    return await _complete(hass, "\n\n".join(parts))
+    return await _complete(hass, "\n\n".join(parts), images=images)
 
 
 async def async_chat_tasks(hass, chat, plant):

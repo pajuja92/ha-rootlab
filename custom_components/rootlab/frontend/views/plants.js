@@ -436,7 +436,7 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false, histEdi
     if (!ev.target.files[0]) return;
     let img;
     try {
-      img = await resizeImage(ev.target.files[0], 900);
+      img = await resizeImage(ev.target.files[0], 900, app);
     } catch (e) {
       app.toast(`⚠ ${t("photo.unreadable")}`, true);
       return;

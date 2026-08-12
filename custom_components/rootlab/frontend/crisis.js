@@ -12,7 +12,7 @@ export function renderFab() {
 
 export function openCrisis(app, plantId = null) {
   state = {
-    img: null,
+    imgs: [],
     plantId: plantId || app.data.plants[0]?.id || "",
     desc: "",
     busy: false,
@@ -45,15 +45,25 @@ function render(app) {
   const plantOpts = plants.map((p) => ({ value: p.id, label: `${p.emoji || "🌱"} ${p.name}`, secondary: p.species }));
   const el = app.dialog(
     `<h2>🍂 ${t("crisis.title")}</h2>
-    <div class="dropzone ${state.img ? "hasimg" : ""}" id="cz-drop">
+    <div class="dropzone ${state.imgs.length ? "hasimg" : ""}" id="cz-drop">
       ${
-        state.img
-          ? `<img src="${state.img.preview}" alt="">`
+        state.imgs.length
+          ? `<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center">
+              ${state.imgs
+                .map(
+                  (im, i) => `<span style="position:relative;display:inline-block">
+                    <img src="${im.preview}" alt="" style="width:84px;height:84px;object-fit:cover;border-radius:8px;display:block">
+                    <button type="button" data-img-del="${i}" title="${t("delete")}" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;font-size:11px;line-height:1">✕</button>
+                  </span>`
+                )
+                .join("")}
+              ${state.imgs.length < 5 ? `<span style="width:84px;height:84px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--divider-color);border-radius:8px;font-size:24px;color:var(--secondary-text-color)">+</span>` : ""}
+            </div>`
           : `<ha-icon icon="mdi:camera-outline"></ha-icon><div>${t("crisis.photo")}</div>
              <small>${t("crisis.photo.hint")}</small>`
       }
     </div>
-    <input type="file" id="cz-file" accept="image/*" hidden>
+    <input type="file" id="cz-file" accept="image/*" multiple hidden>
     <label>${t("crisis.plant")}</label>
     ${combo({ name: "cz_plant", value: state.plantId, options: plantOpts, allowEmpty: false })}
     <label>${t("crisis.desc")}</label>
@@ -116,26 +126,40 @@ function wire(app, el) {
     state.desc = q("#cz-desc").value;
   };
   attachMic(app, q("#cz-desc"));
-  q("#cz-drop").addEventListener("click", () => q("#cz-file").click());
-  q("#cz-drop").addEventListener("dragover", (ev) => ev.preventDefault());
-  q("#cz-drop").addEventListener("drop", async (ev) => {
-    ev.preventDefault();
-    if (ev.dataTransfer.files[0] && state) {
-      snapshot();
-      const img = await resizeImage(ev.dataTransfer.files[0]);
-      if (!state) return; // dialog zamknięty w międzyczasie
-      state.img = img;
-      render(app);
+  const addFiles = async (files) => {
+    if (!files?.length || !state) return;
+    snapshot();
+    const list = [...files].slice(0, Math.max(0, 5 - state.imgs.length));
+    if (list.length < files.length) app.toast(t("crisis.photo.max"), true);
+    for (const file of list) {
+      try {
+        const img = await resizeImage(file, 1024, app);
+        if (!state) return; // dialog zamknięty w międzyczasie
+        state.imgs.push(img);
+      } catch (e) {
+        app.toast(`⚠ ${t("photo.unreadable")}`, true);
+      }
     }
+    if (state) render(app);
+  };
+  q("#cz-drop").addEventListener("click", (ev) => {
+    const del = ev.target.closest("[data-img-del]");
+    if (del) {
+      snapshot();
+      state.imgs.splice(parseInt(del.dataset.imgDel, 10), 1);
+      render(app);
+      return;
+    }
+    q("#cz-file").click();
   });
-  q("#cz-file").addEventListener("change", async (ev) => {
-    if (ev.target.files[0] && state) {
-      snapshot();
-      const img = await resizeImage(ev.target.files[0]);
-      if (!state) return;
-      state.img = img;
-      render(app);
-    }
+  q("#cz-drop").addEventListener("dragover", (ev) => ev.preventDefault());
+  q("#cz-drop").addEventListener("drop", (ev) => {
+    ev.preventDefault();
+    addFiles(ev.dataTransfer.files);
+  });
+  q("#cz-file").addEventListener("change", (ev) => {
+    addFiles(ev.target.files);
+    ev.target.value = ""; // ten sam plik można wybrać ponownie
   });
   q('input[name="cz_plant"]').addEventListener("change", () => {
     snapshot();
@@ -170,7 +194,12 @@ function wire(app, el) {
         created: stamp,
         updated: stamp,
         messages: [
-          { role: "user", content: state.desc || t("crisis.chat.nophoto"), created: stamp },
+          {
+            role: "user",
+            content: state.desc || t("crisis.chat.nophoto"),
+            created: stamp,
+            ...(state.imgs.length ? { images: state.imgs.map((im) => im.data) } : {}),
+          },
           {
             role: "assistant",
             content: `${d.problem}\n\n${d.summary}\n\n${d.steps.map((s, i) => `${i + 1}. ${s.title} (${t("tasks.in", { n: s.due_in_days })})`).join("\n")}`,
@@ -222,8 +251,8 @@ async function submit(app, snapshot) {
     state.result = await app.ws("crisis/diagnose", {
       plant_id: state.plantId,
       description: state.desc,
-      image: state.img?.data ?? null,
-      media_type: state.img?.media ?? null,
+      images: state.imgs.map((im) => im.data),
+      media_type: state.imgs[0]?.media ?? null,
     });
   } catch (e) {
     state.error = t("crisis.error") + (e.message || String(e));

@@ -38,7 +38,19 @@ def _public(hass):
             {k: v for k, v in p.items() if k not in HEAVY_PLANT_FIELDS} for p in data["plants"]
         ],
         "crisis_history": [
-            {k: v for k, v in e.items() if k != "image"} for e in data["crisis_history"]
+            {k: v for k, v in e.items() if k not in ("image", "images")}
+            for e in data["crisis_history"]
+        ],
+        # zdjęcia w wiadomościach są ciężkie — pełna rozmowa przez rootlab/chat/get
+        "chats": [
+            {
+                **c,
+                "messages": [
+                    {k: v for k, v in m.items() if k != "images"}
+                    for m in c.get("messages", [])
+                ],
+            }
+            for c in data["chats"]
         ],
         "active": {
             sid: {
@@ -82,6 +94,8 @@ def async_register(hass):
         ws_ai_ask,
         ws_chat_send,
         ws_chat_tasks,
+        ws_chat_get,
+        ws_image_convert,
         ws_verify_stats,
         ws_plant_photos,
         ws_photo_add,
@@ -373,6 +387,7 @@ async def ws_tasks_apply(hass, connection, msg):
         vol.Required("plant_id"): str,
         vol.Required("description"): str,
         vol.Optional("image", default=None): vol.Any(None, str),
+        vol.Optional("images", default=None): vol.Any(None, [str]),
         vol.Optional("media_type", default=None): vol.Any(None, str),
     }
 )
@@ -383,9 +398,10 @@ async def ws_crisis_diagnose(hass, connection, msg):
     if not plant:
         connection.send_error(msg["id"], "not_found", "Nie ma takiej rośliny")
         return
+    images = (msg["images"] or ([msg["image"]] if msg["image"] else []))[:5]
     try:
         diagnosis = await ai.async_diagnose(
-            hass, plant, msg["description"], msg["image"], msg["media_type"]
+            hass, plant, msg["description"], images, msg["media_type"]
         )
     except Exception as err:  # noqa: BLE001
         _ai_error(connection, msg["id"], err)
@@ -394,7 +410,7 @@ async def ws_crisis_diagnose(hass, connection, msg):
         "id": uuid.uuid4().hex,
         "plant_id": plant["id"],
         "description": msg["description"],
-        "image": msg["image"],
+        "images": images,
         "diagnosis": diagnosis,
         "created": dt_util.now().strftime("%Y-%m-%d %H:%M"),
         # do historii trafia dopiero po „Zapisz w historii" (crisis/archive → archived=False)
@@ -402,7 +418,9 @@ async def ws_crisis_diagnose(hass, connection, msg):
     }
     data["crisis_history"] = (data["crisis_history"] + [entry])[-50:]
     await async_save(hass)
-    connection.send_result(msg["id"], {k: v for k, v in entry.items() if k != "image"})
+    connection.send_result(
+        msg["id"], {k: v for k, v in entry.items() if k not in ("image", "images")}
+    )
 
 
 @websocket_api.websocket_command(
@@ -526,6 +544,7 @@ async def ws_ai_ask(hass, connection, msg):
         vol.Required("chat_id"): str,
         vol.Required("message"): str,
         vol.Optional("context", default=None): vol.Any(None, str),
+        vol.Optional("images", default=None): vol.Any(None, [str]),
     }
 )
 @websocket_api.async_response
@@ -536,21 +555,85 @@ async def ws_chat_send(hass, connection, msg):
         connection.send_error(msg["id"], "not_found", "Nie ma takiej rozmowy")
         return
     plant = next((p for p in data["plants"] if p["id"] == chat.get("plant_id")), None)
+    images = (msg["images"] or [])[:5]
     try:
-        reply = await ai.async_chat(hass, chat, plant, msg["message"], msg["context"])
+        reply = await ai.async_chat(
+            hass, chat, plant, msg["message"], msg["context"], images or None
+        )
     except Exception as err:  # noqa: BLE001
         _ai_error(connection, msg["id"], err)
         return
     now = dt_util.now().strftime("%Y-%m-%d %H:%M")
-    chat.setdefault("messages", []).append(
-        {"role": "user", "content": msg["message"], "created": now}
-    )
+    user_msg = {"role": "user", "content": msg["message"], "created": now}
+    if images:
+        user_msg["images"] = images
+    chat.setdefault("messages", []).append(user_msg)
     chat["messages"].append({"role": "assistant", "content": reply, "created": now})
     chat["updated"] = now
     if not chat.get("title"):
         chat["title"] = msg["message"][:60]
     await async_save(hass)
     connection.send_result(msg["id"], chat)
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "rootlab/chat/get", vol.Required("chat_id"): str}
+)
+@callback
+def ws_chat_get(hass, connection, msg):
+    """Pełna rozmowa (ze zdjęciami w wiadomościach) — lista w rootlab/data jest odchudzona."""
+    chat = next(
+        (c for c in hass.data[DOMAIN]["data"]["chats"] if c["id"] == msg["chat_id"]), None
+    )
+    if not chat:
+        connection.send_error(msg["id"], "not_found", "Nie ma takiej rozmowy")
+        return
+    connection.send_result(msg["id"], chat)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rootlab/image/convert",
+        vol.Required("data"): str,
+        vol.Optional("max", default=1024): int,
+    }
+)
+@websocket_api.async_response
+async def ws_image_convert(hass, connection, msg):
+    """Konwersja zdjęć, których przeglądarka nie dekoduje (HEIC z iPhone'a) → JPEG.
+
+    ponytail: limit wiadomości websocket ~4 MB — bardzo duże HEIC-i mogą się nie
+    zmieścić; wtedy front pokaże błąd i zostaje ręczna konwersja.
+    """
+    import base64
+    import io
+
+    def _convert():
+        from PIL import Image, ImageOps
+
+        try:
+            from pillow_heif import register_heif_opener
+
+            register_heif_opener()
+        except ImportError:
+            pass
+        img = Image.open(io.BytesIO(base64.b64decode(msg["data"])))
+        img = ImageOps.exif_transpose(img).convert("RGB")
+        scale = min(1.0, msg["max"] / max(img.size))
+        if scale < 1:
+            img = img.resize((round(img.width * scale), round(img.height * scale)))
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=85)
+        return base64.b64encode(buf.getvalue()).decode()
+
+    try:
+        out = await hass.async_add_executor_job(_convert)
+    except Exception as err:  # noqa: BLE001
+        connection.send_error(
+            msg["id"], "convert_error", f"Nie udało się przekonwertować zdjęcia: {err}"
+        )
+        return
+    connection.send_result(msg["id"], {"data": out})
 
 
 @websocket_api.websocket_command(

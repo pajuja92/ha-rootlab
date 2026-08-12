@@ -103,23 +103,38 @@ export function wireCombos(root) {
   });
 }
 
-/* Zdjęcie → miniatura JPEG (base64) — wspólne dla kryzysu i galerii roślin. */
-export async function resizeImage(file, max = 1024) {
+/* Zdjęcie → miniatura JPEG (base64) — wspólne dla kryzysu, galerii roślin i czatu.
+   Gdy przeglądarka nie umie zdekodować pliku (HEIC z iPhone'a w Chrome), a jest `app`,
+   konwersję robi backend HA (Pillow + pillow-heif). */
+export async function resizeImage(file, max = 1024, app = null) {
   const url = URL.createObjectURL(file);
-  const image = await new Promise((resolve, reject) => {
-    const i = new Image();
-    i.onload = () => resolve(i);
-    i.onerror = reject;
-    i.src = url;
-  });
-  const scale = Math.min(1, max / Math.max(image.width, image.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(image.width * scale);
-  canvas.height = Math.round(image.height * scale);
-  canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
-  URL.revokeObjectURL(url);
-  const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-  return { preview: dataUrl, media: "image/jpeg", data: dataUrl.split(",")[1] };
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = reject;
+      i.src = url;
+    });
+    const scale = Math.min(1, max / Math.max(image.width, image.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(image.width * scale);
+    canvas.height = Math.round(image.height * scale);
+    canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+    return { preview: dataUrl, media: "image/jpeg", data: dataUrl.split(",")[1] };
+  } catch (e) {
+    if (!app) throw e;
+    const b64 = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(",")[1]);
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+    const out = await app.ws("image/convert", { data: b64, max });
+    return { preview: `data:image/jpeg;base64,${out.data}`, media: "image/jpeg", data: out.data };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 /* --- Urządzenia: rejestr HA + sugestie encji per strefa --- */

@@ -1,19 +1,20 @@
 import { t } from "../i18n.js";
-import { combo, esc, nowStamp, sensorState } from "../util.js";
+import { combo, esc, nowStamp, resizeImage, sensorState } from "../util.js";
 import { insideRect, isShaded, shadowCapsule, solarPosition } from "../shade.js";
 import { SENSOR_FIELDS } from "./plants.js";
 
 /* Zakładka „Diagnoza AI" — rozmowy diagnostyczne per roślina.
    Rozmowa startuje z dialogu kryzysowego („Doprecyzuj w czacie") albo od zera. */
 
-const st = (app) => (app._chat ??= { openId: null, busy: false, pending: null });
+const st = (app) => (app._chat ??= { openId: null, busy: false, pending: null, att: [], full: null });
 
 export function render(app) {
   const s = st(app);
   const chats = (app.data.chats || [])
     .slice()
     .sort((a, b) => (b.updated || "").localeCompare(a.updated || ""));
-  const chat = chats.find((c) => c.id === s.openId);
+  // pełna rozmowa (ze zdjęciami) z chat/get; kopia z listy jako fallback na czas ładowania
+  const chat = (s.full?.id === s.openId && s.full) || chats.find((c) => c.id === s.openId);
   return chat ? renderChat(app, chat) : renderList(app, chats);
 }
 
@@ -181,9 +182,15 @@ function renderChat(app, chat) {
   const s = st(app);
   const plant = app.data.plants.find((p) => p.id === chat.plant_id);
   const bubbles = (chat.messages || [])
-    .map(
-      (m) => `<div class="chat-msg ${m.role === "user" ? "user" : "ai"}">${esc(m.content)}<span class="when">${esc(m.created || "")}</span></div>`
-    )
+    .map((m) => {
+      const imgs = (m.images || [])
+        .map(
+          (b) =>
+            `<img src="data:image/jpeg;base64,${b}" alt="" data-msg-zoom style="max-width:150px;border-radius:8px;display:block;margin-top:6px;cursor:pointer">`
+        )
+        .join("");
+      return `<div class="chat-msg ${m.role === "user" ? "user" : "ai"}">${esc(m.content)}${imgs}<span class="when">${esc(m.created || "")}</span></div>`;
+    })
     .join("");
   const pending = s.pending
     ? `<div class="chat-msg user">${esc(s.pending)}</div><div class="chat-msg ai">${t("chat.typing")}</div>`
@@ -202,7 +209,21 @@ function renderChat(app, chat) {
         <div class="chat-msgs" id="chat-msgs">
           ${bubbles + pending || `<div class="chat-msg ai">${t("chat.nomsgs")}</div>`}
         </div>
+        ${
+          s.att.length
+            ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">${s.att
+                .map(
+                  (a, i) => `<span style="position:relative;display:inline-block">
+                    <img src="${a.preview}" alt="" style="width:56px;height:56px;object-fit:cover;border-radius:8px;display:block">
+                    <button type="button" data-att-del="${i}" title="${t("delete")}" style="position:absolute;top:-6px;right:-6px;background:rgba(0,0,0,.7);color:#fff;border:none;border-radius:50%;width:18px;height:18px;cursor:pointer;font-size:10px;line-height:1">✕</button>
+                  </span>`
+                )
+                .join("")}</div>`
+            : ""
+        }
         <div style="display:flex;gap:8px;align-items:flex-end;margin-top:10px">
+          <input type="file" id="chat-file" accept="image/*" multiple hidden>
+          <button class="btn ghost" id="chat-att" title="${t("plant.photo.add")}"><ha-icon icon="mdi:camera-plus-outline"></ha-icon></button>
           <div class="mic-wrap" style="flex:1">
             <textarea id="chat-input" placeholder="${t("chat.input.ph")}" style="width:100%;box-sizing:border-box;padding:10px 40px 10px 12px;border:1px solid var(--divider-color);border-radius:8px;background:var(--primary-background-color);color:var(--primary-text-color);font:inherit;min-height:48px"></textarea>
           </div>
@@ -225,6 +246,33 @@ export function bind(app, root) {
       send(app);
     }
   });
+  const fileInput = root.getElementById("chat-file");
+  root.getElementById("chat-att").addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", async (ev) => {
+    const s = st(app);
+    const files = [...ev.target.files].slice(0, Math.max(0, 5 - s.att.length));
+    ev.target.value = "";
+    for (const file of files) {
+      try {
+        s.att.push(await resizeImage(file, 900, app));
+      } catch (e) {
+        app.toast(`⚠ ${t("photo.unreadable")}`, true);
+      }
+    }
+    app.render();
+  });
+  root.querySelectorAll("[data-att-del]").forEach((el) =>
+    el.addEventListener("click", () => {
+      st(app).att.splice(parseInt(el.dataset.attDel, 10), 1);
+      app.render();
+    })
+  );
+  root.querySelectorAll("[data-msg-zoom]").forEach((img) =>
+    img.addEventListener("click", () => {
+      const small = img.style.maxWidth === "150px";
+      img.style.maxWidth = small ? "100%" : "150px";
+    })
+  );
   ta.focus();
 }
 
@@ -238,13 +286,17 @@ async function send(app) {
   app.render();
   const chat = (app.data.chats || []).find((c) => c.id === s.openId);
   const plant = app.data.plants.find((p) => p.id === chat?.plant_id);
+  const images = s.att.map((a) => a.data);
   try {
     const updated = await app.ws("chat/send", {
       chat_id: s.openId,
       message: text,
       // AI dostaje dokładnie to, co pokazuje panel „Informacje o roślinie" (plan, cień, czujniki)
       context: plant ? plantInfoText(app, plant) : null,
+      images: images.length ? images : null,
     });
+    s.full = updated;
+    s.att = [];
     const i = app.data.chats.findIndex((c) => c.id === s.openId);
     if (i >= 0) app.data.chats[i] = updated;
   } catch (e) {
@@ -258,17 +310,34 @@ async function send(app) {
 /* Utworzenie rozmowy z gotowymi wiadomościami (dialog kryzysowy) — otwiera zakładkę. */
 export async function startChat(app, seed) {
   app.data = await app.ws("item/save", { kind: "chats", item: seed });
-  st(app).openId = app.data.chats[app.data.chats.length - 1].id;
+  const s = st(app);
+  s.openId = app.data.chats[app.data.chats.length - 1].id;
+  s.full = null;
+  s.att = [];
   app.tab = "chat";
 }
 
+async function openChat(app, chatId) {
+  const s = st(app);
+  s.openId = chatId;
+  s.full = null;
+  s.att = [];
+  app.render();
+  try {
+    s.full = await app.ws("chat/get", { chat_id: chatId });
+  } catch (e) {
+    return; // kopia z listy (bez zdjęć) już się renderuje
+  }
+  app.render();
+}
+
 export const actions = {
-  "chat-open": (app, el) => {
-    st(app).openId = el.dataset.id;
-    app.render();
-  },
+  "chat-open": (app, el) => openChat(app, el.dataset.id),
   "chat-back": (app) => {
-    st(app).openId = null;
+    const s = st(app);
+    s.openId = null;
+    s.full = null;
+    s.att = [];
     app.render();
   },
   "chat-del": (app, el) => {
