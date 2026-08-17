@@ -1,8 +1,8 @@
 import { t } from "../i18n.js";
-import { combo, entityOptions, esc, nowStamp, optionsWithSuggestions, resizeImage, sensorState, uid, zoneSuggestions } from "../util.js";
+import { combo, entityOptions, esc, nowStamp, optionsWithSuggestions, resizeImage, sensorState, todayISO, uid, zoneSuggestions } from "../util.js";
 import { PLANT_PRESETS } from "../presets.js";
 import { openCrisis } from "../crisis.js";
-import { areaLabel, bind as growBind, growDialog, plantingPhase, render as growRender } from "./grow.js";
+import { areaLabel, areaOptions, bind as growBind, dateInput, fdMMDD, growDialog, plantingPhase, render as growRender } from "./grow.js";
 
 export const SENSOR_FIELDS = [
   { key: "soil", labelKey: "plant.sensor.soil", icon: "mdi:water-percent" },
@@ -25,7 +25,10 @@ export function render(app) {
   // uprawy bieżącego roku pogrupowane po strefie miejsca (grządki/szklarnie z planu)
   const year = new Date().getFullYear();
   const areaZone = new Map((app.data.layout?.items || []).filter((i) => "w" in i).map((a) => [a.id, a.zone_id]));
-  const plantings = (app.data.plantings || []).filter((p) => p.year === year);
+  // fallback dla upraw bez żywej karty rośliny (stare dane albo usunięta roślina)
+  const plantings = (app.data.plantings || []).filter(
+    (p) => p.year === year && (!p.plant_id || !plants.some((x) => x.id === p.plant_id))
+  );
   const zonePlantings = (zoneId) =>
     plantings.filter((p) => (zoneId ? areaZone.get(p.area_id) === zoneId : !zones.some((z) => z.id === areaZone.get(p.area_id))));
   if (!plants.length && !plantings.length) {
@@ -154,6 +157,16 @@ export function openZoneCard(app, zoneId) {
   );
 }
 
+const linkedPlantings = (app, plantId) => (app.data.plantings || []).filter((x) => x.plant_id === plantId);
+
+/* Faza wegetacji dla kafelka: najbardziej aktywna uprawa bieżącego roku. */
+function tilePhase(app, plantId) {
+  const year = new Date().getFullYear();
+  const pls = linkedPlantings(app, plantId).filter((x) => x.year === year);
+  if (!pls.length) return null;
+  return pls.map(plantingPhase).find((ph) => ph !== "done") || "done";
+}
+
 function plantCard(app, p) {
   const sensors = SENSOR_FIELDS.filter((f) => p.sensors?.[f.key]).map((f) => {
     const entityId = p.sensors[f.key];
@@ -161,7 +174,8 @@ function plantCard(app, p) {
     return `<button class="sensor-chip ${st.unavailable ? "unavailable" : ""}" data-action="more-info" data-entity="${esc(entityId)}" title="${t(f.labelKey)}">
       <ha-icon icon="${f.icon}"></ha-icon><span class="val">${esc(st.text)}</span></button>`;
   });
-  return `<div class="card plant">
+  const phase = tilePhase(app, p.id);
+  return `<div class="card plant" ${phase ? `style="border-top:4px solid ${PHASE_COLOR[phase]}"` : ""}>
     <div class="header"><span class="emoji">${esc(p.emoji || "🌱")}</span><h3>${esc(p.name)}</h3></div>
     ${p.species ? `<div class="species">${esc(p.species)}</div>` : ""}
     ${
@@ -205,15 +219,8 @@ function zoneDialog(app, zone) {
   );
 }
 
-function plantDialog(app, plant, draft = null) {
-  draft ??= {
-    name: plant?.name || "",
-    species: plant?.species || "",
-    emoji: plant?.emoji || "",
-    zone_id: plant?.zone_id || "",
-    planting: plant?.planting || "",
-    sensors: { ...(plant?.sensors || {}) },
-  };
+/* Wspólne pola formularza rośliny (nowa roślina + tryb edycji karty). */
+function plantFormFields(app, draft) {
   // urządzenia strefy: jedno z daną rolą → predefiniowane; więcej → ⭐ na górze listy
   SENSOR_FIELDS.forEach((f) => {
     if (!draft.sensors[f.key]) {
@@ -224,68 +231,81 @@ function plantDialog(app, plant, draft = null) {
   const anySugg = SENSOR_FIELDS.some((f) => zoneSuggestions(app, draft.zone_id, f.key).length);
   const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: `${z.emoji || "🪴"} ${z.name}` }));
   const baseSensorOpts = entityOptions(app.hass, ["sensor"]);
+  return `<label>${t("name")}</label>
+    <input name="name" required maxlength="60" value="${esc(draft.name)}" placeholder="${t("plant.name.ph")}">
+    <label>${t("plant.species")}</label>
+    <input name="species" maxlength="80" value="${esc(draft.species)}">
+    <label>${t("zone.emoji")}</label>
+    <input name="emoji" maxlength="4" value="${esc(draft.emoji)}" placeholder="🍅">
+    <label>${t("plant.zone")}</label>
+    ${combo({ name: "zone_id", value: draft.zone_id, options: zoneOpts })}
+    <label>${t("plant.planting")}</label>
+    ${combo({
+      name: "planting",
+      value: draft.planting,
+      allowEmpty: false,
+      options: [
+        {
+          value: "",
+          label: `${t("planting.parent")} (${(() => {
+            const zp = app.data.zones.find((z) => z.id === draft.zone_id)?.planting;
+            return zp ? t("planting." + zp) : t("planting.none");
+          })()})`,
+        },
+        ...PLANTING_KINDS.map((v) => ({ value: v, label: t("planting." + v) })),
+      ],
+    })}
+    ${anySugg ? `<p style="font-size:12px;color:var(--secondary-text-color);margin:6px 0 0">${t("plant.sensors.auto")}</p>` : ""}
+    ${SENSOR_FIELDS.map(
+      (f) =>
+        `<label>${t(f.labelKey)} ${t("plant.sensor.entity")}</label>` +
+        combo({
+          name: `sensor_${f.key}`,
+          value: draft.sensors[f.key] || "",
+          options: optionsWithSuggestions(app.hass, baseSensorOpts, zoneSuggestions(app, draft.zone_id, f.key)),
+        })
+    ).join("")}`;
+}
+
+const plantFromForm = (fd) => ({
+  name: fd.get("name").trim(),
+  species: fd.get("species").trim(),
+  emoji: fd.get("emoji").trim(),
+  zone_id: fd.get("zone_id") || null,
+  planting: fd.get("planting") || null,
+  sensors: Object.fromEntries(SENSOR_FIELDS.map((f) => [f.key, fd.get(`sensor_${f.key}`) || null])),
+});
+
+const draftFromDlg = (dlg) => ({
+  name: dlg.querySelector('input[name="name"]').value,
+  species: dlg.querySelector('input[name="species"]').value,
+  emoji: dlg.querySelector('input[name="emoji"]').value,
+  zone_id: dlg.querySelector('input[name="zone_id"]').value,
+  planting: dlg.querySelector('input[name="planting"]').value,
+  sensors: Object.fromEntries(
+    SENSOR_FIELDS.map((f) => [f.key, dlg.querySelector(`input[name="sensor_${f.key}"]`).value])
+  ),
+});
+
+/* Dialog nowej rośliny (edycja istniejącej = tryb edycji karty rośliny). */
+function plantDialog(app, draft = null) {
+  draft ??= { name: "", species: "", emoji: "", zone_id: "", planting: "", sensors: {} };
   const presetOpts = PLANT_PRESETS.map((p, i) => ({
     value: String(i),
     label: `${p.emoji} ${p.name}`,
     secondary: p.species,
   }));
   const dlg = app.dialog(
-    `<h2>${plant ? t("plant.edit") : t("plant.new")}</h2>
+    `<h2>${t("plant.new")}</h2>
     <form>
-      ${
-        plant
-          ? ""
-          : `<label>${t("plant.preset")}</label>${combo({ name: "preset", options: presetOpts })}`
-      }
-      <label>${t("name")}</label>
-      <input name="name" required maxlength="60" value="${esc(draft.name)}" placeholder="${t("plant.name.ph")}">
-      <label>${t("plant.species")}</label>
-      <input name="species" maxlength="80" value="${esc(draft.species)}">
-      <label>${t("zone.emoji")}</label>
-      <input name="emoji" maxlength="4" value="${esc(draft.emoji)}" placeholder="🍅">
-      <label>${t("plant.zone")}</label>
-      ${combo({ name: "zone_id", value: draft.zone_id, options: zoneOpts })}
-      <label>${t("plant.planting")}</label>
-      ${combo({
-        name: "planting",
-        value: draft.planting,
-        allowEmpty: false,
-        options: [
-          {
-            value: "",
-            label: `${t("planting.parent")} (${(() => {
-              const zp = app.data.zones.find((z) => z.id === draft.zone_id)?.planting;
-              return zp ? t("planting." + zp) : t("planting.none");
-            })()})`,
-          },
-          ...PLANTING_KINDS.map((v) => ({ value: v, label: t("planting." + v) })),
-        ],
-      })}
-      ${anySugg ? `<p style="font-size:12px;color:var(--secondary-text-color);margin:6px 0 0">${t("plant.sensors.auto")}</p>` : ""}
-      ${SENSOR_FIELDS.map(
-        (f) =>
-          `<label>${t(f.labelKey)} ${t("plant.sensor.entity")}</label>` +
-          combo({
-            name: `sensor_${f.key}`,
-            value: draft.sensors[f.key] || "",
-            options: optionsWithSuggestions(app.hass, baseSensorOpts, zoneSuggestions(app, draft.zone_id, f.key)),
-          })
-      ).join("")}
+      <label>${t("plant.preset")}</label>${combo({ name: "preset", options: presetOpts })}
+      ${plantFormFields(app, draft)}
       <div class="dialog-actions">
         <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
         <button type="submit" class="btn">${t("save")}</button>
       </div>
     </form>`,
-    (fd) =>
-      app.saveItem("plants", {
-        id: plant?.id ?? null,
-        name: fd.get("name").trim(),
-        species: fd.get("species").trim(),
-        emoji: fd.get("emoji").trim(),
-        zone_id: fd.get("zone_id") || null,
-        planting: fd.get("planting") || null,
-        sensors: Object.fromEntries(SENSOR_FIELDS.map((f) => [f.key, fd.get(`sensor_${f.key}`) || null])),
-      })
+    (fd) => app.saveItem("plants", { id: null, ...plantFromForm(fd) })
   );
   // preset → prefill pól
   dlg.querySelector('input[name="preset"]')?.addEventListener("change", (ev) => {
@@ -296,24 +316,14 @@ function plantDialog(app, plant, draft = null) {
     dlg.querySelector('input[name="emoji"]').value = preset.emoji;
   });
   // zmiana strefy → przelicz sugestie czujników z urządzeń tej strefy
-  dlg.querySelector('input[name="zone_id"]').addEventListener("change", (ev) => {
-    const next = {
-      name: dlg.querySelector('input[name="name"]').value,
-      species: dlg.querySelector('input[name="species"]').value,
-      emoji: dlg.querySelector('input[name="emoji"]').value,
-      zone_id: ev.target.value,
-      planting: dlg.querySelector('input[name="planting"]').value,
-      sensors: Object.fromEntries(
-        SENSOR_FIELDS.map((f) => [f.key, dlg.querySelector(`input[name="sensor_${f.key}"]`).value])
-      ),
-    };
-    plantDialog(app, plant, next);
+  dlg.querySelector('input[name="zone_id"]').addEventListener("change", () => {
+    plantDialog(app, draftFromDlg(dlg));
   });
 }
 
 /* --- Karta rośliny: czujniki, notatki, zdjęcia, historia diagnoz, AI --- */
 
-export async function openPlantCard(app, plantId) {
+export async function openPlantCard(app, plantId, edit = false) {
   const plant = app.data.plants.find((p) => p.id === plantId);
   if (!plant) return;
   let photos = [];
@@ -322,7 +332,7 @@ export async function openPlantCard(app, plantId) {
   } catch (e) {
     photos = [];
   }
-  renderCard(app, plant, photos);
+  (edit ? renderCardEdit : renderCard)(app, plant, photos);
 }
 
 const PHOTO_CONDITIONS = ["healthy", "ok", "weak", "sick"];
@@ -389,14 +399,50 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false, histEdi
       return `<span class="sensor-chip ${st.unavailable ? "unavailable" : ""}"><ha-icon icon="${f.icon}"></ha-icon>${esc(st.text)}</span>`;
     })
     .join("");
+  const zone = app.data.zones.find((z) => z.id === plant.zone_id);
+  const plantingKind = plant.planting || zone?.planting;
+  const infoChips = [
+    zone ? `<span class="chip">${esc(zone.emoji || "🪴")} ${esc(zone.name)}</span>` : "",
+    plantingKind ? `<span class="chip">${t("planting." + plantingKind)}</span>` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const growRows = linkedPlantings(app, plant.id)
+    .sort((a, b) => b.year - a.year || (a.plan?.sow || "").localeCompare(b.plan?.sow || ""))
+    .map((pl) => {
+      const ph = plantingPhase(pl);
+      const dates = [
+        pl.plan?.sow && `${t("grow.date.sow")} ${pl.plan.sow}`,
+        pl.plan?.transplant && `${t("grow.date.transplant")} ${pl.plan.transplant}`,
+        pl.plan?.harvest_from &&
+          `${t("grow.date.harvest_from")} ${pl.plan.harvest_from}${pl.plan?.harvest_to ? ` – ${pl.plan.harvest_to}` : ""}`,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      const done = [
+        pl.done?.sow && `🌱 ${pl.done.sow}`,
+        pl.done?.transplant && `🪴 ${pl.done.transplant}`,
+        pl.done?.finished && `🏁 ${pl.done.finished}`,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return `<div class="note-row" style="align-items:center;border-left:4px solid ${PHASE_COLOR[ph]};padding-left:10px">
+        <span class="txt">${esc(areaLabel(app, pl.area_id))} · ${t("grow.method." + (pl.method || "direct"))} · ${pl.year}<br>
+          <small style="color:var(--secondary-text-color)">${dates}${done ? `<br>${done}` : ""}</small></span>
+        <span class="chip" style="background:color-mix(in srgb, ${PHASE_COLOR[ph]} 18%, transparent);color:inherit">${t("grow.phase." + ph)}</span>
+      </div>`;
+    })
+    .join("");
   const dlg = app.dialog(
     `<h2><span class="emoji">${esc(plant.emoji || "🌱")}</span> ${esc(plant.name)}</h2>
     ${plant.species ? `<div class="species" style="margin:0 0 8px">${esc(plant.species)}</div>` : ""}
+    ${infoChips ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${infoChips}</div>` : ""}
     ${sensors ? `<div class="sensors">${sensors}</div>` : ""}
     <div class="actions" style="justify-content:flex-start">
       <button type="button" class="btn small ai" id="pc-diag"><ha-icon icon="mdi:leaf-off"></ha-icon>${t("plant.diagnose")}</button>
-      <button type="button" class="btn small ghost" data-action="edit-plant" data-id="${plant.id}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${t("edit")}</button>
+      <button type="button" class="btn small ghost" id="pc-edit"><ha-icon icon="mdi:pencil-outline"></ha-icon>${t("edit")}</button>
     </div>
+    ${growRows ? `<div class="section-title">${t("tab.grow")}</div>${growRows}` : ""}
 
     <div class="section-title">${t("plant.askai")}</div>
     <div class="mic-wrap">
@@ -443,6 +489,7 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false, histEdi
     dlg.close();
     openCrisis(app, plant.id);
   });
+  dlg.querySelector("#pc-edit").addEventListener("click", () => renderCardEdit(app, plant, photos));
   dlg.querySelector("#pc-ask").addEventListener("click", async () => {
     const question = dlg.querySelector("#pc-question").value.trim();
     if (!question || aiBusy) return;
@@ -569,6 +616,112 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false, histEdi
   );
 }
 
+/* Tryb edycji karty rośliny: pola rośliny + terminy aktywnej uprawy + dziennik + usuwanie. */
+function renderCardEdit(app, plant, photos, draft = null) {
+  draft ??= {
+    name: plant.name || "",
+    species: plant.species || "",
+    emoji: plant.emoji || "",
+    zone_id: plant.zone_id || "",
+    planting: plant.planting || "",
+    sensors: { ...(plant.sensors || {}) },
+  };
+  const linked = linkedPlantings(app, plant.id);
+  const active = linked.find((x) => !x.done?.finished) || linked[linked.length - 1] || null;
+  const dlg = app.dialog(
+    `<h2><span class="emoji">${esc(plant.emoji || "🌱")}</span> ${esc(plant.name)} — ${t("edit")}</h2>
+    <form>
+      ${plantFormFields(app, draft)}
+      ${
+        active
+          ? `<div class="section-title">${t("tab.grow")}</div>
+        <label>${t("grow.area")}</label>
+        ${combo({ name: "area_id", value: active.area_id, options: areaOptions(app), allowEmpty: false })}
+        <div style="display:flex;gap:10px">
+          <span style="flex:1"><label>${t("grow.method")}</label>
+          ${combo({
+            name: "method",
+            value: active.method || "direct",
+            options: [
+              { value: "indoor", label: t("grow.method.indoor") },
+              { value: "direct", label: t("grow.method.direct") },
+            ],
+            allowEmpty: false,
+          })}</span>
+          <span><label>${t("grow.year")}</label>
+          <input type="number" name="gyear" value="${active.year}" min="2020" max="2040" style="width:90px"></span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 10px">
+          <span><label>${t("grow.date.sow")}</label>${dateInput("sow", active.year, active.plan?.sow)}</span>
+          <span><label>${t("grow.date.transplant")}</label>${dateInput("transplant", active.year, active.plan?.transplant)}</span>
+          <span><label>${t("grow.date.harvest_from")}</label>${dateInput("harvest_from", active.year, active.plan?.harvest_from)}</span>
+          <span><label>${t("grow.date.harvest_to")}</label>${dateInput("harvest_to", active.year, active.plan?.harvest_to)}</span>
+        </div>
+        <div class="actions" style="justify-content:flex-start;margin-top:12px">
+          ${!active.done?.sow ? `<button type="button" class="btn small ghost" data-mark="sow">🌱 ${t("grow.done.sow")}</button>` : `<span class="chip">🌱 ${esc(active.done.sow)}</span>`}
+          ${active.method === "indoor" ? (!active.done?.transplant ? `<button type="button" class="btn small ghost" data-mark="transplant">🪴 ${t("grow.done.transplant")}</button>` : `<span class="chip">🪴 ${esc(active.done.transplant)}</span>`) : ""}
+          ${!active.done?.finished ? `<button type="button" class="btn small ghost" data-mark="finished">🏁 ${t("grow.done.finish")}</button>` : `<span class="chip">🏁 ${esc(active.done.finished)}</span>`}
+        </div>`
+          : ""
+      }
+      <div class="dialog-actions">
+        <button type="button" class="btn plain" id="pce-del" style="margin-right:auto;color:var(--rl-crisis)">${t("delete")}</button>
+        <button type="button" class="btn plain" id="pce-back">${t("cancel")}</button>
+        <button type="submit" class="btn">${t("save")}</button>
+      </div>
+    </form>`,
+    async (fd) => {
+      try {
+        app.data = await app.ws("item/save", { kind: "plants", item: { id: plant.id, ...plantFromForm(fd) } });
+        if (active) {
+          app.data = await app.ws("item/save", {
+            kind: "plantings",
+            item: {
+              id: active.id,
+              area_id: fd.get("area_id"),
+              method: fd.get("method") || "direct",
+              year: parseInt(fd.get("gyear"), 10) || active.year,
+              plan: {
+                sow: fdMMDD(fd, "sow"),
+                transplant: fdMMDD(fd, "transplant"),
+                harvest_from: fdMMDD(fd, "harvest_from"),
+                harvest_to: fdMMDD(fd, "harvest_to"),
+              },
+            },
+          });
+        }
+      } catch (e) {
+        app.toast(`⚠ ${e.message || e}`, true);
+        return;
+      }
+      app.toast(t("toast.saved"));
+      renderCard(app, app.data.plants.find((p) => p.id === plant.id) || plant, photos);
+    },
+    { wide: true }
+  );
+  dlg.querySelector('input[name="zone_id"]').addEventListener("change", () => {
+    renderCardEdit(app, plant, photos, draftFromDlg(dlg));
+  });
+  dlg.querySelectorAll("[data-mark]").forEach((el) =>
+    el.addEventListener("click", async () => {
+      const done = { ...(active.done || {}), [el.dataset.mark]: todayISO() };
+      try {
+        app.data = await app.ws("item/save", { kind: "plantings", item: { id: active.id, done } });
+      } catch (e) {
+        app.toast(`⚠ ${e.message || e}`, true);
+        return;
+      }
+      renderCardEdit(app, app.data.plants.find((p) => p.id === plant.id) || plant, photos, draftFromDlg(dlg));
+    })
+  );
+  dlg.querySelector("#pce-back").addEventListener("click", () => renderCard(app, plant, photos));
+  dlg.querySelector("#pce-del").addEventListener("click", () => {
+    if (!confirm(t("plant.delete.confirm", { name: plant.name }))) return;
+    dlg.close();
+    app.deleteItem("plants", plant.id);
+  });
+}
+
 /* Nowe zdjęcie: podgląd + notatka + stan rośliny; backend dołoży godzinę i odczyty encji. */
 function photoDialog(app, plant, img) {
   const condOpts = PHOTO_CONDITIONS.map((c) => ({ value: c, label: t("photo.cond." + c) }));
@@ -614,7 +767,7 @@ export const actions = {
     if (confirm(t("zone.delete.confirm", { name: zone.name }))) app.deleteItem("zones", zone.id);
   },
   "add-plant": (app) => plantDialog(app),
-  "edit-plant": (app, el) => plantDialog(app, app.data.plants.find((p) => p.id === el.dataset.id)),
+  "edit-plant": (app, el) => openPlantCard(app, el.dataset.id, true),
   "delete-plant": (app, el) => {
     const plant = app.data.plants.find((p) => p.id === el.dataset.id);
     if (confirm(t("plant.delete.confirm", { name: plant.name }))) app.deleteItem("plants", plant.id);

@@ -12,7 +12,7 @@ const AREA_EMOJI = { greenhouse: "🏠", bed: "🥬", lawn: "🌿" };
 
 const areas = (app) => (app.data.layout?.items || []).filter((i) => "w" in i);
 
-function areaOptions(app) {
+export function areaOptions(app) {
   return areas(app).map((a) => {
     const zone = app.data.zones.find((z) => z.id === a.zone_id);
     return {
@@ -148,9 +148,9 @@ function rotationWarning(app, presetFamily, areaId, year, excludeId) {
   return hit ? t("grow.rotation", { year: hit.year, family: hit.family, name: hit.name }) : "";
 }
 
-const dateInput = (name, year, mmdd) =>
+export const dateInput = (name, year, mmdd) =>
   `<input type="date" name="${name}" value="${mmdd ? `${year}-${mmdd}` : ""}">`;
-const fdMMDD = (fd, name) => {
+export const fdMMDD = (fd, name) => {
   const v = fd.get(name);
   return v ? String(v).slice(5) : null;
 };

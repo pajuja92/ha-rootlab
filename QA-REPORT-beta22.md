@@ -1,18 +1,25 @@
-# QA: v0.4.0-beta.22 — raport z testów w Home Assistant
+# QA: raporty z testów w Home Assistant (od drugiego Claude'a)
 
-Cześć! 👋 Tu drugi Claude — odpowiadam za wdrażanie i testowanie kolejnych bet RootLaba w Home Assistant. Grzegorz poprosił, żebym przekazywał Ci podsumowania po każdej aktualizacji. Ten plik jest untracked — nie commituj go.
+Cześć! 👋 Tu Claude od wdrożeń — instaluję kolejne bety przez HACS i przeklikuję je w HA. Plik untracked, nie commituj go.
 
-## Wynik: beta.22 wdrożona i przetestowana ✅
+## v0.4.0-beta.23 — wdrożona i przetestowana ✅ (2026-08-17)
 
-- Zainstalowana przez HACS (wybór wersji z listy pre-release), HA zrestartowany, integracja wstała bez błędów.
-- Nowa zakładka **Uprawy** renderuje się poprawnie: oś roku Sty–Gru, pusty stan z podpowiedzią, selektor roku ±, filtr miejsc, legenda (rozsada/wzrost/zbiór).
-- Dialog **Nowa uprawa**: combo presetów działa (Pomidor pokazuje rodzinę „psiankowate"), prefill z fenologii OK — sposób „Z rozsady", siew 20.02, wysadzenie 15.05, zbiór 15.07–10.10. Pola sukcesji i checkbox „Utwórz zadania" obecne.
-- **Zaplanuj sezon z AI**: miejsca zaciągane z Planu ogrodu (Szklarnia, Grządki), generowanie działa — 7 propozycji z metodami, datami i uzasadnieniami (w tym płodozmianowe, np. bobowate wzbogacają glebę w azot). Nie zaakceptowałem — to był test, nie chciałem tworzyć danych.
-- Konsola: brak błędów RootLaba (tylko ogólne wyjątki frontendu HA przy restarcie).
+- HACS → beta.23 → restart HA. Uwaga operacyjna: tuż po publikacji release'u dialog „Pobierz ponownie" przez kilka minut pokazywał „Commit v0.3.0" bez listy wydań — pomogło „Uaktualnij dane" + twardy refresh przeglądarki.
+- Scalenie zakładek działa: Rośliny mają podwidoki „Rośliny / Uprawy", „Uprawy" zniknęły z górnego paska.
+- W podwidoku Rośliny pod strefą Szklarnia renderuje się sekcja „UPRAWY 2026" z paskiem fazy (aktualna faza „Zbiór" podświetlona).
+- Podwidok Uprawy: oś roku z pasami rozsada (fiolet) / wzrost (zieleń) / zbiór (żółty) + czerwona linia „dziś" — poprawnie.
+- Klik wiersza otwiera „Edytuj uprawę" z przyciskami dziennika: Posiane / Wysadzone / Zakończ uprawę + Usuń. OK.
+- Konsola bez błędów RootLaba.
 
-## Uwagi / drobiazgi do rozważenia
+### Uwagi dla Ciebie
 
-1. **Duplikaty w Wiedzy**: jest 6 niemal identycznych wpisów „Liście pomidora zaczęły się robić żółte" (2026-07-31) — warto dodać deduplikację przy zapisie z diagnozy.
-2. Nie testowałem: dziennika (posiane/wysadzone/zakończ), ostrzeżenia płodozmianu (brak historii upraw) i siewu sukcesywnego end-to-end — wymagają utworzenia realnych danych.
+1. **Płodozmian nie ostrzega przy uprawie z tego samego roku**: w Szklarni jest uprawa Pomidor (psiankowate, 2026); nowa uprawa Pomidor + Szklarnia nie pokazała ostrzeżenia. Jeśli sprawdzasz tylko lata poprzednie — OK, ale rozważ też bieżący rok.
+2. **Tajemnicze dane testowe**: w storage jest uprawa Pomidor (Szklarnia, Z rozsady, 20.02/15.05/15.07–10.10 — dokładnie daty prefillu presetu) + 3 zaległe zadania grow, w tym dwa „miejsce usunięte z planu". Ja przy testach beta.22 klikałem „Anuluj" w dialogu Nowa uprawa (z wybranym presetem Pomidor). Dziś w beta.23 Anuluj poprawnie nie zapisuje. Sprawdź, czy w beta.22 Anuluj nie zapisywał uprawy — albo to Twoje dane testowe; w każdym razie warto je posprzątać (zostawiłem, żeby nie niszczyć śladów).
+3. Nadal aktualne z beta.22: 6 zduplikowanych wpisów w Wiedzy („Liście pomidora zaczęły się robić żółte", 2026-07-31) — przydałaby się deduplikacja.
+
+## v0.4.0-beta.22 — wdrożona i przetestowana ✅ (2026-08-17)
+
+- Zakładka Uprawy (wtedy osobna), dialog Nowa uprawa z prefillm z fenologii (Pomidor → psiankowate, Z rozsady, 20.02/15.05/15.07–10.10), Zaplanuj sezon z AI (7 propozycji z uzasadnieniami płodozmianowymi — podgląd OK, nie akceptowałem).
+- Konsola bez błędów RootLaba.
 
 Powodzenia z kolejną betą! 🌱

@@ -689,11 +689,30 @@ async def ws_grow_generate(hass, connection, msg):
 )
 @websocket_api.async_response
 async def ws_grow_apply(hass, connection, msg):
-    """Zapis zaakceptowanych obsadzeń (+ opcjonalnych zadań) jednym strzałem."""
+    """Zapis zaakceptowanych obsadzeń (+ opcjonalnych zadań); każda uprawa dostaje kartę rośliny."""
     data = hass.data[DOMAIN]["data"]
+    area_zone = {
+        i["id"]: i.get("zone_id") for i in data.get("layout", {}).get("items", [])
+    }
+    made = {}  # (nazwa, miejsce) -> plant_id; seria sukcesyjna = jedna karta
     for planting in msg["plantings"]:
         if not planting.get("id"):
             planting["id"] = uuid.uuid4().hex
+        if not planting.get("plant_id"):
+            key = (planting.get("name"), planting.get("area_id"))
+            if key not in made:
+                plant = {
+                    "id": uuid.uuid4().hex,
+                    "name": planting.get("name", ""),
+                    "species": planting.get("species", ""),
+                    "emoji": planting.get("emoji", ""),
+                    "zone_id": area_zone.get(planting.get("area_id")),
+                    "planting": None,
+                    "sensors": {},
+                }
+                data["plants"].append(plant)
+                made[key] = plant["id"]
+            planting["plant_id"] = made[key]
         data["plantings"].append(planting)
     for task in msg["tasks"]:
         if not task.get("id"):
