@@ -6,7 +6,7 @@ import { openPlantCard, openZoneCard } from "./plants.js";
 
 export const ENABLED = true;
 
-const AREA_KINDS = ["greenhouse", "bed", "lawn"];
+const AREA_KINDS = ["greenhouse", "bed", "orchard", "lawn"];
 const CIRCLE_DEFAULTS = {
   plant: { diameter_m: 0.5, height_m: 0.6, crown_base_m: 0 },
   tree: { diameter_m: 3, height_m: 5, crown_base_m: 2 },
@@ -20,7 +20,7 @@ const KIND_FILL = {
   compost: "color-mix(in srgb, var(--rl-soil) 65%, black)",
 };
 const KIND_GLYPH = { tree: "🌳", shrub: "🌿", compost: "♻️" };
-const AREA_EMOJI = { greenhouse: "🏠", bed: "🥕", lawn: "🌱" };
+const AREA_EMOJI = { greenhouse: "🏠", bed: "🥕", orchard: "🍎", lawn: "🌱" };
 
 const st = (app) =>
   (app.editorState ??= {

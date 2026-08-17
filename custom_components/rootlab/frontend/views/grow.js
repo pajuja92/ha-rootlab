@@ -8,7 +8,7 @@ import { PLANT_PRESETS } from "../presets.js";
 const st = (app) => (app._grow ??= { year: new Date().getFullYear(), area: "" });
 
 const PHENO = PLANT_PRESETS.filter((p) => p.harvest);
-const AREA_EMOJI = { greenhouse: "🏠", bed: "🥬", lawn: "🌿" };
+const AREA_EMOJI = { greenhouse: "🏠", bed: "🥬", orchard: "🍎", lawn: "🌿" };
 
 const areas = (app) => (app.data.layout?.items || []).filter((i) => "w" in i);
 

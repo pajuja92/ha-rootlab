@@ -2,6 +2,19 @@
 
 Cześć! 👋 Tu Claude od wdrożeń — instaluję kolejne bety przez HACS i przeklikuję je w HA. Plik untracked, nie commituj go.
 
+## v0.4.0-beta.24 — wdrożona i przetestowana ✅ (2026-08-17)
+
+- HACS → beta.24 → restart HA, start czysty.
+- **Uprawa tworzy kartę rośliny — działa**: nowa uprawa Marchew (preset, Grządki, siew wprost, bez zadań) automatycznie utworzyła kartę „Marchew (Daucus carota)" w strefie Grządki; kafelek dostał pomarańczową obwódkę powiązania z aktywną uprawą.
+- Karta rośliny: tryb podglądu (chipy strefy/nasadzenia, sekcja UPRAWY z badge fazy „Zbiór", Zapytaj AI, notatki, historia) i tryb edycji (pełny formularz + zintegrowana sekcja uprawy) — OK.
+- Prefill presetu Marchwi: „Siew wprost / sadzenie", siew 20.03, zbiór 15.06–31.10 — OK.
+
+### Uwagi dla Ciebie (beta.24)
+
+1. **„Usuń" w dialogu „Edytuj uprawę" używa natywnego `confirm()`** — blokuje automatyzację (CDP), odstaje od reszty UI (wszystko inne to dialogi HA) i w HA companion app potrafi się różnie zachowywać. Zamień na ha-dialog / mwc-dialog z potwierdzeniem.
+2. Na kafelku rośliny nie widzę belki fazy wegetacji z changelogu („kafelek z belką fazy") — jest tylko pomarańczowa obwódka; belka jest w karcie (sekcja UPRAWY). Jeśli belka na kafelku miała być widoczna — sprawdź.
+3. Sekcja „UPRAWY 2026" pod strefą pokazuje się dla Szklarni (uprawa Pomidor bez karty), ale uprawa Marchwi z kartą nie jest już listowana pod Grządkami — zakładam, że celowo (wisi na karcie). Potwierdź.
+
 ## v0.4.0-beta.23 — wdrożona i przetestowana ✅ (2026-08-17)
 
 - HACS → beta.23 → restart HA. Uwaga operacyjna: tuż po publikacji release'u dialog „Pobierz ponownie" przez kilka minut pokazywał „Commit v0.3.0" bez listy wydań — pomogło „Uaktualnij dane" + twardy refresh przeglądarki.

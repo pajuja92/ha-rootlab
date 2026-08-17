@@ -297,6 +297,7 @@ dialog.wide { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 64
 .editor-svg .area.greenhouse { fill: color-mix(in srgb, var(--rl-water) 18%, transparent); stroke: var(--rl-water); }
 .editor-svg .area.bed { fill: color-mix(in srgb, var(--rl-soil) 30%, transparent); stroke: var(--rl-soil); }
 .editor-svg .area.lawn { fill: color-mix(in srgb, var(--rl-green) 18%, transparent); stroke: color-mix(in srgb, var(--rl-green) 60%, transparent); }
+.editor-svg .area.orchard { fill: color-mix(in srgb, var(--rl-harvest) 16%, transparent); stroke: var(--rl-harvest); }
 .editor-svg .area.selected, .editor-svg .item.selected circle { stroke: var(--rl-ai); stroke-width: 0.14; }
 .editor-svg .resize-handle { fill: var(--rl-ai); cursor: nwse-resize; }
 .editor-svg.view-mode .item, .editor-svg.view-mode .area { cursor: pointer; }
