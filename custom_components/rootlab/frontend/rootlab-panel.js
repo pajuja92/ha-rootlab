@@ -7,6 +7,7 @@ import * as crisis from "./crisis.js";
 import * as chat from "./views/chat.js";
 import * as dashboard from "./views/dashboard.js";
 import * as editor from "./views/editor.js";
+import * as grow from "./views/grow.js";
 import * as knowledge from "./views/knowledge.js";
 import * as plants from "./views/plants.js";
 import * as settings from "./views/settings.js";
@@ -14,12 +15,13 @@ import * as stats from "./views/stats.js";
 import * as tasks from "./views/tasks.js";
 import * as water from "./views/water.js";
 
-const VIEWS = { dashboard, plants, chat, tasks, water, stats, knowledge, editor, settings };
+const VIEWS = { dashboard, plants, chat, tasks, grow, water, stats, knowledge, editor, settings };
 const ACTIONS = Object.assign(
   {},
   dashboard.actions,
   plants.actions,
   chat.actions,
+  grow.actions,
   tasks.actions,
   water.actions,
   stats.actions,
@@ -33,6 +35,7 @@ const TABS = [
   { id: "plants", icon: "mdi:sprout" },
   { id: "chat", icon: "mdi:stethoscope" },
   { id: "tasks", icon: "mdi:clipboard-check-outline" },
+  { id: "grow", icon: "mdi:calendar-month" },
   { id: "water", icon: "mdi:water" },
   { id: "stats", icon: "mdi:weather-partly-cloudy" },
   { id: "knowledge", icon: "mdi:book-open-variant" },

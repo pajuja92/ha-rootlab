@@ -13,7 +13,7 @@ from .const import DOMAIN
 from .store import async_save
 from .verification import OPEN_METEO_MODELS, fetch_openmeteo_forecast, stats_payload
 
-KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices", "chats"]
+KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices", "chats", "plantings"]
 # pola pomijane w liście (duże base64) — dostępne przez dedykowane komendy
 HEAVY_PLANT_FIELDS = ("photos",)
 
@@ -96,6 +96,8 @@ def async_register(hass):
         ws_chat_tasks,
         ws_chat_get,
         ws_image_convert,
+        ws_grow_generate,
+        ws_grow_apply,
         ws_verify_stats,
         ws_plant_photos,
         ws_photo_add,
@@ -654,6 +656,51 @@ async def ws_chat_tasks(hass, connection, msg):
         _ai_error(connection, msg["id"], err)
         return
     connection.send_result(msg["id"], {"tasks": fresh})
+
+
+# --- Uprawy (plan sezonu) ---
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rootlab/grow/generate",
+        vol.Required("areas"): [dict],
+        vol.Required("catalog"): [dict],
+        vol.Optional("wishes", default=None): vol.Any(None, str),
+    }
+)
+@websocket_api.async_response
+async def ws_grow_generate(hass, connection, msg):
+    """Propozycje obsadzeń od AI — NIE zapisuje, frontend wdraża wybrane przez grow/apply."""
+    try:
+        fresh = await ai.async_plan_season(hass, msg["areas"], msg["catalog"], msg["wishes"])
+    except Exception as err:  # noqa: BLE001
+        _ai_error(connection, msg["id"], err)
+        return
+    connection.send_result(msg["id"], {"plantings": fresh})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rootlab/grow/apply",
+        vol.Required("plantings"): [dict],
+        vol.Optional("tasks", default=[]): [dict],
+    }
+)
+@websocket_api.async_response
+async def ws_grow_apply(hass, connection, msg):
+    """Zapis zaakceptowanych obsadzeń (+ opcjonalnych zadań) jednym strzałem."""
+    data = hass.data[DOMAIN]["data"]
+    for planting in msg["plantings"]:
+        if not planting.get("id"):
+            planting["id"] = uuid.uuid4().hex
+        data["plantings"].append(planting)
+    for task in msg["tasks"]:
+        if not task.get("id"):
+            task["id"] = uuid.uuid4().hex
+        data["tasks"].append(task)
+    await async_save(hass)
+    connection.send_result(msg["id"], _public(hass))
 
 
 # --- Zdjęcia roślin ---

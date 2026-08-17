@@ -47,6 +47,13 @@ PROMPT_DEFAULTS = {
         "Uwzględnij historię rośliny — wcześniejsze diagnozy, notatki, zdjęcia i odczyty."
     ),
     "ask": "Odpowiedz zwięźle (do ok. 200 słów), praktycznie.",
+    "season": (
+        "Zaplanuj sezon uprawowy dla wskazanych miejsc w ogrodzie. Dobieraj wyłącznie "
+        "gatunki z katalogu i trzymaj się ich okien siewu/wysadzania (w szklarni można "
+        "przyspieszyć o 2-4 tygodnie). Pilnuj płodozmianu: ta sama rodzina botaniczna "
+        "w tym samym miejscu wymaga 3-4 lat przerwy. Obsadzaj miejsca różnorodnie, "
+        "realistycznie co do liczby upraw, i podawaj krótkie uzasadnienie każdej propozycji."
+    ),
 }
 
 
@@ -100,6 +107,33 @@ DIAGNOSIS_SCHEMA = {
         },
     },
     "required": ["problem", "confidence", "summary", "steps"],
+    "additionalProperties": False,
+}
+
+
+SEASON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "plantings": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "area_id": {"type": "string", "description": "id miejsca z listy obszarów"},
+                    "name": {"type": "string", "description": "nazwa rośliny DOKŁADNIE z katalogu"},
+                    "method": {"type": "string", "enum": ["indoor", "direct"]},
+                    "sow": {"type": ["string", "null"], "description": "data siewu MM-DD albo null"},
+                    "transplant": {"type": ["string", "null"], "description": "data wysadzenia MM-DD albo null"},
+                    "harvest_from": {"type": "string", "description": "początek zbiorów MM-DD"},
+                    "harvest_to": {"type": "string", "description": "koniec zbiorów MM-DD"},
+                    "reason": {"type": "string", "description": "1 zdanie uzasadnienia"},
+                },
+                "required": ["area_id", "name", "method", "sow", "transplant", "harvest_from", "harvest_to", "reason"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["plantings"],
     "additionalProperties": False,
 }
 
@@ -558,6 +592,41 @@ async def async_chat_tasks(hass, chat, plant):
             "created": today,
         }
         for task in parsed.get("tasks", [])
+    ]
+
+
+async def async_plan_season(hass, areas, catalog, wishes=None):
+    """Plan sezonu dla modułu Uprawy — zwraca listę propozycji obsadzeń (nic nie zapisuje)."""
+    data = hass.data[DOMAIN]["data"]
+    existing = [
+        {
+            "area_id": p.get("area_id"),
+            "name": p.get("name"),
+            "family": p.get("family"),
+            "year": p.get("year"),
+        }
+        for p in data["plantings"]
+    ]
+    context = {
+        "date": date.today().isoformat(),
+        "latitude": round(
+            (data["layout"].get("location") or {}).get("latitude") or hass.config.latitude, 2
+        ),
+        "areas": areas,
+        "existing_plantings": existing,
+        "catalog": catalog,
+    }
+    parsed = await _complete(
+        hass,
+        _prompt(hass, "season") + "\n"
+        + (f"Życzenia użytkownika (traktuj priorytetowo): {wishes}\n" if wishes else "")
+        + "Dane (miejsca, dotychczasowe obsadzenia do płodozmianu, katalog roślin z oknami):\n"
+        + json.dumps(context, ensure_ascii=False),
+        schema=SEASON_SCHEMA,
+    )
+    area_ids = {a.get("id") for a in areas}
+    return [
+        p for p in parsed.get("plantings", []) if p.get("area_id") in area_ids and p.get("name")
     ]
 
 

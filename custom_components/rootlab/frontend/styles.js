@@ -413,6 +413,21 @@ dialog input[type=checkbox], dialog input[type=radio] { width: auto; accent-colo
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
+/* --- Uprawy: oś czasu roku --- */
+.grow-row { display: grid; grid-template-columns: 200px 1fr; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--divider-color); cursor: pointer; }
+.grow-row:hover:not(.done) { background: color-mix(in srgb, var(--rl-green) 6%, transparent); }
+.grow-row.done { opacity: 0.55; }
+.grow-name { font-size: 14px; min-width: 0; }
+.grow-months { display: grid; grid-template-columns: repeat(12, 1fr); font-size: 11px; color: var(--secondary-text-color); text-align: center; }
+.grow-track { position: relative; height: 18px; border-radius: 4px;
+  background: repeating-linear-gradient(90deg, transparent 0, transparent calc(100% / 12 - 1px), var(--divider-color) calc(100% / 12 - 1px), var(--divider-color) calc(100% / 12)); }
+.grow-band { position: absolute; top: 3px; height: 12px; border-radius: 6px; }
+.grow-band.sow { background: var(--rl-ai); opacity: 0.8; }
+.grow-band.grow { background: var(--rl-green); opacity: 0.7; }
+.grow-band.harvest { background: var(--rl-harvest); }
+.grow-today { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--rl-crisis); border-radius: 1px; }
+@media (max-width: 700px) { .grow-row { grid-template-columns: 130px 1fr; } .grow-name { font-size: 12px; } }
+
 /* --- Diagnoza AI: czat --- */
 .chat-layout { display: grid; grid-template-columns: 320px 1fr; gap: var(--rl-gap); align-items: start; }
 .chat-layout.solo { grid-template-columns: 1fr; }
