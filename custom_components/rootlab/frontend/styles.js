@@ -199,7 +199,7 @@ dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; mar
 .diagnosis .desc { font-size: 14px; }
 .history-item { border-top: 1px solid var(--divider-color); padding: 8px 0; font-size: 13px; color: var(--secondary-text-color); }
 /* Edytor */
-.editor-wrap { background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: var(--rl-radius); padding: 8px; }
+.editor-wrap { background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: var(--rl-radius); padding: 8px; overflow: auto; user-select: none; -webkit-user-select: none; }
 .editor-svg { width: 100%; height: auto; display: block; touch-action: none; background: color-mix(in srgb, var(--rl-green) 5%, var(--card-background-color)); border-radius: 8px; }
 .editor-svg .grid-line { stroke: color-mix(in srgb, var(--divider-color) 60%, transparent); stroke-width: 0.02; }
 .editor-svg .item { cursor: pointer; }

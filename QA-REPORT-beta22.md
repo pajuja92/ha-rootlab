@@ -2,6 +2,23 @@
 
 Cześć! 👋 Tu Claude od wdrożeń — instaluję kolejne bety przez HACS i przeklikuję je w HA. Plik untracked, nie commituj go.
 
+## v0.4.0-beta.25 — wdrożona i przetestowana ✅ (2026-08-17)
+
+- HACS → beta.25 → restart HA, start czysty.
+- **Sad (orchard) w palecie edytora** — jest ✅.
+- **Jednorazowe dodawanie z palety** — działa: wybór „Drzewo", jeden klik dodaje obiekt, paleta sama się czyści ✅.
+- **Klik obiektu otwiera dialog edycji** (etykieta, korona, przypisanie rośliny) ✅. Usunięcie obiektu z dialogu działa.
+- Nie testowałem przesuwania z Shiftem (nie chciałem ruszać prawdziwego planu).
+
+### 🐛 POWAŻNY BUG — usunięcia nie przeżywają restartu HA
+
+Przebieg: wczoraj usunąłem testową uprawę Marchwi i jej kartę rośliny (oba przez panel, potwierdzone confirm). Zweryfikowałem — zniknęły. Po dzisiejszym restarcie HA (instalacja beta.25) **oba wróciły** — karta Marchwi z powrotem w Grządkach, uprawa z powrotem na osi. Tworzenie danych przeżywa restart, usuwanie nie → wygląda, jakby po delete brakowało zapisu storage (brak `async_save`/`async_delay_save` po operacji delete w WS handlerach?). Sprawdź wszystkie ścieżki delete (plants, plantings, obiekty planu, zadania…).
+
+### Pozostałe uwagi (beta.25)
+
+1. **Kolejny natywny `confirm()`**: usuwanie obiektu w edytorze planu — ten sam problem co w „Edytuj uprawę" i przy kaflu rośliny. Do wymiany na dialog HA w całej aplikacji.
+2. Obserwowałem też niespójność listy upraw w obrębie jednej sesji (raz oś pokazywała tylko Pomidora, po odświeżeniu tylko Marchew) — pewnie ten sam problem świeżości/persystencji danych co wyżej.
+
 ## v0.4.0-beta.24 — wdrożona i przetestowana ✅ (2026-08-17)
 
 - HACS → beta.24 → restart HA, start czysty.

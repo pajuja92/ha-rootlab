@@ -288,7 +288,7 @@ const draftFromDlg = (dlg) => ({
 });
 
 /* Dialog nowej rośliny (edycja istniejącej = tryb edycji karty rośliny). */
-function plantDialog(app, draft = null) {
+export function plantDialog(app, draft = null) {
   draft ??= { name: "", species: "", emoji: "", zone_id: "", planting: "", sensors: {} };
   const presetOpts = PLANT_PRESETS.map((p, i) => ({
     value: String(i),

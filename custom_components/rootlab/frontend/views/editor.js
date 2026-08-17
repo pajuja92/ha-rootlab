@@ -2,7 +2,7 @@ import { t } from "../i18n.js";
 import { combo, esc, uid } from "../util.js";
 import { crownBase, insideRect, isShaded, northVector, shadowCapsule, solarPosition } from "../shade.js";
 import { ATTRIBUTION, MAX_Z, gridHtml, latToY, lonToX, metersPerPixel, xToLon, yToLat } from "../satmap.js";
-import { openPlantCard, openZoneCard } from "./plants.js";
+import { openPlantCard, openZoneCard, plantDialog } from "./plants.js";
 
 export const ENABLED = true;
 
@@ -29,6 +29,7 @@ const st = (app) =>
     month: new Date().getMonth() + 1,
     hour: 12,
     mode: "view",
+    zoom: 1,
     sat: true,
     zoneDetail: null,
   });
@@ -112,13 +113,16 @@ export function render(app) {
         <b id="hour-label">${String(s.hour).padStart(2, "0")}:00</b>
         <b id="sun-label">${sunLabel(app)}</b></span>
       <div class="spacer"></div>
+      <button class="icon-btn" data-action="editor-zoom" data-d="-1" title="−"><ha-icon icon="mdi:magnify-minus-outline"></ha-icon></button>
+      <b style="font-size:12px">${Math.round((s.zoom || 1) * 100)}%</b>
+      <button class="icon-btn" data-action="editor-zoom" data-d="1" title="+"><ha-icon icon="mdi:magnify-plus-outline"></ha-icon></button>
       <button class="btn small ${satActive ? "" : "plain"}" data-action="editor-sat" title="${t("editor.sat")}"
         ${layout.location ? "" : "disabled"}><ha-icon icon="mdi:satellite-variant"></ha-icon></button>
       <button class="btn ghost" data-action="editor-location"><ha-icon icon="mdi:map-marker-outline"></ha-icon>${t("editor.location")}</button>
       <button class="btn ghost" data-action="editor-garden"><ha-icon icon="mdi:cog-outline"></ha-icon>${t("editor.garden")}</button>
     </div>
     <div class="editor-wrap">
-      <div id="editor-stage" style="position:relative;overflow:hidden;border-radius:8px">
+      <div id="editor-stage" style="position:relative;overflow:hidden;border-radius:8px;width:${Math.round((s.zoom || 1) * 100)}%;margin:0 auto">
         ${satActive ? `<div class="sat-wrap"><div id="sat-under"></div></div><div class="sat-attr">${ATTRIBUTION}</div>` : ""}
         ${svg(app, satActive)}
       </div>
@@ -251,7 +255,10 @@ function renderDetail(app, area) {
       <div class="spacer"></div>
       <select class="inline" data-bind="detail-palette">
         <option value="">${t("editor.palette.pick")}</option>
-        ${plantOpts ? `<optgroup label="${t("tab.plants")}">${plantOpts}</optgroup>` : ""}
+        <optgroup label="${t("tab.plants")}">
+          <option value="new">➕ ${t("plant.new")}</option>
+          ${plantOpts}
+        </optgroup>
         <optgroup label="${t("editor.group.objects")}">
           <option value="tree" ${s.detailPalette === "tree" ? "selected" : ""}>🌳 ${t("editor.palette.tree")}</option>
           <option value="shrub" ${s.detailPalette === "shrub" ? "selected" : ""}>🌿 ${t("editor.palette.shrub")}</option>
@@ -397,6 +404,7 @@ export function bind(app, root) {
   const isSprayPalette = () => s.palette.startsWith("irr:") && sectionFor(s.palette)?.kind !== "drip";
 
   svgEl.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault(); // blokada zaznaczania tekstu strony podczas pracy na mapie
     const p = svgPoint(svgEl, ev);
     const compass = ev.target.closest(".compass");
     if (compass && s.mode === "edit") {
@@ -572,13 +580,23 @@ function bindDetail(app, root) {
   const s = st(app);
   const area = app.data.layout.items.find((i) => i.id === s.zoneDetail);
   const layout = app.data.layout;
-  root.querySelector('[data-bind="detail-palette"]')?.addEventListener("change", (ev) => (s.detailPalette = ev.target.value));
+  root.querySelector('[data-bind="detail-palette"]')?.addEventListener("change", (ev) => {
+    if (ev.target.value === "new") {
+      // nowa roślina prosto z obszaru — strefa obszaru prefilowana; po zapisie pojawi się w liście do posadzenia
+      ev.target.value = "";
+      s.detailPalette = "";
+      plantDialog(app, { name: "", species: "", emoji: "", zone_id: area?.zone_id || "", planting: "", sensors: {} });
+      return;
+    }
+    s.detailPalette = ev.target.value;
+  });
   const svgEl = root.getElementById("detail-svg");
   if (!svgEl || !area) return;
   let drag = null;
   const clampA = (v, min, max) => Math.round(Math.min(Math.max(v, min), max) * 10) / 10;
 
   svgEl.addEventListener("pointerdown", (ev) => {
+    ev.preventDefault();
     const p = svgPoint(svgEl, ev);
     const node = ev.target.closest(".item[data-id]");
     svgEl.setPointerCapture(ev.pointerId);
@@ -1187,6 +1205,12 @@ export const actions = {
   "editor-area-edit": (app, el) => {
     const item = app.data.layout.items.find((i) => i.id === el.dataset.id);
     if (item) areaDialog(app, item);
+  },
+  "editor-zoom": (app, el) => {
+    const s = st(app);
+    const f = el.dataset.d === "1" ? 1.25 : 0.8;
+    s.zoom = Math.round(Math.min(2.5, Math.max(0.3, (s.zoom || 1) * f)) * 100) / 100;
+    app.render();
   },
   "editor-sat": (app) => {
     st(app).sat = !st(app).sat;
