@@ -2,6 +2,7 @@ import { t } from "../i18n.js";
 import { combo, entityOptions, esc, nowStamp, optionsWithSuggestions, resizeImage, sensorState, uid, zoneSuggestions } from "../util.js";
 import { PLANT_PRESETS } from "../presets.js";
 import { openCrisis } from "../crisis.js";
+import { areaLabel, bind as growBind, growDialog, plantingPhase, render as growRender } from "./grow.js";
 
 export const SENSOR_FIELDS = [
   { key: "soil", labelKey: "plant.sensor.soil", icon: "mdi:water-percent" },
@@ -10,21 +11,35 @@ export const SENSOR_FIELDS = [
 ];
 
 export function render(app) {
+  const sub = (app._plantsSub ??= "plants");
+  const switcher = `<div class="subtabs">
+    <button class="subtab" data-action="plants-sub" data-sub="plants" ${sub === "plants" ? "data-active" : ""}><ha-icon icon="mdi:sprout"></ha-icon>${t("tab.plants")}</button>
+    <button class="subtab" data-action="plants-sub" data-sub="grow" ${sub === "grow" ? "data-active" : ""}><ha-icon icon="mdi:calendar-month"></ha-icon>${t("tab.grow")}</button>
+  </div>`;
+  if (sub === "grow") return switcher + growRender(app);
   const { zones, plants } = app.data;
   const toolbar = `<div class="toolbar">
     <button class="btn ghost" data-action="add-zone"><ha-icon icon="mdi:plus"></ha-icon>${t("zones.add")}</button>
     <button class="btn" data-action="add-plant"><ha-icon icon="mdi:plus"></ha-icon>${t("plants.add")}</button>
   </div>`;
-  if (!plants.length) {
-    return `${toolbar}<div class="empty">
+  // uprawy bieżącego roku pogrupowane po strefie miejsca (grządki/szklarnie z planu)
+  const year = new Date().getFullYear();
+  const areaZone = new Map((app.data.layout?.items || []).filter((i) => "w" in i).map((a) => [a.id, a.zone_id]));
+  const plantings = (app.data.plantings || []).filter((p) => p.year === year);
+  const zonePlantings = (zoneId) =>
+    plantings.filter((p) => (zoneId ? areaZone.get(p.area_id) === zoneId : !zones.some((z) => z.id === areaZone.get(p.area_id))));
+  if (!plants.length && !plantings.length) {
+    return `${switcher}${toolbar}<div class="empty">
       <ha-icon icon="mdi:sprout"></ha-icon>
       <p>${zones.length ? t("plants.empty.zones") : t("plants.empty.nozones")}</p>
     </div>`;
   }
   const groups = zones.map((z) => ({ zone: z, plants: plants.filter((p) => p.zone_id === z.id) }));
   const orphans = plants.filter((p) => !p.zone_id || !zones.some((z) => z.id === p.zone_id));
-  if (orphans.length) groups.push({ zone: { id: null, name: t("zone.none"), emoji: "🏷️" }, plants: orphans });
+  if (orphans.length || zonePlantings(null).length)
+    groups.push({ zone: { id: null, name: t("zone.none"), emoji: "🏷️" }, plants: orphans });
   return (
+    switcher +
     toolbar +
     groups
       .filter((g) => g.plants.length || g.zone.id) // puste strefy też widoczne (edycja tylko tutaj)
@@ -41,10 +56,52 @@ export function render(app) {
       ${
         g.plants.length
           ? `<div class="grid">${g.plants.map((p) => plantCard(app, p)).join("")}</div>`
-          : `<div class="card" style="color:var(--secondary-text-color);font-size:14px">${t("plants.zone.empty")}</div>`
-      }`
+          : zonePlantings(g.zone.id).length
+            ? ""
+            : `<div class="card" style="color:var(--secondary-text-color);font-size:14px">${t("plants.zone.empty")}</div>`
+      }
+      ${plantingsCard(app, zonePlantings(g.zone.id), year)}`
       )
       .join("")
+  );
+}
+
+/* Uprawy z kalendarza w widoku roślin — pasek w kolorze bieżącej fazy wegetacji. */
+const PHASE_COLOR = {
+  planned: "var(--secondary-text-color)",
+  sow: "var(--rl-ai)",
+  grow: "var(--rl-green)",
+  harvest: "var(--rl-harvest)",
+  done: "var(--divider-color)",
+};
+
+function plantingsCard(app, list, year) {
+  if (!list.length) return "";
+  const rows = list
+    .sort((a, b) => (a.plan?.sow || a.plan?.transplant || "").localeCompare(b.plan?.sow || b.plan?.transplant || ""))
+    .map((p) => {
+      const phase = plantingPhase(p);
+      return `<div class="note-row" data-planting="${p.id}" style="cursor:pointer;border-left:4px solid ${PHASE_COLOR[phase]};padding-left:10px;align-items:center">
+        <span>${esc(p.emoji || "🌱")}</span>
+        <span class="txt"><b>${esc(p.name)}</b> <small style="color:var(--secondary-text-color)">${esc(areaLabel(app, p.area_id))}</small></span>
+        <span class="chip" style="background:color-mix(in srgb, ${PHASE_COLOR[phase]} 18%, transparent);color:inherit">${t("grow.phase." + phase)}</span>
+      </div>`;
+    })
+    .join("");
+  return `<div class="card" style="margin-top:8px">
+    <div class="section-title" style="margin-top:0">${t("tab.grow")} ${year}</div>${rows}</div>`;
+}
+
+export function bind(app, root) {
+  if (app._plantsSub === "grow") {
+    growBind(app, root);
+    return;
+  }
+  root.querySelectorAll("[data-planting]").forEach((el) =>
+    el.addEventListener("click", () => {
+      const p = (app.data.plantings || []).find((x) => x.id === el.dataset.planting);
+      if (p) growDialog(app, p);
+    })
   );
 }
 
@@ -546,6 +603,10 @@ function photoDialog(app, plant, img) {
 }
 
 export const actions = {
+  "plants-sub": (app, el) => {
+    app._plantsSub = el.dataset.sub;
+    app.render();
+  },
   "add-zone": (app) => zoneDialog(app),
   "edit-zone": (app, el) => zoneDialog(app, app.data.zones.find((z) => z.id === el.dataset.id)),
   "delete-zone": (app, el) => {

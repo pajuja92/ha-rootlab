@@ -414,6 +414,14 @@ dialog input[type=checkbox], dialog input[type=radio] { width: auto; accent-colo
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
 /* --- Uprawy: oś czasu roku --- */
+.subtabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.subtab {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px;
+  border: 1px solid var(--divider-color); border-radius: 999px; background: transparent;
+  color: var(--primary-text-color); opacity: 0.75; font: inherit; font-size: 14px; cursor: pointer;
+}
+.subtab[data-active] { opacity: 1; border-color: var(--rl-green); background: var(--rl-green-bg); font-weight: 500; }
+.subtab ha-icon { --mdc-icon-size: 17px; }
 .grow-row { display: grid; grid-template-columns: 200px 1fr; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--divider-color); cursor: pointer; }
 .grow-row:hover:not(.done) { background: color-mix(in srgb, var(--rl-green) 6%, transparent); }
 .grow-row.done { opacity: 0.55; }

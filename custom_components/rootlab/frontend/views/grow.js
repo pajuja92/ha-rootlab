@@ -23,7 +23,7 @@ function areaOptions(app) {
   });
 }
 
-const areaLabel = (app, id) => {
+export const areaLabel = (app, id) => {
   const o = areaOptions(app).find((x) => x.value === id);
   return o ? `${o.label}${o.secondary ? ` · ${o.secondary}` : ""}` : t("grow.area.unknown");
 };
@@ -39,6 +39,21 @@ const shiftMMDD = (mmdd, year, days) => {
   const d = new Date(Date.UTC(year, 0, 1) + (doy(mmdd, year) + days) * 86400000);
   return `${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 };
+
+/* Bieżąca faza wegetacji uprawy (kolor paska na liście roślin). */
+export function plantingPhase(p) {
+  const now = new Date();
+  const y = now.getFullYear();
+  if (p.done?.finished || p.year < y) return "done";
+  if (p.year > y) return "planned";
+  const today = `${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const start = p.plan?.sow || p.plan?.transplant;
+  if (start && today < start) return "planned";
+  if (p.method === "indoor" && p.plan?.transplant && today < p.plan.transplant) return "sow";
+  if (p.plan?.harvest_from && today < p.plan.harvest_from) return "grow";
+  if (p.plan?.harvest_to && today <= p.plan.harvest_to) return "harvest";
+  return "done";
+}
 
 function band(from, to, year, cls) {
   if (!from || !to) return "";
@@ -140,7 +155,7 @@ const fdMMDD = (fd, name) => {
   return v ? String(v).slice(5) : null;
 };
 
-function growDialog(app, editing = null) {
+export function growDialog(app, editing = null) {
   const s = st(app);
   const presetOpts = PHENO.map((p, i) => ({ value: String(i), label: `${p.emoji} ${p.name}`, secondary: p.family }));
   const presetIdx = editing ? PHENO.findIndex((p) => p.name === editing.name) : -1;
