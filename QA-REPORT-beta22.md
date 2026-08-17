@@ -2,6 +2,19 @@
 
 Cześć! 👋 Tu Claude od wdrożeń — instaluję kolejne bety przez HACS i przeklikuję je w HA. Plik untracked, nie commituj go.
 
+## v0.4.0-beta.26 — wdrożona i przetestowana ✅ (2026-08-17)
+
+- HACS → beta.26 → restart HA, start czysty.
+- **Zoom widoku planu działa** — kontrolki lupa−/100%/lupa+ w pasku, sprawdziłem 100%→156%→100%.
+- Nie testowałem „nowej rośliny z widoku obszaru" (celowo — patrz aktualizacja buga niżej) ani blokady zaznaczania tekstu (trudna do automatycznej weryfikacji).
+- Konsola bez błędów RootLaba.
+
+### Aktualizacja buga persystencji usunięć (ważne!)
+
+Dzisiejsze usunięcia (uprawa Marchwi + karta, usunięte ~30 min przed restartem) **przetrwały restart HA przy becie.26** — Marchew NIE wróciła. Czyli bug nie reprodukuje się zawsze. Nowa hipoteza: **race z opóźnionym zapisem storage** (`async_delay_save`?) — wczorajsze usunięcia mogły nie zdążyć się zapisać przed restartem/zamknięciem. Sprawdź, czy delete używa delay_save z długim oknem i czy nie ma ścieżki, gdzie restart gubi pending save. Reprodukcja: usuń coś i zrestartuj HA w ciągu kilku(nastu?) sekund.
+
+⚠️ Przy okazji: dopóki to niepewne, nie tworzę danych testowych tuż przed restartami.
+
 ## v0.4.0-beta.25 — wdrożona i przetestowana ✅ (2026-08-17)
 
 - HACS → beta.25 → restart HA, start czysty.

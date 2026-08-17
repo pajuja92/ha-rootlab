@@ -25,12 +25,14 @@ export function render(app) {
   // uprawy bieżącego roku pogrupowane po strefie miejsca (grządki/szklarnie z planu)
   const year = new Date().getFullYear();
   const areaZone = new Map((app.data.layout?.items || []).filter((i) => "w" in i).map((a) => [a.id, a.zone_id]));
+  // miejsce uprawy = obszar z planu albo bezpośrednio strefa
+  const zoneOf = (areaId) => areaZone.get(areaId) ?? (zones.some((z) => z.id === areaId) ? areaId : null);
   // fallback dla upraw bez żywej karty rośliny (stare dane albo usunięta roślina)
   const plantings = (app.data.plantings || []).filter(
     (p) => p.year === year && (!p.plant_id || !plants.some((x) => x.id === p.plant_id))
   );
   const zonePlantings = (zoneId) =>
-    plantings.filter((p) => (zoneId ? areaZone.get(p.area_id) === zoneId : !zones.some((z) => z.id === areaZone.get(p.area_id))));
+    plantings.filter((p) => (zoneId ? zoneOf(p.area_id) === zoneId : !zones.some((z) => z.id === zoneOf(p.area_id))));
   if (!plants.length && !plantings.length) {
     return `${switcher}${toolbar}<div class="empty">
       <ha-icon icon="mdi:sprout"></ha-icon>

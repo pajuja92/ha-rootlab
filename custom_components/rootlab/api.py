@@ -694,6 +694,7 @@ async def ws_grow_apply(hass, connection, msg):
     area_zone = {
         i["id"]: i.get("zone_id") for i in data.get("layout", {}).get("items", [])
     }
+    zone_ids = {z["id"] for z in data.get("zones", [])}
     made = {}  # (nazwa, miejsce) -> plant_id; seria sukcesyjna = jedna karta
     for planting in msg["plantings"]:
         if not planting.get("id"):
@@ -706,7 +707,9 @@ async def ws_grow_apply(hass, connection, msg):
                     "name": planting.get("name", ""),
                     "species": planting.get("species", ""),
                     "emoji": planting.get("emoji", ""),
-                    "zone_id": area_zone.get(planting.get("area_id")),
+                    # miejsce = obszar z planu albo bezpośrednio strefa
+                    "zone_id": area_zone.get(planting.get("area_id"))
+                    or (planting.get("area_id") if planting.get("area_id") in zone_ids else None),
                     "planting": None,
                     "sensors": {},
                 }

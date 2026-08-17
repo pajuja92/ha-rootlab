@@ -13,7 +13,8 @@ const AREA_EMOJI = { greenhouse: "🏠", bed: "🥬", orchard: "🍎", lawn: "�
 const areas = (app) => (app.data.layout?.items || []).filter((i) => "w" in i);
 
 export function areaOptions(app) {
-  return areas(app).map((a) => {
+  const items = areas(app);
+  const opts = items.map((a) => {
     const zone = app.data.zones.find((z) => z.id === a.zone_id);
     return {
       value: a.id,
@@ -21,6 +22,12 @@ export function areaOptions(app) {
       secondary: zone ? zone.name : "",
     };
   });
+  // strefy bez miejsca na planie też są pełnoprawnymi miejscami upraw
+  const covered = new Set(items.map((a) => a.zone_id).filter(Boolean));
+  (app.data.zones || []).forEach((z) => {
+    if (!covered.has(z.id)) opts.push({ value: z.id, label: `${z.emoji || "🪴"} ${z.name}`, secondary: t("grow.area.zone") });
+  });
+  return opts;
 }
 
 export const areaLabel = (app, id) => {
@@ -363,14 +370,14 @@ function aiDialog(app) {
       const items = areas(app);
       const areasPayload = chosen.map((o) => {
         const a = items.find((x) => x.id === o.value);
-        const zone = app.data.zones.find((z) => z.id === a.zone_id);
+        const zone = app.data.zones.find((z) => z.id === (a ? a.zone_id : o.value));
         return {
-          id: a.id,
+          id: o.value,
           label: `${o.label}${o.secondary ? ` · ${o.secondary}` : ""}`,
-          kind: a.kind,
+          kind: a ? a.kind : "zone",
           zone: zone?.name || null,
           planting: zone?.planting || null,
-          size_m: [Math.round(a.w * 10) / 10, Math.round(a.h * 10) / 10],
+          size_m: a ? [Math.round(a.w * 10) / 10, Math.round(a.h * 10) / 10] : null,
         };
       });
       const catalog = PHENO.map((p) => ({
