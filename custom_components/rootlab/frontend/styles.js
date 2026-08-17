@@ -202,7 +202,9 @@ dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; mar
 .editor-wrap { background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: var(--rl-radius); padding: 8px; }
 .editor-svg { width: 100%; height: auto; display: block; touch-action: none; background: color-mix(in srgb, var(--rl-green) 5%, var(--card-background-color)); border-radius: 8px; }
 .editor-svg .grid-line { stroke: color-mix(in srgb, var(--divider-color) 60%, transparent); stroke-width: 0.02; }
-.editor-svg .item { cursor: grab; }
+.editor-svg .item { cursor: pointer; }
+.editor-svg.armed { cursor: crosshair; }
+.editor-svg.shifting, .editor-svg.shifting .item { cursor: grab; }
 .editor-svg .item.selected circle { stroke: var(--rl-ai); stroke-width: 0.12; }
 .editor-svg .shadow { fill: rgba(0, 0, 0, 0.18); pointer-events: none; }
 .editor-svg .item .hover-label { opacity: 0; transition: opacity .15s; }

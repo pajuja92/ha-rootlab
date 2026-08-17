@@ -24,7 +24,7 @@ const AREA_EMOJI = { greenhouse: "🏠", bed: "🥕", orchard: "🍎", lawn: "�
 
 const st = (app) =>
   (app.editorState ??= {
-    palette: "tree",
+    palette: "",
     detailPalette: "",
     month: new Date().getMonth() + 1,
     hour: 12,
@@ -90,6 +90,7 @@ export function render(app) {
       ${
         s.mode === "edit"
           ? `<select class="inline" data-bind="palette">
+        <option value="" ${s.palette ? "" : "selected"}>${t("editor.palette.none")}</option>
         <optgroup label="${t("editor.group.areas")}">
           ${AREA_KINDS.map((k) => `<option value="${k}" ${s.palette === k ? "selected" : ""}>${AREA_EMOJI[k]} ${t("editor.palette." + k)}</option>`).join("")}
         </optgroup>
@@ -318,7 +319,10 @@ export function bind(app, root) {
     bindDetail(app, root);
     return;
   }
-  root.querySelector('[data-bind="palette"]')?.addEventListener("change", (ev) => (s.palette = ev.target.value));
+  root.querySelector('[data-bind="palette"]')?.addEventListener("change", (ev) => {
+    s.palette = ev.target.value;
+    root.getElementById("garden-svg")?.classList.toggle("armed", Boolean(s.palette));
+  });
   const slider = root.querySelector('[data-bind="month"]');
   slider?.addEventListener("input", (ev) => {
     root.getElementById("month-label").textContent = t("months")[ev.target.value - 1];
@@ -339,6 +343,18 @@ export function bind(app, root) {
   const svgEl = root.getElementById("garden-svg");
   if (!svgEl) return;
   renderUnderlay(app, root);
+  // uzbrojona paleta = celownik; Shift = rączka (przesuwanie/rozmiar)
+  svgEl.classList.toggle("armed", Boolean(s.palette));
+  if (app._edKeys) {
+    window.removeEventListener("keydown", app._edKeys.kd);
+    window.removeEventListener("keyup", app._edKeys.ku);
+  }
+  app._edKeys = {
+    kd: (ev) => ev.key === "Shift" && svgEl.classList.add("shifting"),
+    ku: (ev) => ev.key === "Shift" && svgEl.classList.remove("shifting"),
+  };
+  window.addEventListener("keydown", app._edKeys.kd);
+  window.addEventListener("keyup", app._edKeys.ku);
   let drag = null;
   const layout = app.data.layout;
   const clamp = (v, max) => Math.round(Math.min(Math.max(v, 0), max) * 10) / 10;
@@ -396,16 +412,18 @@ export function bind(app, root) {
       return;
     }
     svgEl.setPointerCapture(ev.pointerId);
-    if (handle) {
-      const item = layout.items.find((i) => i.id === handle.dataset.id);
-      drag = { type: "resize", item, moved: false };
-    } else if (node) {
-      const item = layout.items.find((i) => i.id === node.dataset.id);
-      if (isPath(item)) {
+    if (handle || node) {
+      const item = layout.items.find((i) => i.id === (handle || node).dataset.id);
+      // bez Shift: klik = otwarcie; z Shiftem: przesuwanie / zmiana rozmiaru
+      if (!ev.shiftKey || isPath(item)) {
         drag = { type: "click-item", item };
+      } else if (handle) {
+        drag = { type: "resize", item, moved: false };
       } else {
         drag = { type: "move", item, node, dx: item.x - p.x, dy: item.y - p.y, moved: false };
       }
+    } else if (!s.palette) {
+      // pusta paleta — klik w puste pole nic nie dodaje
     } else if (AREA_KINDS.includes(s.palette)) {
       drag = { type: "draw", x0: p.x, y0: p.y, moved: false };
     } else if (isPathPalette()) {
@@ -474,17 +492,10 @@ export function bind(app, root) {
       layout.north_deg = d.deg;
       saveLayout(app, t("toast.saved"));
     } else if (d.type === "click-item") {
-      pathDialog(app, d.item);
+      openItemDialog(app, d.item);
     } else if (d.type === "move" || d.type === "resize") {
       if (d.moved) saveLayout(app);
-      else if (isArea(d.item)) {
-        s.zoneDetail = d.item.id;
-        app.render();
-      } else if (isSpray(d.item)) {
-        sprayDialog(app, d.item);
-      } else {
-        circleDialog(app, d.item);
-      }
+      else openItemDialog(app, d.item);
     } else if (d.type === "draw") {
       if (d.moved && Math.abs((d.x1 ?? d.x0) - d.x0) > 0.5 && Math.abs((d.y1 ?? d.y0) - d.y0) > 0.5) {
         const item = {
@@ -498,6 +509,7 @@ export function bind(app, root) {
           h: clamp(Math.abs(d.y1 - d.y0), layout.height_m),
         };
         layout.items.push(item);
+        s.palette = ""; // jednorazowe dodawanie
         saveLayout(app, t("toast.added"));
         areaDialog(app, item);
       } else {
@@ -508,6 +520,7 @@ export function bind(app, root) {
         let item;
         if (s.palette === "fence") {
           item = { id: uid(), kind: "fence", label: t("editor.palette.fence"), path: d.pts };
+          s.palette = "";
         } else {
           const section = sectionFor(s.palette);
           if (!section) {
@@ -522,7 +535,7 @@ export function bind(app, root) {
             label: section.name,
             path: d.pts,
           };
-          s.palette = "tree"; // sekcja ma już reprezentację
+          s.palette = "";
         }
         layout.items.push(item);
         saveLayout(app, t("toast.added"));
@@ -542,7 +555,7 @@ export function bind(app, root) {
           y: Math.round(d.y0 * 10) / 10,
           radius_m: Math.round(d.r * 10) / 10,
         });
-        s.palette = "tree";
+        s.palette = "";
         saveLayout(app, t("toast.added"));
       } else {
         app.render();
@@ -571,7 +584,9 @@ function bindDetail(app, root) {
     svgEl.setPointerCapture(ev.pointerId);
     if (node) {
       const item = layout.items.find((i) => i.id === node.dataset.id);
-      drag = { type: "move", item, node, dx: item.x - p.x, dy: item.y - p.y, moved: false };
+      drag = ev.shiftKey
+        ? { type: "move", item, node, dx: item.x - p.x, dy: item.y - p.y, moved: false }
+        : { type: "click", item };
     } else {
       drag = { type: "place", x: p.x, y: p.y };
     }
@@ -588,6 +603,10 @@ function bindDetail(app, root) {
     if (!drag) return;
     const d = drag;
     drag = null;
+    if (d.type === "click") {
+      circleDialog(app, d.item);
+      return;
+    }
     if (d.type === "move") {
       if (d.moved) saveLayout(app);
       else circleDialog(app, d.item);
@@ -629,9 +648,22 @@ function placeFromPalette(app, palette, p, onPlaced = null) {
 
 function addCircle(app, p) {
   const s = st(app);
-  placeFromPalette(app, s.palette, p, () => {
-    if (s.palette.startsWith("plant:")) s.palette = "tree"; // roślina ma już reprezentację
-  });
+  placeFromPalette(app, s.palette, p, () => (s.palette = "")); // jednorazowe dodawanie
+}
+
+/* Klik elementu w trybie edycji: otwórz właściwy dialog / szczegóły strefy. */
+function openItemDialog(app, item) {
+  const s = st(app);
+  if (isArea(item)) {
+    s.zoneDetail = item.id;
+    app.render();
+  } else if (isPath(item)) {
+    pathDialog(app, item);
+  } else if (isSpray(item)) {
+    sprayDialog(app, item);
+  } else {
+    circleDialog(app, item);
+  }
 }
 
 /* --- Klik w trybie podglądu --- */
