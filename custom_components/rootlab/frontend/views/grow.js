@@ -13,27 +13,18 @@ const AREA_EMOJI = { greenhouse: "🏠", bed: "🥬", orchard: "🍎", lawn: "�
 
 const areas = (app) => (app.data.layout?.items || []).filter((i) => "w" in i);
 
+/* Miejsce uprawy = strefa; rysunek na planie to tylko jej kształt. */
 export function areaOptions(app) {
-  const items = areas(app);
-  const opts = items.map((a) => {
-    const zone = app.data.zones.find((z) => z.id === a.zone_id);
-    return {
-      value: a.id,
-      label: `${AREA_EMOJI[a.kind] || "▦"} ${a.label || t("editor.palette." + a.kind)}`,
-      secondary: zone ? zone.name : "",
-    };
-  });
-  // strefy bez miejsca na planie też są pełnoprawnymi miejscami upraw
-  const covered = new Set(items.map((a) => a.zone_id).filter(Boolean));
-  (app.data.zones || []).forEach((z) => {
-    if (!covered.has(z.id)) opts.push({ value: z.id, label: `${z.emoji || "🪴"} ${z.name}`, secondary: t("grow.area.zone") });
-  });
-  return opts;
+  return (app.data.zones || []).map((z) => ({
+    value: z.id,
+    label: `${z.emoji || "🪴"} ${z.name}`,
+    secondary: z.kind ? t("editor.palette." + z.kind) : "",
+  }));
 }
 
 export const areaLabel = (app, id) => {
-  const o = areaOptions(app).find((x) => x.value === id);
-  return o ? `${o.label}${o.secondary ? ` · ${o.secondary}` : ""}` : t("grow.area.unknown");
+  const z = (app.data.zones || []).find((x) => x.id === id);
+  return z ? `${z.emoji || "🪴"} ${z.name}` : t("grow.area.unknown");
 };
 
 /* --- daty: "MM-DD" ↔ pozycja % na osi roku --- */
@@ -85,7 +76,7 @@ function rowHtml(app, p) {
   const doneBits = [p.done?.sow ? "🌱✓" : "", p.done?.transplant ? "🪴✓" : ""].filter(Boolean).join(" ");
   return `<div class="grow-row ${finished ? "done" : ""}" data-grow-edit="${p.id}">
     <div class="grow-name">${esc(p.emoji || "🌱")} <b>${esc(p.name)}</b> ${doneBits}
-      <br><small style="color:var(--secondary-text-color)">${esc(areaLabel(app, p.area_id))} · ${t("grow.method." + (p.method || "direct"))}${finished ? ` · ${t("grow.finished")}` : ""}</small>
+      <br><small style="color:var(--secondary-text-color)">${esc(areaLabel(app, p.zone_id))} · ${t("grow.method." + (p.method || "direct"))}${finished ? ` · ${t("grow.finished")}` : ""}</small>
     </div>
     <div class="grow-track">
       ${p.method === "indoor" ? band(p.plan?.sow, p.plan?.transplant, s.year, "sow") : ""}
@@ -107,12 +98,6 @@ function plantRowHtml(app, p, year) {
   </div>`;
 }
 
-/* Strefa odpowiadająca miejscu (obszar z planu albo sama strefa). */
-const areaZoneId = (app, areaId) => {
-  const a = areas(app).find((x) => x.id === areaId);
-  if (a) return a.zone_id;
-  return (app.data.zones || []).some((z) => z.id === areaId) ? areaId : null;
-};
 
 export function render(app) {
   const s = st(app);
@@ -130,12 +115,12 @@ export function render(app) {
     return `${toolbar}<div class="empty"><ha-icon icon="mdi:calendar-month"></ha-icon><p>${t("grow.noareas")}</p></div>`;
   }
   const list = (app.data.plantings || [])
-    .filter((p) => p.year === s.year && (!s.area || p.area_id === s.area))
+    .filter((p) => p.year === s.year && (!s.area || p.zone_id === s.area))
     .sort((a, b) => (a.plan?.sow || a.plan?.transplant || "").localeCompare(b.plan?.sow || b.plan?.transplant || ""));
   // rośliny bez uprawy w tym roku — na liście, bez pasków na osi
   const linkedIds = new Set((app.data.plantings || []).filter((p) => p.year === s.year).map((p) => p.plant_id).filter(Boolean));
   const undated = (app.data.plants || [])
-    .filter((p) => !linkedIds.has(p.id) && (!s.area || p.zone_id === areaZoneId(app, s.area)))
+    .filter((p) => !linkedIds.has(p.id) && (!s.area || p.zone_id === s.area))
     .sort((a, b) => a.name.localeCompare(b.name));
   const months = `<div class="grow-row" style="border-bottom:none;cursor:default">
     <div class="grow-name"></div>
@@ -171,12 +156,12 @@ export function bind(app, root) {
 }
 
 /* --- płodozmian: ta sama rodzina w tym samym miejscu w poprzednich 3 latach --- */
-function rotationWarning(app, presetFamily, areaId, year, excludeId) {
-  if (!presetFamily || !areaId) return "";
+function rotationWarning(app, presetFamily, zoneId, year, excludeId) {
+  if (!presetFamily || !zoneId) return "";
   const hit = (app.data.plantings || []).find(
     (p) =>
       p.id !== excludeId &&
-      p.area_id === areaId &&
+      p.zone_id === zoneId &&
       p.family === presetFamily &&
       p.year >= year - 3 &&
       p.year < year
@@ -207,7 +192,7 @@ export function growDialog(app, editing = null) {
       <label>${t("grow.preset")}</label>
       ${combo({ name: "preset", value: presetIdx >= 0 ? String(presetIdx) : "", options: presetOpts, allowEmpty: false })}
       <label>${t("grow.area")}</label>
-      ${combo({ name: "area_id", value: editing?.area_id || st(app).area || "", options: areaOptions(app), allowEmpty: false })}
+      ${combo({ name: "zone_id", value: editing?.zone_id || st(app).area || "", options: areaOptions(app), allowEmpty: false })}
       <div style="display:flex;gap:10px">
         <span style="flex:1"><label>${t("grow.method")}</label>
         ${combo({ name: "method", value: editing?.method || "", options: methodOpts(preset).length ? methodOpts(preset) : [{ value: "direct", label: t("grow.method.direct") }], allowEmpty: false })}</span>
@@ -249,7 +234,7 @@ export function growDialog(app, editing = null) {
       const year = parseInt(fd.get("year"), 10) || s.year;
       const base = {
         id: editing?.id ?? null,
-        area_id: fd.get("area_id"),
+        zone_id: fd.get("zone_id"),
         name: chosen.name,
         species: chosen.species,
         family: chosen.family,
@@ -290,6 +275,13 @@ export function growDialog(app, editing = null) {
       try {
         if (editing) {
           app.data = await app.ws("item/save", { kind: "plantings", item: base });
+          if (editing.plant_id) {
+            // strefa uprawy = strefa rośliny — trzymaj kartę w tej samej strefie
+            app.data = await app.ws("item/save", {
+              kind: "plants",
+              item: { id: editing.plant_id, zone_id: base.zone_id || null },
+            });
+          }
         } else {
           app.data = await app.ws("grow/apply", { plantings: series, tasks });
         }
@@ -304,9 +296,9 @@ export function growDialog(app, editing = null) {
 
   const updateRotation = () => {
     const chosen = PHENO[parseInt(dlg.querySelector('input[name="preset"]').value, 10)];
-    const areaId = dlg.querySelector('input[name="area_id"]').value;
+    const zoneId = dlg.querySelector('input[name="zone_id"]').value;
     const year = parseInt(dlg.querySelector('input[name="year"]').value, 10) || s.year;
-    const warning = rotationWarning(app, chosen?.family, areaId, year, editing?.id);
+    const warning = rotationWarning(app, chosen?.family, zoneId, year, editing?.id);
     const box = dlg.querySelector("#grow-rot");
     box.style.display = warning ? "" : "none";
     box.textContent = warning;
@@ -327,7 +319,7 @@ export function growDialog(app, editing = null) {
     set("harvest_to", chosen.harvest?.[1]);
     updateRotation();
   });
-  dlg.querySelector('input[name="area_id"]').addEventListener("change", updateRotation);
+  dlg.querySelector('input[name="zone_id"]').addEventListener("change", updateRotation);
   dlg.querySelector('input[name="year"]').addEventListener("change", updateRotation);
   updateRotation();
   // dziennik: ✔ posiane / wysadzone / zakończ
@@ -353,7 +345,7 @@ export function growDialog(app, editing = null) {
 
 /* Zadania z terminarza uprawy (siew / wysadzenie / początek zbiorów). */
 function plantingTasks(app, p) {
-  const where = areaLabel(app, p.area_id);
+  const where = areaLabel(app, p.zone_id);
   const mk = (mmdd, title) =>
     mmdd && {
       id: null,
@@ -398,15 +390,15 @@ function aiDialog(app) {
       if (!chosen.length) return;
       const items = areas(app);
       const areasPayload = chosen.map((o) => {
-        const a = items.find((x) => x.id === o.value);
-        const zone = app.data.zones.find((z) => z.id === (a ? a.zone_id : o.value));
+        const zone = app.data.zones.find((z) => z.id === o.value);
+        const rect = items.find((x) => x.zone_id === o.value); // kształt strefy z planu, jeśli narysowany
         return {
           id: o.value,
-          label: `${o.label}${o.secondary ? ` · ${o.secondary}` : ""}`,
-          kind: a ? a.kind : "zone",
+          label: o.label,
+          kind: zone?.kind || "zone",
           zone: zone?.name || null,
           planting: zone?.planting || null,
-          size_m: a ? [Math.round(a.w * 10) / 10, Math.round(a.h * 10) / 10] : null,
+          size_m: rect ? [Math.round(rect.w * 10) / 10, Math.round(rect.h * 10) / 10] : null,
         };
       });
       const catalog = PHENO.map((p) => ({
@@ -465,7 +457,7 @@ function aiPreview(app, proposals) {
         const preset = PHENO.find((x) => x.name === p.name);
         return {
           id: null,
-          area_id: p.area_id,
+          zone_id: p.area_id, // nazwa pola na drucie AI zostaje area_id — niesie id strefy
           name: p.name,
           species: preset?.species || "",
           family: preset?.family || "",

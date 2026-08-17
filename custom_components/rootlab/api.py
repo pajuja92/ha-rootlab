@@ -691,25 +691,20 @@ async def ws_grow_generate(hass, connection, msg):
 async def ws_grow_apply(hass, connection, msg):
     """Zapis zaakceptowanych obsadzeń (+ opcjonalnych zadań); każda uprawa dostaje kartę rośliny."""
     data = hass.data[DOMAIN]["data"]
-    area_zone = {
-        i["id"]: i.get("zone_id") for i in data.get("layout", {}).get("items", [])
-    }
     zone_ids = {z["id"] for z in data.get("zones", [])}
-    made = {}  # (nazwa, miejsce) -> plant_id; seria sukcesyjna = jedna karta
+    made = {}  # (nazwa, strefa) -> plant_id; seria sukcesyjna = jedna karta
     for planting in msg["plantings"]:
         if not planting.get("id"):
             planting["id"] = uuid.uuid4().hex
         if not planting.get("plant_id"):
-            key = (planting.get("name"), planting.get("area_id"))
+            key = (planting.get("name"), planting.get("zone_id"))
             if key not in made:
                 plant = {
                     "id": uuid.uuid4().hex,
                     "name": planting.get("name", ""),
                     "species": planting.get("species", ""),
                     "emoji": planting.get("emoji", ""),
-                    # miejsce = obszar z planu albo bezpośrednio strefa
-                    "zone_id": area_zone.get(planting.get("area_id"))
-                    or (planting.get("area_id") if planting.get("area_id") in zone_ids else None),
+                    "zone_id": planting.get("zone_id") if planting.get("zone_id") in zone_ids else None,
                     "planting": None,
                     "sensors": {},
                 }

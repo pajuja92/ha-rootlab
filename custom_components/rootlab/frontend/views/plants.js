@@ -24,15 +24,12 @@ export function render(app) {
   </div>`;
   // uprawy bieżącego roku pogrupowane po strefie miejsca (grządki/szklarnie z planu)
   const year = new Date().getFullYear();
-  const areaZone = new Map((app.data.layout?.items || []).filter((i) => "w" in i).map((a) => [a.id, a.zone_id]));
-  // miejsce uprawy = obszar z planu albo bezpośrednio strefa
-  const zoneOf = (areaId) => areaZone.get(areaId) ?? (zones.some((z) => z.id === areaId) ? areaId : null);
   // fallback dla upraw bez żywej karty rośliny (stare dane albo usunięta roślina)
   const plantings = (app.data.plantings || []).filter(
     (p) => p.year === year && (!p.plant_id || !plants.some((x) => x.id === p.plant_id))
   );
   const zonePlantings = (zoneId) =>
-    plantings.filter((p) => (zoneId ? zoneOf(p.area_id) === zoneId : !zones.some((z) => z.id === zoneOf(p.area_id))));
+    plantings.filter((p) => (zoneId ? p.zone_id === zoneId : !zones.some((z) => z.id === p.zone_id)));
   if (!plants.length && !plantings.length) {
     return `${switcher}${toolbar}<div class="empty">
       <ha-icon icon="mdi:sprout"></ha-icon>
@@ -88,7 +85,7 @@ function plantingsCard(app, list, year) {
       const phase = plantingPhase(p);
       return `<div class="note-row" data-planting="${p.id}" style="cursor:pointer;border-left:4px solid ${PHASE_COLOR[phase]};padding-left:10px;align-items:center">
         <span>${esc(p.emoji || "🌱")}</span>
-        <span class="txt"><b>${esc(p.name)}</b> <small style="color:var(--secondary-text-color)">${esc(areaLabel(app, p.area_id))}</small></span>
+        <span class="txt"><b>${esc(p.name)}</b> <small style="color:var(--secondary-text-color)">${esc(areaLabel(app, p.zone_id))}</small></span>
         <span class="chip" style="background:color-mix(in srgb, ${PHASE_COLOR[phase]} 18%, transparent);color:inherit">${t("grow.phase." + phase)}</span>
       </div>`;
     })
@@ -194,9 +191,11 @@ function plantCard(app, p) {
 }
 
 const PLANTING_KINDS = ["soil", "pot", "raised"];
+const ZONE_KINDS = ["greenhouse", "bed", "orchard", "lawn"];
 
 function zoneDialog(app, zone) {
   const plantingOpts = PLANTING_KINDS.map((v) => ({ value: v, label: t("planting." + v) }));
+  const kindOpts = ZONE_KINDS.map((v) => ({ value: v, label: t("editor.palette." + v) }));
   app.dialog(
     `<h2>${zone ? t("zone.edit") : t("zone.new")}</h2>
     <form>
@@ -204,6 +203,8 @@ function zoneDialog(app, zone) {
       <input name="name" required maxlength="60" value="${esc(zone?.name)}" placeholder="${t("zone.name.ph")}" autofocus>
       <label>${t("zone.emoji")}</label>
       <input name="emoji" maxlength="4" value="${esc(zone?.emoji)}" placeholder="🏡">
+      <label>${t("zone.kind")}</label>
+      ${combo({ name: "kind", value: zone?.kind || "", options: kindOpts })}
       <label>${t("zone.planting")}</label>
       ${combo({ name: "planting", value: zone?.planting || "", options: plantingOpts })}
       <div class="dialog-actions">
@@ -216,6 +217,7 @@ function zoneDialog(app, zone) {
         id: zone?.id ?? null,
         name: fd.get("name").trim(),
         emoji: fd.get("emoji").trim(),
+        kind: fd.get("kind") || null,
         planting: fd.get("planting") || null,
       })
   );
@@ -429,7 +431,7 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false, histEdi
         .filter(Boolean)
         .join(" · ");
       return `<div class="note-row" style="align-items:center;border-left:4px solid ${PHASE_COLOR[ph]};padding-left:10px">
-        <span class="txt">${esc(areaLabel(app, pl.area_id))} · ${t("grow.method." + (pl.method || "direct"))} · ${pl.year}<br>
+        <span class="txt">${esc(areaLabel(app, pl.zone_id))} · ${t("grow.method." + (pl.method || "direct"))} · ${pl.year}<br>
           <small style="color:var(--secondary-text-color)">${dates}${done ? `<br>${done}` : ""}</small></span>
         <span class="chip" style="background:color-mix(in srgb, ${PHASE_COLOR[ph]} 18%, transparent);color:inherit">${t("grow.phase." + ph)}</span>
       </div>`;
@@ -630,11 +632,6 @@ function renderCardEdit(app, plant, photos, draft = null) {
   };
   const linked = linkedPlantings(app, plant.id);
   const active = linked.find((x) => !x.done?.finished) || linked[linked.length - 1] || null;
-  // domyślne miejsce dla nowej uprawy: obszar strefy rośliny albo sama strefa
-  const defaultArea = () => {
-    const a = (app.data.layout?.items || []).find((i) => "w" in i && i.zone_id === plant.zone_id);
-    return a ? a.id : plant.zone_id || "";
-  };
   const gyear = active?.year ?? new Date().getFullYear();
   const dlg = app.dialog(
     `<h2><span class="emoji">${esc(plant.emoji || "🌱")}</span> ${esc(plant.name)} — ${t("edit")}</h2>
@@ -642,8 +639,6 @@ function renderCardEdit(app, plant, photos, draft = null) {
       ${plantFormFields(app, draft)}
       <div class="section-title">${t("tab.grow")}</div>
       ${active ? "" : `<p style="font-size:12px;color:var(--secondary-text-color);margin:0 0 6px">${t("plant.grow.hint")}</p>`}
-      <label>${t("grow.area")}</label>
-      ${combo({ name: "area_id", value: active ? active.area_id : defaultArea(), options: areaOptions(app) })}
       <div style="display:flex;gap:10px">
         <span style="flex:1"><label>${t("grow.method")}</label>
         ${combo({
@@ -689,24 +684,25 @@ function renderCardEdit(app, plant, photos, draft = null) {
       try {
         app.data = await app.ws("item/save", { kind: "plants", item: { id: plant.id, ...plantFromForm(fd) } });
         if (active) {
+          // miejsce uprawy = strefa rośliny (jedna tożsamość)
           app.data = await app.ws("item/save", {
             kind: "plantings",
             item: {
               id: active.id,
-              area_id: fd.get("area_id"),
+              zone_id: fd.get("zone_id") || null,
               method: fd.get("method") || "direct",
               year: parseInt(fd.get("gyear"), 10) || active.year,
               plan,
             },
           });
-        } else if (fd.get("area_id") && (plan.sow || plan.transplant || plan.harvest_from)) {
-          // roślina bez uprawy: miejsce + terminy → nowa uprawa powiązana z tą kartą
+        } else if (fd.get("zone_id") && (plan.sow || plan.transplant || plan.harvest_from)) {
+          // roślina bez uprawy: terminy → nowa uprawa w strefie rośliny
           const preset = PLANT_PRESETS.find((x) => x.name === fd.get("name").trim());
           app.data = await app.ws("grow/apply", {
             plantings: [
               {
                 id: null,
-                area_id: fd.get("area_id"),
+                zone_id: fd.get("zone_id"),
                 name: fd.get("name").trim(),
                 species: fd.get("species").trim(),
                 family: preset?.family || "",

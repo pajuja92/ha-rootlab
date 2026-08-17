@@ -119,7 +119,8 @@ SEASON_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "area_id": {"type": "string", "description": "id miejsca z listy obszarów"},
+                    # ponytail: nazwa pola area_id zostaje na drucie — niesie id strefy
+                    "area_id": {"type": "string", "description": "id strefy z listy miejsc"},
                     "name": {"type": "string", "description": "nazwa rośliny DOKŁADNIE z katalogu"},
                     "method": {"type": "string", "enum": ["indoor", "direct"]},
                     "sow": {"type": ["string", "null"], "description": "data siewu MM-DD albo null"},

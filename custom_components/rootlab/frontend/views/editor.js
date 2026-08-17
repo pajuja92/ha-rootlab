@@ -47,6 +47,8 @@ function sunFor(app) {
 }
 
 const isArea = (i) => "w" in i;
+/* Nazwa obszaru = nazwa strefy (rysunek to tylko kształt strefy). */
+const areaName = (app, a) => app.data.zones.find((z) => z.id === a.zone_id)?.name || a.label;
 const isPath = (i) => Array.isArray(i.path);
 const isSpray = (i) => i.kind === "irrigation" && i.mode === "sprinkler";
 const isCircle = (i) => !isArea(i) && !isPath(i) && !isSpray(i);
@@ -94,6 +96,10 @@ export function render(app) {
         <option value="" ${s.palette ? "" : "selected"}>${t("editor.palette.none")}</option>
         <optgroup label="${t("editor.group.areas")}">
           ${AREA_KINDS.map((k) => `<option value="${k}" ${s.palette === k ? "selected" : ""}>${AREA_EMOJI[k]} ${t("editor.palette." + k)}</option>`).join("")}
+          ${app.data.zones
+            .filter((z) => !layout.items.some((i) => "w" in i && i.zone_id === z.id))
+            .map((z) => `<option value="zone-draw:${z.id}" ${s.palette === "zone-draw:" + z.id ? "selected" : ""}>${esc(z.emoji || "🪴")} ${esc(z.name)} (${t("editor.palette.draw")})</option>`)
+            .join("")}
         </optgroup>
         <optgroup label="${t("editor.group.objects")}">
           <option value="tree" ${s.palette === "tree" ? "selected" : ""}>🌳 ${t("editor.palette.tree")}</option>
@@ -183,7 +189,7 @@ function svg(app, satActive) {
     .map(
       (a) => `<g class="item-g" data-id="${a.id}">
       <rect class="area ${a.kind}" x="${a.x}" y="${a.y}" width="${a.w}" height="${a.h}" rx="0.2"/>
-      <text x="${a.x + a.w / 2}" y="${a.y + 0.7}">${AREA_EMOJI[a.kind] || ""} ${esc(a.label)}</text>
+      <text x="${a.x + a.w / 2}" y="${a.y + 0.7}">${AREA_EMOJI[a.kind] || ""} ${esc(areaName(app, a))}</text>
       ${
         s.mode === "edit"
           ? `<circle class="resize-handle" data-id="${a.id}" cx="${a.x + a.w}" cy="${a.y + a.h}" r="0.35"/>`
@@ -250,7 +256,7 @@ function renderDetail(app, area) {
   return `
     <div class="toolbar">
       <button class="btn ghost" data-action="editor-back"><ha-icon icon="mdi:arrow-left"></ha-icon>${t("editor.back")}</button>
-      <b style="font-size:16px">${AREA_EMOJI[area.kind]} ${esc(area.label)}</b>
+      <b style="font-size:16px">${AREA_EMOJI[area.kind]} ${esc(areaName(app, area))}</b>
       ${zone ? `<span class="chip">${esc(zone.emoji || "🪴")} ${esc(zone.name)}</span>` : `<span class="chip harvest">${t("editor.area.unlinked")}</span>`}
       <div class="spacer"></div>
       <select class="inline" data-bind="detail-palette">
@@ -432,7 +438,7 @@ export function bind(app, root) {
       }
     } else if (!s.palette) {
       // pusta paleta — klik w puste pole nic nie dodaje
-    } else if (AREA_KINDS.includes(s.palette)) {
+    } else if (AREA_KINDS.includes(s.palette) || s.palette.startsWith("zone-draw:")) {
       drag = { type: "draw", x0: p.x, y0: p.y, moved: false };
     } else if (isPathPalette()) {
       drag = { type: "path", pts: [[clamp(p.x, layout.width_m), clamp(p.y, layout.height_m)]] };
@@ -506,11 +512,17 @@ export function bind(app, root) {
       else openItemDialog(app, d.item);
     } else if (d.type === "draw") {
       if (d.moved && Math.abs((d.x1 ?? d.x0) - d.x0) > 0.5 && Math.abs((d.y1 ?? d.y0) - d.y0) > 0.5) {
+        let kind = s.palette;
+        let zone = null;
+        if (kind.startsWith("zone-draw:")) {
+          zone = app.data.zones.find((z) => z.id === kind.slice(10));
+          kind = zone?.kind || "bed";
+        }
         const item = {
           id: uid(),
-          kind: s.palette,
-          label: t("editor.palette." + s.palette),
-          zone_id: null,
+          kind,
+          label: zone ? zone.name : t("editor.palette." + kind),
+          zone_id: zone?.id || null,
           x: clamp(Math.min(d.x0, d.x1), layout.width_m),
           y: clamp(Math.min(d.y0, d.y1), layout.height_m),
           w: clamp(Math.abs(d.x1 - d.x0), layout.width_m),
@@ -518,8 +530,25 @@ export function bind(app, root) {
         };
         layout.items.push(item);
         s.palette = ""; // jednorazowe dodawanie
-        saveLayout(app, t("toast.added"));
-        areaDialog(app, item);
+        if (zone) {
+          saveLayout(app, t("toast.added"));
+        } else {
+          // narysowanie miejsca tworzy strefę — jedna tożsamość
+          const nz = { id: uid(), name: item.label, emoji: AREA_EMOJI[kind] || "🪴", kind, planting: null };
+          item.zone_id = nz.id;
+          (async () => {
+            try {
+              app.data = await app.ws("item/save", { kind: "zones", item: nz });
+              app.data = await app.ws("layout/save", { layout });
+            } catch (e) {
+              app.toast(`⚠ ${e.message || e}`, true);
+              return;
+            }
+            app.render();
+            app.toast(t("toast.added"));
+            areaDialog(app, item);
+          })();
+        }
       } else {
         app.render();
       }
@@ -725,7 +754,7 @@ function viewClick(app, itemId) {
 function areaInfoDialog(app, item) {
   const inside = app.data.layout.items.filter((i) => isCircle(i) && insideRect(i, item));
   app.dialog(
-    `<h2>${AREA_EMOJI[item.kind] || "📦"} ${esc(item.label)}</h2>
+    `<h2>${AREA_EMOJI[item.kind] || "📦"} ${esc(areaName(app, item))}</h2>
     <p style="color:var(--secondary-text-color)">${item.w} × ${item.h} m · ${t("editor.area.unlinked")}</p>
     ${item.kind === "greenhouse" ? `<div class="ai-hint"><ha-icon icon="mdi:home-thermometer-outline"></ha-icon>${t("editor.greenhouse.info")}</div>` : ""}
     ${
@@ -746,8 +775,8 @@ function areaDialog(app, item) {
   const dlg = app.dialog(
     `<h2>${t("editor.item.edit")}</h2>
     <form>
-      <label>${t("editor.label")}</label>
-      <input name="label" required maxlength="40" value="${esc(item.label)}" autofocus>
+      <label>${t("name")}</label>
+      <input name="label" required maxlength="60" value="${esc(areaName(app, item))}" autofocus>
       <label>${t("editor.zone.link")}</label>
       ${combo({ name: "zone_id", value: item.zone_id || "", options: zoneOpts })}
       <label>${t("editor.width")}</label><input name="w" type="number" step="0.1" min="0.5" value="${item.w}">
@@ -758,14 +787,27 @@ function areaDialog(app, item) {
         <button type="submit" class="btn">${t("save")}</button>
       </div>
     </form>`,
-    (fd) => {
-      item.label = fd.get("label").trim();
-      item.zone_id = fd.get("zone_id") || null;
-      item.w = parseFloat(fd.get("w")) || item.w;
-      item.h = parseFloat(fd.get("h")) || item.h;
-      const zone = app.data.zones.find((z) => z.id === item.zone_id);
-      if (zone && (!item.label || item.label === t("editor.palette." + item.kind))) item.label = zone.name;
-      saveLayout(app, t("toast.saved"));
+    async (fd) => {
+      // edycja po id — app.data mogło zostać podmienione od czasu otwarcia dialogu
+      const layout = app.data.layout;
+      const it = layout.items.find((i) => i.id === item.id) || item;
+      const name = fd.get("label").trim();
+      it.zone_id = fd.get("zone_id") || it.zone_id || null;
+      it.w = parseFloat(fd.get("w")) || it.w;
+      it.h = parseFloat(fd.get("h")) || it.h;
+      it.label = name;
+      try {
+        if (it.zone_id) {
+          // nazwa obszaru edytuje strefę — rysunek to tylko kształt
+          app.data = await app.ws("item/save", { kind: "zones", item: { id: it.zone_id, name } });
+        }
+        app.data = await app.ws("layout/save", { layout });
+      } catch (e) {
+        app.toast(`⚠ ${e.message || e}`, true);
+        return;
+      }
+      app.render();
+      app.toast(t("toast.saved"));
     }
   );
   dlg.querySelector("#area-del").addEventListener("click", () => {
