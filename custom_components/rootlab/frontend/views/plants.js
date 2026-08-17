@@ -630,36 +630,43 @@ function renderCardEdit(app, plant, photos, draft = null) {
   };
   const linked = linkedPlantings(app, plant.id);
   const active = linked.find((x) => !x.done?.finished) || linked[linked.length - 1] || null;
+  // domyślne miejsce dla nowej uprawy: obszar strefy rośliny albo sama strefa
+  const defaultArea = () => {
+    const a = (app.data.layout?.items || []).find((i) => "w" in i && i.zone_id === plant.zone_id);
+    return a ? a.id : plant.zone_id || "";
+  };
+  const gyear = active?.year ?? new Date().getFullYear();
   const dlg = app.dialog(
     `<h2><span class="emoji">${esc(plant.emoji || "🌱")}</span> ${esc(plant.name)} — ${t("edit")}</h2>
     <form>
       ${plantFormFields(app, draft)}
+      <div class="section-title">${t("tab.grow")}</div>
+      ${active ? "" : `<p style="font-size:12px;color:var(--secondary-text-color);margin:0 0 6px">${t("plant.grow.hint")}</p>`}
+      <label>${t("grow.area")}</label>
+      ${combo({ name: "area_id", value: active ? active.area_id : defaultArea(), options: areaOptions(app) })}
+      <div style="display:flex;gap:10px">
+        <span style="flex:1"><label>${t("grow.method")}</label>
+        ${combo({
+          name: "method",
+          value: active?.method || "direct",
+          options: [
+            { value: "indoor", label: t("grow.method.indoor") },
+            { value: "direct", label: t("grow.method.direct") },
+          ],
+          allowEmpty: false,
+        })}</span>
+        <span><label>${t("grow.year")}</label>
+        <input type="number" name="gyear" value="${gyear}" min="2020" max="2040" style="width:90px"></span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 10px">
+        <span><label>${t("grow.date.sow")}</label>${dateInput("sow", gyear, active?.plan?.sow)}</span>
+        <span><label>${t("grow.date.transplant")}</label>${dateInput("transplant", gyear, active?.plan?.transplant)}</span>
+        <span><label>${t("grow.date.harvest_from")}</label>${dateInput("harvest_from", gyear, active?.plan?.harvest_from)}</span>
+        <span><label>${t("grow.date.harvest_to")}</label>${dateInput("harvest_to", gyear, active?.plan?.harvest_to)}</span>
+      </div>
       ${
         active
-          ? `<div class="section-title">${t("tab.grow")}</div>
-        <label>${t("grow.area")}</label>
-        ${combo({ name: "area_id", value: active.area_id, options: areaOptions(app), allowEmpty: false })}
-        <div style="display:flex;gap:10px">
-          <span style="flex:1"><label>${t("grow.method")}</label>
-          ${combo({
-            name: "method",
-            value: active.method || "direct",
-            options: [
-              { value: "indoor", label: t("grow.method.indoor") },
-              { value: "direct", label: t("grow.method.direct") },
-            ],
-            allowEmpty: false,
-          })}</span>
-          <span><label>${t("grow.year")}</label>
-          <input type="number" name="gyear" value="${active.year}" min="2020" max="2040" style="width:90px"></span>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 10px">
-          <span><label>${t("grow.date.sow")}</label>${dateInput("sow", active.year, active.plan?.sow)}</span>
-          <span><label>${t("grow.date.transplant")}</label>${dateInput("transplant", active.year, active.plan?.transplant)}</span>
-          <span><label>${t("grow.date.harvest_from")}</label>${dateInput("harvest_from", active.year, active.plan?.harvest_from)}</span>
-          <span><label>${t("grow.date.harvest_to")}</label>${dateInput("harvest_to", active.year, active.plan?.harvest_to)}</span>
-        </div>
-        <div class="actions" style="justify-content:flex-start;margin-top:12px">
+          ? `<div class="actions" style="justify-content:flex-start;margin-top:12px">
           ${!active.done?.sow ? `<button type="button" class="btn small ghost" data-mark="sow">🌱 ${t("grow.done.sow")}</button>` : `<span class="chip">🌱 ${esc(active.done.sow)}</span>`}
           ${active.method === "indoor" ? (!active.done?.transplant ? `<button type="button" class="btn small ghost" data-mark="transplant">🪴 ${t("grow.done.transplant")}</button>` : `<span class="chip">🪴 ${esc(active.done.transplant)}</span>`) : ""}
           ${!active.done?.finished ? `<button type="button" class="btn small ghost" data-mark="finished">🏁 ${t("grow.done.finish")}</button>` : `<span class="chip">🏁 ${esc(active.done.finished)}</span>`}
@@ -673,6 +680,12 @@ function renderCardEdit(app, plant, photos, draft = null) {
       </div>
     </form>`,
     async (fd) => {
+      const plan = {
+        sow: fdMMDD(fd, "sow"),
+        transplant: fdMMDD(fd, "transplant"),
+        harvest_from: fdMMDD(fd, "harvest_from"),
+        harvest_to: fdMMDD(fd, "harvest_to"),
+      };
       try {
         app.data = await app.ws("item/save", { kind: "plants", item: { id: plant.id, ...plantFromForm(fd) } });
         if (active) {
@@ -683,13 +696,31 @@ function renderCardEdit(app, plant, photos, draft = null) {
               area_id: fd.get("area_id"),
               method: fd.get("method") || "direct",
               year: parseInt(fd.get("gyear"), 10) || active.year,
-              plan: {
-                sow: fdMMDD(fd, "sow"),
-                transplant: fdMMDD(fd, "transplant"),
-                harvest_from: fdMMDD(fd, "harvest_from"),
-                harvest_to: fdMMDD(fd, "harvest_to"),
-              },
+              plan,
             },
+          });
+        } else if (fd.get("area_id") && (plan.sow || plan.transplant || plan.harvest_from)) {
+          // roślina bez uprawy: miejsce + terminy → nowa uprawa powiązana z tą kartą
+          const preset = PLANT_PRESETS.find((x) => x.name === fd.get("name").trim());
+          app.data = await app.ws("grow/apply", {
+            plantings: [
+              {
+                id: null,
+                area_id: fd.get("area_id"),
+                name: fd.get("name").trim(),
+                species: fd.get("species").trim(),
+                family: preset?.family || "",
+                emoji: fd.get("emoji").trim() || "🌱",
+                plant_id: plant.id,
+                year: parseInt(fd.get("gyear"), 10) || gyear,
+                method: fd.get("method") || "direct",
+                plan,
+                done: {},
+                succession_days: null,
+                notes: "",
+              },
+            ],
+            tasks: [],
           });
         }
       } catch (e) {

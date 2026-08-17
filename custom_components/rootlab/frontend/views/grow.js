@@ -1,6 +1,7 @@
 import { t } from "../i18n.js";
 import { combo, esc, todayISO, wireCombos } from "../util.js";
 import { PLANT_PRESETS } from "../presets.js";
+import { openPlantCard } from "./plants.js"; // cykl plants↔grow bezpieczny: użycie dopiero w handlerze
 
 /* Zakładka „Uprawy" — kalendarz upraw per miejsce z planu ogrodu, dziennik obsadzeń,
    siewy sukcesywne, ostrzeżenia płodozmianowe i plan sezonu z AI. */
@@ -69,17 +70,19 @@ function band(from, to, year, cls) {
   return `<span class="grow-band ${cls}" style="left:${a}%;width:${b - a}%"></span>`;
 }
 
+const todayMark = (year) => {
+  const today = new Date();
+  return year === today.getFullYear()
+    ? `<span class="grow-today" style="left:${pct(`${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`, year)}%"></span>`
+    : "";
+};
+
 function rowHtml(app, p) {
   const s = st(app);
   const start = p.plan?.sow || p.plan?.transplant;
   const growFrom = p.method === "indoor" ? p.plan?.transplant || p.plan?.sow : start;
   const finished = Boolean(p.done?.finished);
   const doneBits = [p.done?.sow ? "🌱✓" : "", p.done?.transplant ? "🪴✓" : ""].filter(Boolean).join(" ");
-  const today = new Date();
-  const todayMark =
-    s.year === today.getFullYear()
-      ? `<span class="grow-today" style="left:${pct(`${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`, s.year)}%"></span>`
-      : "";
   return `<div class="grow-row ${finished ? "done" : ""}" data-grow-edit="${p.id}">
     <div class="grow-name">${esc(p.emoji || "🌱")} <b>${esc(p.name)}</b> ${doneBits}
       <br><small style="color:var(--secondary-text-color)">${esc(areaLabel(app, p.area_id))} · ${t("grow.method." + (p.method || "direct"))}${finished ? ` · ${t("grow.finished")}` : ""}</small>
@@ -88,10 +91,28 @@ function rowHtml(app, p) {
       ${p.method === "indoor" ? band(p.plan?.sow, p.plan?.transplant, s.year, "sow") : ""}
       ${band(growFrom, p.plan?.harvest_from, s.year, "grow")}
       ${band(p.plan?.harvest_from, p.plan?.harvest_to, s.year, "harvest")}
-      ${todayMark}
+      ${todayMark(s.year)}
     </div>
   </div>`;
 }
+
+/* Roślina bez uprawy w danym roku: wiersz na liście bez pasków — klik ustawia terminy w karcie. */
+function plantRowHtml(app, p, year) {
+  const zone = app.data.zones.find((z) => z.id === p.zone_id);
+  return `<div class="grow-row" data-grow-plant="${p.id}">
+    <div class="grow-name">${esc(p.emoji || "🌱")} <b>${esc(p.name)}</b>
+      <br><small style="color:var(--secondary-text-color)">${zone ? esc(`${zone.emoji || "🪴"} ${zone.name}`) : t("zone.none")} · ${t("grow.nodates")}</small>
+    </div>
+    <div class="grow-track">${todayMark(year)}</div>
+  </div>`;
+}
+
+/* Strefa odpowiadająca miejscu (obszar z planu albo sama strefa). */
+const areaZoneId = (app, areaId) => {
+  const a = areas(app).find((x) => x.id === areaId);
+  if (a) return a.zone_id;
+  return (app.data.zones || []).some((z) => z.id === areaId) ? areaId : null;
+};
 
 export function render(app) {
   const s = st(app);
@@ -111,6 +132,11 @@ export function render(app) {
   const list = (app.data.plantings || [])
     .filter((p) => p.year === s.year && (!s.area || p.area_id === s.area))
     .sort((a, b) => (a.plan?.sow || a.plan?.transplant || "").localeCompare(b.plan?.sow || b.plan?.transplant || ""));
+  // rośliny bez uprawy w tym roku — na liście, bez pasków na osi
+  const linkedIds = new Set((app.data.plantings || []).filter((p) => p.year === s.year).map((p) => p.plant_id).filter(Boolean));
+  const undated = (app.data.plants || [])
+    .filter((p) => !linkedIds.has(p.id) && (!s.area || p.zone_id === areaZoneId(app, s.area)))
+    .sort((a, b) => a.name.localeCompare(b.name));
   const months = `<div class="grow-row" style="border-bottom:none;cursor:default">
     <div class="grow-name"></div>
     <div class="grow-months">${t("months").map((m) => `<span>${m}</span>`).join("")}</div>
@@ -118,8 +144,8 @@ export function render(app) {
   return (
     toolbar +
     `<div class="card">${months}${
-      list.length
-        ? list.map((p) => rowHtml(app, p)).join("")
+      list.length || undated.length
+        ? list.map((p) => rowHtml(app, p)).join("") + undated.map((p) => plantRowHtml(app, p, s.year)).join("")
         : `<p style="color:var(--secondary-text-color);font-size:14px">${t("grow.empty")}</p>`
     }</div>
     <div class="editor-hint">${t("grow.legend")}</div>`
@@ -138,6 +164,9 @@ export function bind(app, root) {
       const p = (app.data.plantings || []).find((x) => x.id === el.dataset.growEdit);
       if (p) growDialog(app, p);
     })
+  );
+  root.querySelectorAll("[data-grow-plant]").forEach((el) =>
+    el.addEventListener("click", () => openPlantCard(app, el.dataset.growPlant, true))
   );
 }
 
