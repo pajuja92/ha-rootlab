@@ -200,10 +200,16 @@ function plantCard(app, p) {
 const PLANTING_KINDS = ["soil", "pot", "raised"];
 const ZONE_KINDS = ["greenhouse", "bed", "orchard", "lawn"];
 
-function zoneDialog(app, zone) {
+/* Kanoniczny edytor strefy — Strefa (Rośliny) i Obszar (Plan ogrodu) to ten sam
+   byt: nazwa, ikona, typ miejsca, nasadzenie + rozmiary rysunku, jeśli istnieje. */
+export function zoneDialog(app, zone, shapeItem = null) {
   const plantingOpts = PLANTING_KINDS.map((v) => ({ value: v, label: t("planting." + v) }));
   const kindOpts = ZONE_KINDS.map((v) => ({ value: v, label: t("editor.palette." + v) }));
-  app.dialog(
+  const shape =
+    shapeItem ||
+    (zone ? (app.data.layout?.items || []).find((i) => "w" in i && i.zone_id === zone.id) : null) ||
+    null;
+  const dlg = app.dialog(
     `<h2>${zone ? t("zone.edit") : t("zone.new")}</h2>
     <form>
       <label>${t("name")}</label>
@@ -214,20 +220,66 @@ function zoneDialog(app, zone) {
       ${combo({ name: "kind", value: zone?.kind || "", options: kindOpts })}
       <label>${t("zone.planting")}</label>
       ${combo({ name: "planting", value: zone?.planting || "", options: plantingOpts })}
+      ${
+        shape
+          ? `<div style="display:flex;gap:10px">
+        <span style="flex:1"><label>${t("editor.width")}</label>
+        <input name="w" type="number" step="0.1" min="0.5" value="${shape.w}"></span>
+        <span style="flex:1"><label>${t("editor.height")}</label>
+        <input name="h" type="number" step="0.1" min="0.5" value="${shape.h}"></span>
+      </div>`
+          : ""
+      }
       <div class="dialog-actions">
+        ${shape ? `<button type="button" class="btn plain" id="zshape-del" style="margin-right:auto;color:var(--rl-crisis)">${t("zone.shape.delete")}</button>` : ""}
         <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
         <button type="submit" class="btn">${t("save")}</button>
       </div>
     </form>`,
-    (fd) =>
-      app.saveItem("zones", {
+    async (fd) => {
+      const item = {
         id: zone?.id ?? null,
         name: fd.get("name").trim(),
         emoji: fd.get("emoji").trim(),
         kind: fd.get("kind") || null,
         planting: fd.get("planting") || null,
-      })
+      };
+      try {
+        app.data = await app.ws("item/save", { kind: "zones", item });
+        if (shape) {
+          const layout = app.data.layout;
+          const it = layout.items.find((i) => i.id === shape.id);
+          if (it) {
+            it.w = parseFloat(fd.get("w")) || it.w;
+            it.h = parseFloat(fd.get("h")) || it.h;
+            it.label = item.name;
+            it.kind = item.kind || it.kind;
+            app.data = await app.ws("layout/save", { layout });
+          }
+        }
+      } catch (e) {
+        app.toast(`⚠ ${e.message || e}`, true);
+        return;
+      }
+      app.render();
+      app.toast(t(zone ? "toast.saved" : "toast.added"));
+    }
   );
+  // usunięcie samego rysunku z planu — strefa zostaje
+  dlg.querySelector("#zshape-del")?.addEventListener("click", async () => {
+    if (!confirm(t("editor.item.delete.confirm"))) return;
+    const layout = app.data.layout;
+    layout.items = layout.items.filter((i) => i.id !== shape.id);
+    dlg.close();
+    try {
+      app.data = await app.ws("layout/save", { layout });
+    } catch (e) {
+      app.toast(`⚠ ${e.message || e}`, true);
+      return;
+    }
+    app.render();
+    app.toast(t("toast.deleted"));
+  });
 }
 
 /* Wspólne pola formularza rośliny (nowa roślina + tryb edycji karty). */
@@ -845,9 +897,22 @@ export const actions = {
   },
   "add-zone": (app) => zoneDialog(app),
   "edit-zone": (app, el) => zoneDialog(app, app.data.zones.find((z) => z.id === el.dataset.id)),
-  "delete-zone": (app, el) => {
+  "delete-zone": async (app, el) => {
     const zone = app.data.zones.find((z) => z.id === el.dataset.id);
-    if (confirm(t("zone.delete.confirm", { name: zone.name }))) app.deleteItem("zones", zone.id);
+    if (!confirm(t("zone.delete.confirm", { name: zone.name }))) return;
+    try {
+      app.data = await app.ws("item/delete", { kind: "zones", item_id: zone.id });
+      // strefa = obszar: usuń też jej rysunki z planu
+      const layout = app.data.layout;
+      const before = layout.items.length;
+      layout.items = layout.items.filter((i) => i.zone_id !== zone.id);
+      if (layout.items.length !== before) app.data = await app.ws("layout/save", { layout });
+    } catch (e) {
+      app.toast(`⚠ ${e.message || e}`, true);
+      return;
+    }
+    app.render();
+    app.toast(t("toast.deleted"));
   },
   "add-plant": (app) => plantDialog(app),
   "edit-plant": (app, el) => openPlantCard(app, el.dataset.id, true),

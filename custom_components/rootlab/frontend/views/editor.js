@@ -2,9 +2,8 @@ import { t } from "../i18n.js";
 import { combo, emo, emojiChar, emojiPngUrl, esc, uid, wireCombos } from "../util.js";
 import { crownBase, insideRect, isShaded, lineElements, northVector, shadowCapsule, solarPosition } from "../shade.js";
 import { PLANT_PRESETS } from "../presets.js";
-import { iconOptions } from "../icons.js";
 import { ATTRIBUTION, MAX_Z, gridHtml, latToY, lonToX, metersPerPixel, xToLon, yToLat } from "../satmap.js";
-import { openPlantCard, openZoneCard, plantDialog } from "./plants.js";
+import { openPlantCard, openZoneCard, plantDialog, zoneDialog } from "./plants.js";
 
 export const ENABLED = true;
 
@@ -50,8 +49,9 @@ function sunFor(app) {
 }
 
 const isArea = (i) => "w" in i;
-/* Nazwa i ikona obszaru = nazwa/ikona strefy (rysunek to tylko kształt strefy). */
-const areaName = (app, a) => app.data.zones.find((z) => z.id === a.zone_id)?.name || a.label;
+/* Nazwa i ikona obszaru = nazwa/ikona strefy; bez strefy — nazwa rodzajowa typu. */
+const areaName = (app, a) =>
+  app.data.zones.find((z) => z.id === a.zone_id)?.name || t("editor.palette." + a.kind);
 const areaIcon = (app, a) => app.data.zones.find((z) => z.id === a.zone_id)?.emoji || AREA_EMOJI[a.kind] || "🪴";
 const isPath = (i) => Array.isArray(i.path);
 const isSpray = (i) => i.kind === "irrigation" && i.mode === "sprinkler";
@@ -863,59 +863,12 @@ function areaInfoDialog(app, item) {
 
 /* --- Dialogi edycyjne --- */
 
+/* Obszar = strefa: edycja rysunku otwiera wspólny edytor strefy (nazwa, ikona,
+   typ, nasadzenie, rozmiary rysunku). */
 function areaDialog(app, item) {
-  const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: z.name, icon: z.emoji || "🪴" }));
   const zone = app.data.zones.find((z) => z.id === item.zone_id);
-  const dlg = app.dialog(
-    `<h2>${t("editor.item.edit")}</h2>
-    <form>
-      <label>${t("name")}</label>
-      <input name="label" required maxlength="60" value="${esc(areaName(app, item))}" autofocus>
-      <label>${t("zone.emoji")}</label>
-      ${combo({ name: "emoji", value: zone?.emoji || "", options: iconOptions() })}
-      <label>${t("editor.zone.link")}</label>
-      ${combo({ name: "zone_id", value: item.zone_id || "", options: zoneOpts })}
-      <label>${t("editor.width")}</label><input name="w" type="number" step="0.1" min="0.5" value="${item.w}">
-      <label>${t("editor.height")}</label><input name="h" type="number" step="0.1" min="0.5" value="${item.h}">
-      <div class="dialog-actions">
-        <button type="button" class="btn plain" id="area-del" style="margin-right:auto;color:var(--rl-crisis)">${t("delete")}</button>
-        <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
-        <button type="submit" class="btn">${t("save")}</button>
-      </div>
-    </form>`,
-    async (fd) => {
-      // edycja po id — app.data mogło zostać podmienione od czasu otwarcia dialogu
-      const layout = app.data.layout;
-      const it = layout.items.find((i) => i.id === item.id) || item;
-      const name = fd.get("label").trim();
-      it.zone_id = fd.get("zone_id") || it.zone_id || null;
-      it.w = parseFloat(fd.get("w")) || it.w;
-      it.h = parseFloat(fd.get("h")) || it.h;
-      it.label = name;
-      try {
-        if (it.zone_id) {
-          // nazwa i ikona obszaru edytują strefę — rysunek to tylko kształt
-          app.data = await app.ws("item/save", {
-            kind: "zones",
-            item: { id: it.zone_id, name, emoji: fd.get("emoji") || null },
-          });
-        }
-        app.data = await app.ws("layout/save", { layout });
-      } catch (e) {
-        app.toast(`⚠ ${e.message || e}`, true);
-        return;
-      }
-      app.render();
-      app.toast(t("toast.saved"));
-    }
-  );
-  dlg.querySelector("#area-del").addEventListener("click", () => {
-    if (!confirm(t("editor.item.delete.confirm"))) return;
-    app.data.layout.items = app.data.layout.items.filter((i) => i.id !== item.id);
-    st(app).zoneDetail = null;
-    dlg.close();
-    saveLayout(app, t("toast.deleted"));
-  });
+  if (!zone) return; // rysunek dostaje strefę przy tworzeniu/migracji
+  zoneDialog(app, zone, item);
 }
 
 const presetIdxByName = (name) => {
