@@ -307,6 +307,11 @@ export function bind(app, root) {
   if (box) box.scrollTop = box.scrollHeight;
   const ta = root.getElementById("chat-input");
   if (!ta) return;
+  const s2 = st(app);
+  if (s2.draft) {
+    ta.value = s2.draft;
+    s2.draft = null;
+  }
   import("../stt.js").then((stt) => stt.attachMic(app, ta));
   root.getElementById("chat-send").addEventListener("click", () => send(app));
   ta.addEventListener("keydown", (ev) => {
@@ -371,6 +376,7 @@ async function send(app) {
     if (i >= 0) app.data.chats[i] = updated;
   } catch (e) {
     app.toast(`⚠ ${e.message || e}`, true);
+    s.draft = text; // nieudana wiadomość wraca do pola zamiast przepadać
   }
   s.busy = false;
   s.pending = null;

@@ -195,6 +195,8 @@ class RootlabPanel extends HTMLElement {
       this._pendingReload = true;
       return; // nie wyrywaj formularza spod rąk
     }
+    // toast musi przeżyć podmianę DOM — inaczej błąd pokazany tuż przed renderem znika
+    const toastEl = this.shadowRoot.getElementById("toast");
     this.shadowRoot.innerHTML = `
       <style>${CSS}</style>
       <div class="appbar">
@@ -211,6 +213,7 @@ class RootlabPanel extends HTMLElement {
       ${crisis.renderFab(this)}
       <dialog id="form-dialog"></dialog>
     `;
+    if (toastEl) this.shadowRoot.append(toastEl);
     const menu = this.shadowRoot.querySelector("ha-menu-button");
     menu.hass = this._hass;
     menu.narrow = this._narrow;
