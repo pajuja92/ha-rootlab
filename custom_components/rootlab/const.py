@@ -1,5 +1,5 @@
 DOMAIN = "rootlab"
-VERSION = "0.4.0-beta.35"
+VERSION = "0.4.0-beta.36"
 
 # Katalog produktów sklepu autora — pobierany automatycznie przez każdą instalację.
 # Dziś: plik w repo (edycja bez wydawania wersji); docelowo: adres własnego sklepu
