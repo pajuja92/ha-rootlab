@@ -152,3 +152,47 @@ export function lineElements(item) {
   });
   return out;
 }
+
+/* Cień bryły szklarni (prostokąt o wysokości konstrukcji): wielokąt = otoczka
+   wypukła podstawy i podstawy przesuniętej o wektor cienia. */
+export function rectShadowPoly(rect, heightM, sun, northDeg = 0) {
+  if (!sun || sun.elevation <= 0.5 || !heightM || heightM < 0.3) return null;
+  const el = Math.max(sun.elevation, 3) * RAD;
+  const k = heightM / Math.tan(el);
+  const dir = northVector(northDeg + sun.azimuth + 180);
+  const dx = dir.x * k;
+  const dy = dir.y * k;
+  const base = [
+    [rect.x, rect.y],
+    [rect.x + rect.w, rect.y],
+    [rect.x + rect.w, rect.y + rect.h],
+    [rect.x, rect.y + rect.h],
+  ];
+  return convexHull([...base, ...base.map(([x, y]) => [x + dx, y + dy])]);
+}
+
+function convexHull(pts) {
+  const s = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower = [];
+  for (const p of s) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+    lower.push(p);
+  }
+  const upper = [];
+  for (const p of s.reverse()) {
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+    upper.push(p);
+  }
+  return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+export function pointInPoly(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}

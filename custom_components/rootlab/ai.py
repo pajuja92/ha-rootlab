@@ -390,12 +390,24 @@ def _garden_context(hass, plant_ids=None):
         if planting:
             info["planting"] = _PLANTING_PL.get(planting, planting)
         pos = positions.get(p["id"])
-        if pos and any(
-            g["x"] <= pos["x"] <= g["x"] + g["w"] and g["y"] <= pos["y"] <= g["y"] + g["h"]
-            for g in greenhouses
-        ):
-            # ponytail: stałe modyfikatory szklarni — ok. +5°C, +15 p.p. wilgotności, ~80% światła
-            info["environment"] = "szklarnia (ok. +5°C, wyższa wilgotność, ~80% światła)"
+        gh = pos and next(
+            (
+                g
+                for g in greenhouses
+                if g["x"] <= pos["x"] <= g["x"] + g["w"]
+                and g["y"] <= pos["y"] <= g["y"] + g["h"]
+            ),
+            None,
+        )
+        if gh:
+            # parametry mikroklimatu ze strefy szklarni (z sensownymi domyślnymi)
+            gz = next((z for z in data["zones"] if z["id"] == gh.get("zone_id")), {})
+            dt = gz.get("gh_temp_delta") or 5
+            light = gz.get("gh_light_pct") or 80
+            heated = ", ogrzewana — bez przymrozków" if gz.get("gh_heated") else ""
+            info["environment"] = (
+                f"szklarnia (ok. +{dt}°C, wyższa wilgotność, ~{light}% światła{heated})"
+            )
         plants.append(info)
     location = data["layout"].get("location") or {}
     return {

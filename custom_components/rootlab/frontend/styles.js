@@ -220,6 +220,7 @@ dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; mar
 #path-preview { fill: none; stroke: var(--rl-ai); stroke-width: 0.14; stroke-dasharray: 0.3 0.2; }
 #spray-preview { fill: color-mix(in srgb, var(--rl-ai) 15%, transparent); stroke: var(--rl-ai); stroke-width: 0.08; stroke-dasharray: 0.3 0.2; }
 .editor-svg .shadow-line { stroke: rgba(0, 0, 0, 0.22); fill: none; stroke-linecap: round; pointer-events: none; }
+.editor-svg .shadow-poly { fill: rgba(0, 0, 0, 0.14); pointer-events: none; }
 .editor-svg text { font-size: 0.45px; fill: var(--primary-text-color); text-anchor: middle; pointer-events: none; }
 .editor-hint { font-size: 13px; color: var(--secondary-text-color); margin: 8px 4px; }
 .month-slider { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--secondary-text-color); }

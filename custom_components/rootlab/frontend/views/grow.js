@@ -401,6 +401,15 @@ function aiDialog(app) {
           zone: zone?.name || null,
           planting: zone?.planting || null,
           size_m: rect ? [Math.round(rect.w * 10) / 10, Math.round(rect.h * 10) / 10] : null,
+          ...(zone?.kind === "greenhouse"
+            ? {
+                greenhouse: {
+                  temp_delta_c: zone.gh_temp_delta ?? 5,
+                  light_pct: zone.gh_light_pct ?? 80,
+                  heated: Boolean(zone.gh_heated),
+                },
+              }
+            : {}),
         };
       });
       const catalog = PHENO.map((p) => ({

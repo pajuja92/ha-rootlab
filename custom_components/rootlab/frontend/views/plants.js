@@ -220,6 +220,18 @@ export function zoneDialog(app, zone, shapeItem = null) {
       ${combo({ name: "kind", value: zone?.kind || "", options: kindOpts })}
       <label>${t("zone.planting")}</label>
       ${combo({ name: "planting", value: zone?.planting || "", options: plantingOpts })}
+      <div id="gh-params" style="${(zone?.kind || "") === "greenhouse" ? "" : "display:none"}">
+        <div style="display:flex;gap:10px">
+          <span style="flex:1"><label>${t("zone.gh.height")}</label>
+          <input name="gh_height" type="number" step="0.1" min="1" value="${zone?.gh_height_m ?? 2.5}"></span>
+          <span style="flex:1"><label>${t("zone.gh.light")}</label>
+          <input name="gh_light" type="number" step="5" min="10" max="100" value="${zone?.gh_light_pct ?? 80}"></span>
+          <span style="flex:1"><label>${t("zone.gh.temp")}</label>
+          <input name="gh_temp" type="number" step="0.5" min="0" max="20" value="${zone?.gh_temp_delta ?? 5}"></span>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;font-size:13px">
+          <input type="checkbox" name="gh_heated" ${zone?.gh_heated ? "checked" : ""}>${t("zone.gh.heated")}</label>
+      </div>
       ${
         shape
           ? `<div style="display:flex;gap:10px">
@@ -244,6 +256,12 @@ export function zoneDialog(app, zone, shapeItem = null) {
         kind: fd.get("kind") || null,
         planting: fd.get("planting") || null,
       };
+      if (item.kind === "greenhouse") {
+        item.gh_height_m = parseFloat(fd.get("gh_height")) || 2.5;
+        item.gh_light_pct = parseInt(fd.get("gh_light"), 10) || 80;
+        item.gh_temp_delta = parseFloat(fd.get("gh_temp")) || 5;
+        item.gh_heated = Boolean(fd.get("gh_heated"));
+      }
       try {
         app.data = await app.ws("item/save", { kind: "zones", item });
         if (shape) {
@@ -265,6 +283,10 @@ export function zoneDialog(app, zone, shapeItem = null) {
       app.toast(t(zone ? "toast.saved" : "toast.added"));
     }
   );
+  // typ „szklarnia" → pokaż parametry mikroklimatu
+  dlg.querySelector('input[name="kind"]').addEventListener("change", (ev) => {
+    dlg.querySelector("#gh-params").style.display = ev.target.value === "greenhouse" ? "" : "none";
+  });
   // usunięcie samego rysunku z planu — strefa zostaje
   dlg.querySelector("#zshape-del")?.addEventListener("click", async () => {
     if (!confirm(t("editor.item.delete.confirm"))) return;

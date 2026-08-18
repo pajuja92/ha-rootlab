@@ -1,6 +1,6 @@
 import { t } from "../i18n.js";
 import { combo, emo, emojiChar, esc, nowStamp, resizeImage, sensorState } from "../util.js";
-import { insideRect, isShaded, lineElements, shadowCapsule, solarPosition } from "../shade.js";
+import { insideRect, isShaded, lineElements, pointInPoly, rectShadowPoly, shadowCapsule, solarPosition } from "../shade.js";
 import { SENSOR_FIELDS, plantIcon } from "./plants.js";
 
 /* Zakładka „Diagnoza AI" — rozmowy diagnostyczne per roślina.
@@ -121,6 +121,14 @@ function plantFacts(app, plant) {
         .map((c) => {
           const p = c.plant_id ? app.data.plants.find((pp) => pp.id === c.plant_id) : null;
           return p ? `${emojiChar(p.emoji) || "🌱"} ${p.name}` : c.name || c.label || t("editor.palette." + c.kind);
+        });
+      // cień bryły szklarni (nie dotyczy roślin w środku)
+      items
+        .filter((c) => isArea(c) && c.kind === "greenhouse" && !insideRect(me, c))
+        .forEach((g) => {
+          const gz = app.data.zones.find((z) => z.id === g.zone_id);
+          const poly = rectShadowPoly(g, gz?.gh_height_m ?? 2.5, sun, north);
+          if (poly && pointInPoly(me.x, me.y, poly)) shadedBy.push(`🏠 ${gz?.name || t("editor.palette.greenhouse")}`);
         });
       const uniq = [...new Set(shadedBy)]; // żywopłot = wiele elementów o tej samej nazwie
       shadeLine = uniq.length

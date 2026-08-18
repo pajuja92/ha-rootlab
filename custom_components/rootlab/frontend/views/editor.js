@@ -1,6 +1,6 @@
 import { t } from "../i18n.js";
 import { combo, emo, emojiChar, emojiPngUrl, esc, uid, wireCombos } from "../util.js";
-import { crownBase, insideRect, isShaded, lineElements, northVector, shadowCapsule, solarPosition } from "../shade.js";
+import { crownBase, insideRect, isShaded, lineElements, northVector, pointInPoly, rectShadowPoly, shadowCapsule, solarPosition } from "../shade.js";
 import { PLANT_PRESETS } from "../presets.js";
 import { ATTRIBUTION, MAX_Z, gridHtml, latToY, lonToX, metersPerPixel, xToLon, yToLat } from "../satmap.js";
 import { openPlantCard, openZoneCard, plantDialog, zoneDialog } from "./plants.js";
@@ -50,6 +50,16 @@ function sunFor(app) {
 }
 
 const isArea = (i) => "w" in i;
+/* Cienie szklarni: bryła o wysokości konstrukcji ze strefy (gh_height_m). */
+const ghShadowPolys = (app, areas, sun, north) =>
+  areas
+    .filter((a) => a.kind === "greenhouse")
+    .map((a) => ({
+      a,
+      poly: rectShadowPoly(a, app.data.zones.find((z) => z.id === a.zone_id)?.gh_height_m ?? 2.5, sun, north),
+    }))
+    .filter((g) => g.poly);
+
 /* Nazwa i ikona obszaru = nazwa/ikona strefy; bez strefy — nazwa rodzajowa typu. */
 const areaName = (app, a) =>
   app.data.zones.find((z) => z.id === a.zone_id)?.name || t("editor.palette." + a.kind);
@@ -148,9 +158,11 @@ function sunLabel(app) {
   return sun.elevation > 0 ? `☀ ${Math.round(sun.elevation)}°` : "🌙";
 }
 
-function circleNode(app, i, caps) {
+function circleNode(app, i, caps, ghPolys = []) {
   const greenhouses = app.data.layout.items.filter((a) => isArea(a) && a.kind === "greenhouse");
-  const shaded = caps.some(({ c, cap }) => isShaded(i, c, cap));
+  const shaded =
+    caps.some(({ c, cap }) => isShaded(i, c, cap)) ||
+    ghPolys.some(({ a, poly }) => !insideRect(i, a) && pointInPoly(i.x, i.y, poly));
   const inGh = i.kind === "plant" && greenhouses.some((g) => insideRect(i, g));
   const r = Math.max(i.diameter_m / 2, 0.25);
   const plant = i.plant_id ? app.data.plants.find((p) => p.id === i.plant_id) : null;
@@ -235,18 +247,21 @@ function svg(app, satActive) {
     )
     .join("");
 
-  const shadows = caps
-    .filter(({ cap }) => cap)
-    .map(
-      ({ cap }) =>
-        `<line class="shadow-line" x1="${cap.ax}" y1="${cap.ay}" x2="${cap.bx}" y2="${cap.by}" stroke-width="${2 * cap.r}"/>`
-    )
-    .join("");
+  const ghPolys = ghShadowPolys(app, areas, sun, north);
+  const shadows =
+    caps
+      .filter(({ cap }) => cap)
+      .map(
+        ({ cap }) =>
+          `<line class="shadow-line" x1="${cap.ax}" y1="${cap.ay}" x2="${cap.bx}" y2="${cap.by}" stroke-width="${2 * cap.r}"/>`
+      )
+      .join("") +
+    ghPolys.map(({ poly }) => `<polygon class="shadow-poly" points="${poly.map((p) => p.join(",")).join(" ")}"/>`).join("");
 
   const paths = items.filter((i) => isPath(i) && !isLine(i)).map(pathNode).join("");
   const lines = items.filter(isLine).map((i) => lineNode(i)).join("");
   const sprays = items.filter(isSpray).map(sprayNode).join("");
-  const nodes = circles.map((i) => circleNode(app, i, caps)).join("");
+  const nodes = circles.map((i) => circleNode(app, i, caps, ghPolys)).join("");
 
   const n = northVector(north);
   const compass = `<g class="compass" transform="translate(${W - 1.6} 1.6)">
@@ -283,14 +298,17 @@ function renderDetail(app, area) {
   const circles = layout.items.filter(isCircle);
   const lineEls = layout.items.filter(isLine).flatMap((i) => lineElements(i));
   const caps = [...circles, ...lineEls].map((c) => ({ c, cap: shadowCapsule(c, sun, north) }));
+  const ghPolys = ghShadowPolys(app, layout.items.filter(isArea), sun, north);
   const inside = circles.filter((i) => insideRect(i, area));
-  const shadows = caps
-    .filter(({ cap }) => cap)
-    .map(
-      ({ cap }) =>
-        `<line class="shadow-line" x1="${cap.ax}" y1="${cap.ay}" x2="${cap.bx}" y2="${cap.by}" stroke-width="${2 * cap.r}"/>`
-    )
-    .join("");
+  const shadows =
+    caps
+      .filter(({ cap }) => cap)
+      .map(
+        ({ cap }) =>
+          `<line class="shadow-line" x1="${cap.ax}" y1="${cap.ay}" x2="${cap.bx}" y2="${cap.by}" stroke-width="${2 * cap.r}"/>`
+      )
+      .join("") +
+    ghPolys.map(({ poly }) => `<polygon class="shadow-poly" points="${poly.map((p) => p.join(",")).join(" ")}"/>`).join("");
   return `
     <div class="toolbar">
       <button class="btn ghost" data-action="editor-back"><ha-icon icon="mdi:arrow-left"></ha-icon>${t("editor.back")}</button>
@@ -327,7 +345,7 @@ function renderDetail(app, area) {
           .map((i) => lineNode(i))
           .join("")}
         ${shadows}
-        ${inside.map((i) => circleNode(app, i, caps)).join("")}
+        ${inside.map((i) => circleNode(app, i, caps, ghPolys)).join("")}
         <polyline id="path-preview" style="display:none" />
       </svg>
       </div>
