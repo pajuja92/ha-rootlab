@@ -1,7 +1,8 @@
 import { t } from "../i18n.js";
-import { combo, emojiPngUrl, esc, uid, wireCombos } from "../util.js";
+import { combo, emo, emojiPngUrl, esc, uid, wireCombos } from "../util.js";
 import { crownBase, insideRect, isShaded, lineElements, northVector, shadowCapsule, solarPosition } from "../shade.js";
 import { PLANT_PRESETS } from "../presets.js";
+import { iconOptions } from "../icons.js";
 import { ATTRIBUTION, MAX_Z, gridHtml, latToY, lonToX, metersPerPixel, xToLon, yToLat } from "../satmap.js";
 import { openPlantCard, openZoneCard, plantDialog } from "./plants.js";
 
@@ -49,8 +50,9 @@ function sunFor(app) {
 }
 
 const isArea = (i) => "w" in i;
-/* Nazwa obszaru = nazwa strefy (rysunek to tylko kształt strefy). */
+/* Nazwa i ikona obszaru = nazwa/ikona strefy (rysunek to tylko kształt strefy). */
 const areaName = (app, a) => app.data.zones.find((z) => z.id === a.zone_id)?.name || a.label;
+const areaIcon = (app, a) => app.data.zones.find((z) => z.id === a.zone_id)?.emoji || AREA_EMOJI[a.kind] || "🪴";
 const isPath = (i) => Array.isArray(i.path);
 const isSpray = (i) => i.kind === "irrigation" && i.mode === "sprinkler";
 const isCircle = (i) => !isArea(i) && !isPath(i) && !isSpray(i);
@@ -220,7 +222,8 @@ function svg(app, satActive) {
     .map(
       (a) => `<g class="item-g" data-id="${a.id}">
       <rect class="area ${a.kind}" x="${a.x}" y="${a.y}" width="${a.w}" height="${a.h}" rx="0.2"/>
-      <text x="${a.x + a.w / 2}" y="${a.y + 0.7}">${AREA_EMOJI[a.kind] || ""} ${esc(areaName(app, a))}</text>
+      <image href="${emojiPngUrl(areaIcon(app, a))}" x="${a.x + 0.35}" y="${a.y + 0.25}" width="0.9" height="0.9"/>
+      <text x="${a.x + 1.45}" y="${a.y + 0.9}" text-anchor="start">${esc(areaName(app, a))}</text>
       ${
         s.mode === "edit"
           ? `<circle class="resize-handle" data-id="${a.id}" cx="${a.x + a.w}" cy="${a.y + a.h}" r="0.35"/>`
@@ -289,7 +292,7 @@ function renderDetail(app, area) {
   return `
     <div class="toolbar">
       <button class="btn ghost" data-action="editor-back"><ha-icon icon="mdi:arrow-left"></ha-icon>${t("editor.back")}</button>
-      <b style="font-size:16px">${AREA_EMOJI[area.kind]} ${esc(areaName(app, area))}</b>
+      <b style="font-size:16px">${emo(areaIcon(app, area), 20)} ${esc(areaName(app, area))}</b>
       ${zone ? `<span class="chip">${esc(zone.emoji || "🪴")} ${esc(zone.name)}</span>` : `<span class="chip harvest">${t("editor.area.unlinked")}</span>`}
       <div class="spacer"></div>
       <select class="inline" data-bind="detail-palette">
@@ -844,7 +847,7 @@ function viewClick(app, itemId) {
 function areaInfoDialog(app, item) {
   const inside = app.data.layout.items.filter((i) => isCircle(i) && insideRect(i, item));
   app.dialog(
-    `<h2>${AREA_EMOJI[item.kind] || "📦"} ${esc(areaName(app, item))}</h2>
+    `<h2>${emo(areaIcon(app, item), 22)} ${esc(areaName(app, item))}</h2>
     <p style="color:var(--secondary-text-color)">${item.w} × ${item.h} m · ${t("editor.area.unlinked")}</p>
     ${item.kind === "greenhouse" ? `<div class="ai-hint"><ha-icon icon="mdi:home-thermometer-outline"></ha-icon>${t("editor.greenhouse.info")}</div>` : ""}
     ${
@@ -861,12 +864,15 @@ function areaInfoDialog(app, item) {
 /* --- Dialogi edycyjne --- */
 
 function areaDialog(app, item) {
-  const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: `${z.emoji || "🪴"} ${z.name}` }));
+  const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: z.name, icon: z.emoji || "🪴" }));
+  const zone = app.data.zones.find((z) => z.id === item.zone_id);
   const dlg = app.dialog(
     `<h2>${t("editor.item.edit")}</h2>
     <form>
       <label>${t("name")}</label>
       <input name="label" required maxlength="60" value="${esc(areaName(app, item))}" autofocus>
+      <label>${t("zone.emoji")}</label>
+      ${combo({ name: "emoji", value: zone?.emoji || "", options: iconOptions() })}
       <label>${t("editor.zone.link")}</label>
       ${combo({ name: "zone_id", value: item.zone_id || "", options: zoneOpts })}
       <label>${t("editor.width")}</label><input name="w" type="number" step="0.1" min="0.5" value="${item.w}">
@@ -888,8 +894,11 @@ function areaDialog(app, item) {
       it.label = name;
       try {
         if (it.zone_id) {
-          // nazwa obszaru edytuje strefę — rysunek to tylko kształt
-          app.data = await app.ws("item/save", { kind: "zones", item: { id: it.zone_id, name } });
+          // nazwa i ikona obszaru edytują strefę — rysunek to tylko kształt
+          app.data = await app.ws("item/save", {
+            kind: "zones",
+            item: { id: it.zone_id, name, emoji: fd.get("emoji") || null },
+          });
         }
         app.data = await app.ws("layout/save", { layout });
       } catch (e) {
