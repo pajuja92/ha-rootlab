@@ -37,6 +37,10 @@ export const emojiPngUrl = (emoji) => {
   const hex = emojiHex(v);
   return hex ? `https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji@15.1.0/color/72x72/${hex}.png` : null;
 };
+/* Znak emoji do kontekstów czysto tekstowych (natywne selecty, tytuły zadań,
+   kontekst AI) — własne ikony "rl:" nie mają znaku, zwracamy pusty string. */
+export const emojiChar = (e) => (String(e || "").startsWith("rl:") ? "" : String(e || ""));
+
 export const emo = (emoji, size = 18) => {
   const v = String(emoji || "").trim();
   const url = emojiSvgUrl(v);

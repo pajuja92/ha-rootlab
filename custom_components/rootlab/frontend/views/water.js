@@ -2,6 +2,7 @@ import { t } from "../i18n.js";
 import {
   autoDetectRoles,
   combo,
+  emo,
   entityOptions,
   esc,
   haDeviceEntityIds,
@@ -80,7 +81,7 @@ function deviceCard(app, d) {
     .join("");
   return `<div class="card">
     <div class="header"><ha-icon icon="mdi:devices" style="color:var(--rl-water)"></ha-icon><h3>${esc(d.name)}</h3>
-      ${zone ? `<span class="chip">${esc(zone.emoji || "🪴")} ${esc(zone.name)}</span>` : ""}</div>
+      ${zone ? `<span class="chip">${emo(zone.emoji || "🪴", 14)} ${esc(zone.name)}</span>` : ""}</div>
     <div class="sensors">${chips || `<span style="font-size:13px;color:var(--secondary-text-color)">${t("device.noentities")}</span>`}</div>
     <div class="actions">
       <button class="icon-btn" data-action="device-edit" data-id="${d.id}" title="${t("edit")}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
@@ -101,7 +102,7 @@ function deviceDialog(app, device) {
 }
 
 function renderDeviceDialog(app, device, draft) {
-  const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: `${z.emoji || "🪴"} ${z.name}` }));
+  const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: z.name, icon: z.emoji || "🪴" }));
   const scoped = draft.ha_device_id ? haDeviceEntityIds(app.hass, draft.ha_device_id) : null;
   const roleCombo = (f) => {
     let opts = entityOptions(app.hass, f.domains);
@@ -228,7 +229,7 @@ function sectionDialog(app, section, draft = null) {
   // dokładnie jedno urządzenie z zaworem w strefie → prefill; więcej → ⭐ na górze listy
   const sugg = zoneSuggestions(app, draft.zone_id, "valve");
   if (!draft.entity_id && sugg.length === 1) draft.entity_id = sugg[0].entity;
-  const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: `${z.emoji || "🪴"} ${z.name}` }));
+  const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: z.name, icon: z.emoji || "🪴" }));
   const valveOpts = optionsWithSuggestions(
     app.hass,
     entityOptions(app.hass, ["switch", "valve", "input_boolean"]),

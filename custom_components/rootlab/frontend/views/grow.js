@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { combo, emo, esc, todayISO, wireCombos } from "../util.js";
+import { combo, emo, emojiChar, esc, todayISO, wireCombos } from "../util.js";
 import { PLANT_PRESETS } from "../presets.js";
 import { openPlantCard, plantIcon } from "./plants.js"; // cykl plants↔grow bezpieczny: użycie dopiero w handlerze
 
@@ -24,7 +24,9 @@ export function areaOptions(app) {
 
 export const areaLabel = (app, id) => {
   const z = (app.data.zones || []).find((x) => x.id === id);
-  return z ? `${z.emoji || "🪴"} ${z.name}` : t("grow.area.unknown");
+  if (!z) return t("grow.area.unknown");
+  const e = emojiChar(z.emoji);
+  return `${e ? e + " " : ""}${z.name}`;
 };
 
 /* --- daty: "MM-DD" ↔ pozycja % na osi roku --- */

@@ -1,5 +1,6 @@
 import { t } from "../i18n.js";
 import { esc } from "../util.js";
+import { plantIcon } from "./plants.js";
 
 export function render(app) {
   const filter = (app.knowledgeFilter || "").toLowerCase();
@@ -30,7 +31,7 @@ export function render(app) {
             <h3>${esc(k.title)}</h3>
             <div class="meta">
               ${k.source === "ai" ? `<span class="chip ai"><ha-icon icon="mdi:creation" style="--mdc-icon-size:12px"></ha-icon> AI</span>` : ""}
-              ${plant ? `<span>${esc(plant.emoji || "🌱")} ${esc(plant.name)}</span>` : ""}
+              ${plant ? `<span>${plantIcon(plant, 16)} ${esc(plant.name)}</span>` : ""}
               <span>${esc(k.created || "")}</span>
             </div>
             <div class="body ${expanded ? "" : "clamp"}" data-action="kn-toggle" data-id="${k.id}" style="cursor:pointer">${esc(k.content)}</div>

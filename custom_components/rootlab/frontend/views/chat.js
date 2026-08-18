@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { combo, emo, esc, nowStamp, resizeImage, sensorState } from "../util.js";
+import { combo, emo, emojiChar, esc, nowStamp, resizeImage, sensorState } from "../util.js";
 import { insideRect, isShaded, lineElements, shadowCapsule, solarPosition } from "../shade.js";
 import { SENSOR_FIELDS, plantIcon } from "./plants.js";
 
@@ -55,10 +55,10 @@ function renderList(app, chats) {
     if (key === null) return group === "plant" ? `💬 ${t("chat.noplant")}` : `🏷️ ${t("zone.none")}`;
     if (group === "plant") {
       const p = app.data.plants.find((pp) => pp.id === key);
-      return `${esc(p.emoji || "🌱")} ${esc(p.name)}`;
+      return `${plantIcon(p, 16)} ${esc(p.name)}`;
     }
     const z = app.data.zones.find((zz) => zz.id === key);
-    return `${esc(z.emoji || "🪴")} ${esc(z.name)}`;
+    return `${emo(z.emoji || "🪴", 16)} ${esc(z.name)}`;
   };
   const groups = new Map();
   for (const c of chats) {
@@ -120,7 +120,7 @@ function plantFacts(app, plant) {
         .filter((c) => isShaded(me, c, shadowCapsule(c, sun, north)))
         .map((c) => {
           const p = c.plant_id ? app.data.plants.find((pp) => pp.id === c.plant_id) : null;
-          return p ? `${p.emoji || "🌱"} ${p.name}` : c.name || c.label || t("editor.palette." + c.kind);
+          return p ? `${emojiChar(p.emoji) || "🌱"} ${p.name}` : c.name || c.label || t("editor.palette." + c.kind);
         });
       const uniq = [...new Set(shadedBy)]; // żywopłot = wiele elementów o tej samej nazwie
       shadeLine = uniq.length
@@ -134,7 +134,7 @@ function plantFacts(app, plant) {
     .reverse()
     .map((h) => `${h.created} — ${h.diagnosis.problem} (${t("crisis.confidence." + h.diagnosis.confidence)})`);
   return {
-    zoneLabel: zone ? `${zone.emoji || "🪴"} ${zone.name}` : t("zone.none"),
+    zoneLabel: zone ? `${emojiChar(zone.emoji) || "🪴"} ${zone.name}` : t("zone.none"),
     plantingLabel,
     planLine,
     shadeLine,
@@ -348,7 +348,7 @@ export const actions = {
     app.deleteItem("chats", el.dataset.id);
   },
   "chat-new": (app) => {
-    const plantOpts = app.data.plants.map((p) => ({ value: p.id, label: `${p.emoji || "🌱"} ${p.name}`, secondary: p.species }));
+    const plantOpts = app.data.plants.map((p) => ({ value: p.id, label: p.name, secondary: p.species, icon: p.emoji || "🌱" }));
     app.dialog(
       `<h2>${t("chat.new")}</h2>
       <form>

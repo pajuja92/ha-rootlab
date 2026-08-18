@@ -1,5 +1,6 @@
 import { t } from "../i18n.js";
-import { combo, emo, esc, todayISO } from "../util.js";
+import { combo, emo, emojiChar, esc, todayISO } from "../util.js";
+import { plantIcon } from "./plants.js";
 
 const CATEGORIES = ["maintenance", "protection", "crisis", "manual"];
 const CAT_ICONS = {
@@ -71,8 +72,8 @@ export function render(app) {
 
 function filterBar(app) {
   const s = st(app);
-  const plantOpts = app.data.plants.map((p) => ({ value: p.id, label: `${p.emoji || "🌱"} ${p.name}` }));
-  const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: `${z.emoji || "🪴"} ${z.name}` }));
+  const plantOpts = app.data.plants.map((p) => ({ value: p.id, label: p.name, icon: p.emoji || "🌱" }));
+  const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: z.name, icon: z.emoji || "🪴" }));
   const catOpts = CATEGORIES.map((c) => ({ value: c, label: t(`tasks.cat.${c}`) }));
   return `<div class="filter-bar">
     ${combo({ name: "f_plant", value: s.plant, options: plantOpts, placeholder: t("tasks.filter.plant") })}
@@ -150,7 +151,7 @@ function row(app, task) {
     <div class="body">
       <div class="title">${esc(task.title)}</div>
       <div class="meta">
-        ${plant ? `<span>${esc(plant.emoji || "🌱")} ${esc(plant.name)}</span>` : ""}
+        ${plant ? `<span>${plantIcon(plant, 16)} ${esc(plant.name)}</span>` : ""}
         ${task.due ? `<span>${dueLabel(task.due)}</span>` : ""}
         ${task.source === "ai" ? `<span class="chip ai"><ha-icon icon="mdi:creation" style="--mdc-icon-size:12px"></ha-icon> AI</span>` : ""}
         ${task.details ? `<span>${esc(task.details)}</span>` : ""}
@@ -231,7 +232,7 @@ function taskDialog(app, task) {
     `<h2>${esc(task.title)}</h2>
     <div class="meta" style="display:flex;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--secondary-text-color)">
       <span class="chip ${task.category === "protection" ? "harvest" : task.category === "crisis" ? "crisis" : ""}">${t("tasks.cat." + (task.category || "manual"))}</span>
-      ${plant ? `<span>${esc(plant.emoji || "🌱")} ${esc(plant.name)}</span>` : ""}
+      ${plant ? `<span>${plantIcon(plant, 16)} ${esc(plant.name)}</span>` : ""}
       ${task.due ? `<span>${t("task.due")}: ${esc(task.due)} (${dueLabel(task.due)})</span>` : ""}
     </div>
     ${task.details ? `<p style="font-size:14px">${esc(task.details)}</p>` : ""}
@@ -245,7 +246,7 @@ function taskDialog(app, task) {
 }
 
 function addDialog(app) {
-  const plantOpts = app.data.plants.map((p) => ({ value: p.id, label: `${p.emoji || "🌱"} ${p.name}`, secondary: p.species }));
+  const plantOpts = app.data.plants.map((p) => ({ value: p.id, label: p.name, secondary: p.species, icon: p.emoji || "🌱" }));
   app.dialog(
     `<h2>${t("task.new")}</h2>
     <form>
@@ -364,11 +365,11 @@ function generateDialog(app) {
       if (!plants.length) return "";
       return `<div class="gen-zone">
         <label class="gen-zone-head"><input type="checkbox" data-zone="${z.id ?? ""}" checked>
-          <b>${esc(z.emoji || "🪴")} ${esc(z.name)}</b></label>
+          <b>${emo(z.emoji || "🪴", 16)} ${esc(z.name)}</b></label>
         ${plants
           .map(
             (p) => `<label class="gen-plant"><input type="checkbox" name="pl_${p.id}" data-zoneof="${z.id ?? ""}" checked>
-              ${esc(p.emoji || "🌱")} ${esc(p.name)}
+              ${plantIcon(p, 16)} ${esc(p.name)}
               ${aiPlants.has(p.id) ? `<span class="chip ai">✦ ${t("gen.has_ai")}</span>` : ""}</label>`
           )
           .join("")}
@@ -422,7 +423,7 @@ function generateDialog(app) {
     `<span class="chip ${c === "protection" ? "harvest" : c === "crisis" ? "crisis" : ""}">${t("tasks.cat." + (c || "manual"))}</span>`;
   const plantName = (pid) => {
     const p = app.data.plants.find((x) => x.id === pid);
-    return p ? `${p.emoji || "🌱"} ${p.name}` : t("tasks.group.general");
+    return p ? `${emojiChar(p.emoji) || "🌱"} ${p.name}` : t("tasks.group.general");
   };
 
   dlg.querySelector("#gen-run").addEventListener("click", async () => {

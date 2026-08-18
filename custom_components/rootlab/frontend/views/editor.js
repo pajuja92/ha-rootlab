@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { combo, emo, emojiPngUrl, esc, uid, wireCombos } from "../util.js";
+import { combo, emo, emojiChar, emojiPngUrl, esc, uid, wireCombos } from "../util.js";
 import { crownBase, insideRect, isShaded, lineElements, northVector, shadowCapsule, solarPosition } from "../shade.js";
 import { PLANT_PRESETS } from "../presets.js";
 import { iconOptions } from "../icons.js";
@@ -81,7 +81,7 @@ export function render(app) {
   const layout = app.data.layout;
   const satActive = s.sat && layout.location;
   const plantOpts = unplacedPlants(app)
-    .map((p) => `<option value="plant:${p.id}" ${s.palette === "plant:" + p.id ? "selected" : ""}>${esc(p.emoji || "🌱")} ${esc(p.name)}</option>`)
+    .map((p) => `<option value="plant:${p.id}" ${s.palette === "plant:" + p.id ? "selected" : ""}>${esc(emojiChar(p.emoji) || "🌱")} ${esc(p.name)}</option>`)
     .join("");
   const irrOpts = unplacedSections(app)
     .map(
@@ -102,7 +102,7 @@ export function render(app) {
           ${AREA_KINDS.map((k) => `<option value="${k}" ${s.palette === k ? "selected" : ""}>${AREA_EMOJI[k]} ${t("editor.palette." + k)}</option>`).join("")}
           ${app.data.zones
             .filter((z) => !layout.items.some((i) => "w" in i && i.zone_id === z.id))
-            .map((z) => `<option value="zone-draw:${z.id}" ${s.palette === "zone-draw:" + z.id ? "selected" : ""}>${esc(z.emoji || "🪴")} ${esc(z.name)} (${t("editor.palette.draw")})</option>`)
+            .map((z) => `<option value="zone-draw:${z.id}" ${s.palette === "zone-draw:" + z.id ? "selected" : ""}>${esc(emojiChar(z.emoji) || "🪴")} ${esc(z.name)} (${t("editor.palette.draw")})</option>`)
             .join("")}
         </optgroup>
         <optgroup label="${t("editor.group.objects")}">
@@ -272,7 +272,7 @@ function renderDetail(app, area) {
   const zone = app.data.zones.find((z) => z.id === area.zone_id);
   const plantOpts = unplacedPlants(app)
     .map(
-      (p) => `<option value="plant:${p.id}" ${s.detailPalette === "plant:" + p.id ? "selected" : ""}>${esc(p.emoji || "🌱")} ${esc(p.name)}</option>`
+      (p) => `<option value="plant:${p.id}" ${s.detailPalette === "plant:" + p.id ? "selected" : ""}>${esc(emojiChar(p.emoji) || "🌱")} ${esc(p.name)}</option>`
     )
     .join("");
   const pad = Math.max(1, Math.min(area.w, area.h) * 0.1);
@@ -293,7 +293,7 @@ function renderDetail(app, area) {
     <div class="toolbar">
       <button class="btn ghost" data-action="editor-back"><ha-icon icon="mdi:arrow-left"></ha-icon>${t("editor.back")}</button>
       <b style="font-size:16px">${emo(areaIcon(app, area), 20)} ${esc(areaName(app, area))}</b>
-      ${zone ? `<span class="chip">${esc(zone.emoji || "🪴")} ${esc(zone.name)}</span>` : `<span class="chip harvest">${t("editor.area.unlinked")}</span>`}
+      ${zone ? `<span class="chip">${emo(zone.emoji || "🪴", 16)} ${esc(zone.name)}</span>` : `<span class="chip harvest">${t("editor.area.unlinked")}</span>`}
       <div class="spacer"></div>
       <select class="inline" data-bind="detail-palette">
         <option value="">${t("editor.palette.pick")}</option>
@@ -1046,8 +1046,8 @@ function lineDelete(app, dlg, item) {
 function circleDialog(app, item) {
   const linkable = ["plant", "tree", "shrub"].includes(item.kind);
   const linked = item.plant_id ? app.data.plants.find((p) => p.id === item.plant_id) : null;
-  const linkOpts = unplacedPlants(app).map((p) => ({ value: p.id, label: `${p.emoji || "🌱"} ${p.name}`, secondary: p.species }));
-  if (linked) linkOpts.unshift({ value: linked.id, label: `${linked.emoji || "🌱"} ${linked.name}` });
+  const linkOpts = unplacedPlants(app).map((p) => ({ value: p.id, label: p.name, secondary: p.species, icon: p.emoji || "🌱" }));
+  if (linked) linkOpts.unshift({ value: linked.id, label: linked.name, icon: linked.emoji || "🌱" });
   const dlg = app.dialog(
     `<h2>${t("editor.item.edit")}</h2>
     <form>

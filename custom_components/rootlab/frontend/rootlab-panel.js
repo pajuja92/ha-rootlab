@@ -230,13 +230,25 @@ class RootlabPanel extends HTMLElement {
       })
     );
     const dlg = this.shadowRoot.getElementById("form-dialog");
-    dlg.addEventListener("click", (ev) => {
-      // klik w tło zamyka; target=dlg łapie też padding okna, więc sprawdzamy współrzędne
-      if (ev.target !== dlg) return;
+    // Klik w tło zamyka tylko, gdy POCZĄTEK i KONIEC kliknięcia są poza oknem
+    // (zaznaczanie tekstu / resize textarea kończone poza oknem nie zamyka).
+    // Wystające listy combo (position:fixed) traktujemy jak część dialogu.
+    const outsideDlg = (x, y) => {
       const r = dlg.getBoundingClientRect();
-      const inside =
-        ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
-      if (!inside) dlg.close();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return false;
+      for (const l of dlg.querySelectorAll(".combo-list:not([hidden])")) {
+        const lr = l.getBoundingClientRect();
+        if (x >= lr.left && x <= lr.right && y >= lr.top && y <= lr.bottom) return false;
+      }
+      return true;
+    };
+    let downOutside = false;
+    dlg.addEventListener("pointerdown", (ev) => {
+      downOutside = ev.target === dlg && outsideDlg(ev.clientX, ev.clientY);
+    });
+    dlg.addEventListener("click", (ev) => {
+      if (ev.target === dlg && downOutside && outsideDlg(ev.clientX, ev.clientY)) dlg.close();
+      downOutside = false;
     });
     dlg.addEventListener("close", () => {
       // zdarzenie close jest asynchroniczne — jeśli w międzyczasie otwarto kolejny
