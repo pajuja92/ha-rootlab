@@ -20,7 +20,11 @@ const OPENMOJI_CDN = "https://cdn.jsdelivr.net/npm/openmoji@15.1.0/color/svg";
    → plik frontend/icons/nazwa.svg (ma width/height, więc działa też w <image>). */
 const rlIconUrl = (v) => new URL(`./icons/${v.slice(3)}.svg`, import.meta.url).href;
 const emojiHex = (emoji) => {
-  const codes = [...String(emoji || "").trim()].map((c) => c.codePointAt(0)).filter((c) => c !== 0xfe0f);
+  const v = String(emoji || "").trim();
+  if (!v) return null;
+  // stare dane mogły mieć kilka emoji w polu — bierzemy pierwszy klaster graficzny
+  const first = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(v)][0].segment;
+  const codes = [...first].map((c) => c.codePointAt(0)).filter((c) => c !== 0xfe0f);
   return codes.length ? codes.map((c) => c.toString(16).toUpperCase()).join("-") : null;
 };
 export const emojiSvgUrl = (emoji) => {

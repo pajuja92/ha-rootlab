@@ -22,7 +22,8 @@ const KIND_FILL = {
 };
 const KIND_GLYPH = { tree: "🌳", shrub: "🌿", compost: "♻️", hedge: "🌲", row: "🥕" };
 const isLine = (i) => i.kind === "hedge" || i.kind === "row";
-const AREA_EMOJI = { greenhouse: "🏠", bed: "🥕", orchard: "🍎", lawn: "🌱" };
+const AREA_EMOJI = { greenhouse: "🏠", bed: "🥕", orchard: "🍎", lawn: "🌱" }; // paleta (natywny select)
+const ZONE_ICON_DEFAULT = { greenhouse: "rl:greenhouse", bed: "rl:bed", orchard: "rl:orchard", lawn: "rl:grass" };
 
 const st = (app) =>
   (app.editorState ??= {
@@ -52,7 +53,8 @@ const isArea = (i) => "w" in i;
 /* Nazwa i ikona obszaru = nazwa/ikona strefy; bez strefy — nazwa rodzajowa typu. */
 const areaName = (app, a) =>
   app.data.zones.find((z) => z.id === a.zone_id)?.name || t("editor.palette." + a.kind);
-const areaIcon = (app, a) => app.data.zones.find((z) => z.id === a.zone_id)?.emoji || AREA_EMOJI[a.kind] || "🪴";
+const areaIcon = (app, a) =>
+  app.data.zones.find((z) => z.id === a.zone_id)?.emoji || ZONE_ICON_DEFAULT[a.kind] || "🪴";
 const isPath = (i) => Array.isArray(i.path);
 const isSpray = (i) => i.kind === "irrigation" && i.mode === "sprinkler";
 const isCircle = (i) => !isArea(i) && !isPath(i) && !isSpray(i);
@@ -295,6 +297,9 @@ function renderDetail(app, area) {
       <b style="font-size:16px">${emo(areaIcon(app, area), 20)} ${esc(areaName(app, area))}</b>
       ${zone ? `<span class="chip">${emo(zone.emoji || "🪴", 16)} ${esc(zone.name)}</span>` : `<span class="chip harvest">${t("editor.area.unlinked")}</span>`}
       <div class="spacer"></div>
+      <button class="icon-btn" data-action="editor-zoom" data-d="-1" title="−"><ha-icon icon="mdi:magnify-minus-outline"></ha-icon></button>
+      <b style="font-size:12px">${Math.round((s.zoom || 1) * 100)}%</b>
+      <button class="icon-btn" data-action="editor-zoom" data-d="1" title="+"><ha-icon icon="mdi:magnify-plus-outline"></ha-icon></button>
       <select class="inline" data-bind="detail-palette">
         <option value="">${t("editor.palette.pick")}</option>
         <option value="row" ${s.detailPalette === "row" ? "selected" : ""}>🥕 ${t("editor.palette.row")}</option>
@@ -311,6 +316,7 @@ function renderDetail(app, area) {
       <button class="btn ghost" data-action="editor-area-edit" data-id="${area.id}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${t("edit")}</button>
     </div>
     <div class="editor-wrap">
+      <div style="width:${Math.round((s.zoom || 1) * 100)}%;margin:0 auto">
       <svg id="detail-svg" class="editor-svg" viewBox="${area.x - pad} ${area.y - pad} ${area.w + 2 * pad} ${area.h + 2 * pad}" preserveAspectRatio="xMidYMid meet">
         <defs><pattern id="rl-grid2" width="1" height="1" patternUnits="userSpaceOnUse">
           <path d="M 1 0 L 0 0 0 1" fill="none" class="grid-line"/></pattern></defs>
@@ -324,6 +330,7 @@ function renderDetail(app, area) {
         ${inside.map((i) => circleNode(app, i, caps)).join("")}
         <polyline id="path-preview" style="display:none" />
       </svg>
+      </div>
     </div>
     <div class="editor-hint">${t("editor.detail.hint")}</div>`;
 }
@@ -577,7 +584,7 @@ export function bind(app, root) {
           saveLayout(app, t("toast.added"));
         } else {
           // narysowanie miejsca tworzy strefę — jedna tożsamość
-          const nz = { id: uid(), name: item.label, emoji: AREA_EMOJI[kind] || "🪴", kind, planting: null };
+          const nz = { id: uid(), name: item.label, emoji: ZONE_ICON_DEFAULT[kind] || "🪴", kind, planting: null };
           item.zone_id = nz.id;
           (async () => {
             try {
