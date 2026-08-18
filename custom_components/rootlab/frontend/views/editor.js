@@ -938,12 +938,25 @@ function hedgeDialog(app, item) {
 function rowDialog(app, item) {
   const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: z.name, icon: z.emoji || "🪴" }));
   const plantOpts = app.data.plants.map((p) => ({ value: p.id, label: p.name, secondary: p.species, icon: p.emoji || "🌱" }));
-  const rowBlock = (pl = {}) => `<div class="rowdef" style="display:flex;gap:8px;align-items:flex-end;margin-bottom:6px">
-      <span style="flex:1">${combo({ name: "rp", value: pl.plant_id || "", options: plantOpts, allowEmpty: false })}</span>
-      <span><label style="font-size:11px">${t("row.count")}</label>
-      <input name="rc" type="number" step="1" min="1" max="500" value="${pl.count ?? 5}" style="width:70px"></span>
-      <button type="button" class="icon-btn rowdef-del" title="${t("delete")}"><ha-icon icon="mdi:close"></ha-icon></button>
+  const rowBlock = (pl = {}) => {
+    const preset = PLANT_PRESETS.find((x) => x.name === pl.name);
+    return `<div class="rowdef" style="border-bottom:1px solid var(--divider-color);padding-bottom:8px;margin-bottom:8px">
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <span style="flex:1">${combo({ name: "rp", value: pl.plant_id || "", options: plantOpts, allowEmpty: false })}</span>
+        <span><label style="font-size:11px">${t("row.count")}</label>
+        <input name="rc" type="number" step="1" min="1" max="500" value="${pl.count ?? 5}" style="width:70px"></span>
+        <button type="button" class="icon-btn rowdef-del" title="${t("delete")}"><ha-icon icon="mdi:close"></ha-icon></button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <span style="flex:1"><label style="font-size:11px">${t("editor.diameter")}</label>
+        <input name="rd" type="number" step="0.1" min="0.1" value="${pl.diameter_m ?? preset?.diameter_m ?? 0.3}"></span>
+        <span style="flex:1"><label style="font-size:11px">${t("editor.heightm")}</label>
+        <input name="rh" type="number" step="0.1" min="0.1" value="${pl.height_m ?? preset?.height_m ?? 0.4}"></span>
+        <span style="flex:1"><label style="font-size:11px">${t("editor.crownbase")}</label>
+        <input name="rb" type="number" step="0.1" min="0" value="${pl.crown_base_m ?? 0}"></span>
+      </div>
     </div>`;
+  };
   const dlg = app.dialog(
     `<h2>🥕 ${t("editor.palette.row")}</h2>
     <form>
@@ -968,14 +981,15 @@ function rowDialog(app, item) {
         .map((el) => {
           const plant = app.data.plants.find((p) => p.id === el.querySelector('input[name="rp"]').value);
           if (!plant) return null;
-          const preset = PLANT_PRESETS.find((x) => x.name === plant.name);
+          const num = (n, fb) => parseFloat(el.querySelector(`input[name="${n}"]`).value) || fb;
           return {
             plant_id: plant.id,
             name: plant.name,
             emoji: plant.emoji || "🌱",
             count: Math.max(1, parseInt(el.querySelector('input[name="rc"]').value, 10) || 1),
-            diameter_m: preset?.diameter_m || 0.3,
-            height_m: preset?.height_m || 0.4,
+            diameter_m: num("rd", 0.3),
+            height_m: num("rh", 0.4),
+            crown_base_m: parseFloat(el.querySelector('input[name="rb"]').value) || 0,
           };
         })
         .filter(Boolean);
@@ -990,6 +1004,16 @@ function rowDialog(app, item) {
   dlg.querySelector("#row-plants").addEventListener("click", (ev) => {
     const del = ev.target.closest(".rowdef-del");
     if (del) del.closest(".rowdef").remove();
+  });
+  // wybór rośliny → prefill wymiarów z presetu (po nazwie)
+  dlg.querySelector("#row-plants").addEventListener("change", (ev) => {
+    if (ev.target.name !== "rp") return;
+    const plant = app.data.plants.find((p) => p.id === ev.target.value);
+    const preset = plant && PLANT_PRESETS.find((x) => x.name === plant.name);
+    if (!preset) return;
+    const rd = ev.target.closest(".rowdef");
+    rd.querySelector('input[name="rd"]').value = preset.diameter_m || 0.3;
+    rd.querySelector('input[name="rh"]').value = preset.height_m || 0.4;
   });
   lineDelete(app, dlg, item);
 }

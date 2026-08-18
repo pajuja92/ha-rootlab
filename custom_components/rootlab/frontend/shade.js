@@ -144,7 +144,7 @@ export function lineElements(item) {
         y: Math.round(y * 100) / 100,
         diameter_m: g.diameter_m || 0.4,
         height_m: g.height_m || 0.5,
-        crown_base_m: 0,
+        crown_base_m: g.crown_base_m || 0,
         emoji: g.emoji || (item.kind === "hedge" ? "🌲" : "🌱"),
         name: g.name || item.label || "",
       });
