@@ -25,10 +25,11 @@ Publiczny plik/endpoint JSON zwracający listę produktów:
 - Odświeżanie: co 6 h (cache w pamięci HA) albo ręcznie w Ustawieniach → „Pokaż / odśwież katalog".
 - Błąd sieci/formatu = brak rekomendacji, bez wpływu na resztę aplikacji.
 
-## Dziś: katalog w tym repo
+## Bieżący adres
 
-`shop/catalog.json` w gałęzi `main` — edycja pliku na GitHubie natychmiast
-aktualizuje rekomendacje we wszystkich instalacjach (bez wydawania wersji).
+`https://mateuszokla.pl/sklep/catalog.json` — edycja pliku na serwerze
+natychmiast aktualizuje rekomendacje we wszystkich instalacjach (bez wydawania
+wersji). Kopia zapasowa/przykład formatu: `shop/catalog.json` w tym repo.
 
 ## Docelowo: własny sklep
 
