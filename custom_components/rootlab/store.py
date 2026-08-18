@@ -19,8 +19,7 @@ DEFAULTS = {
     "ai_prompts": {},
     "chats": [],
     "plantings": [],
-    "products": [],
-    "shop": {"woo_url": "", "woo_key": "", "woo_secret": "", "websearch": False},
+    "shop": {"websearch": False},
     "verify": {"snapshot": None, "actuals": None, "stats": {}},
     "layout": {"width_m": 20.0, "height_m": 12.0, "north_deg": 0, "location": None, "items": []},
 }

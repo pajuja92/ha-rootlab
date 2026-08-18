@@ -9,11 +9,11 @@ from homeassistant.core import callback
 import homeassistant.util.dt as dt_util
 
 from . import ai
-from .const import DOMAIN
+from .const import DOMAIN, SHOP_CATALOG_URL
 from .store import async_save
 from .verification import OPEN_METEO_MODELS, fetch_openmeteo_forecast, stats_payload
 
-KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices", "chats", "plantings", "products"]
+KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices", "chats", "plantings"]
 # pola pomijane w liście (duże base64) — dostępne przez dedykowane komendy
 HEAVY_PLANT_FIELDS = ("photos",)
 
@@ -99,7 +99,7 @@ def async_register(hass):
         ws_grow_generate,
         ws_grow_apply,
         ws_shop_save,
-        ws_shop_sync,
+        ws_shop_catalog,
         ws_verify_stats,
         ws_plant_photos,
         ws_photo_add,
@@ -556,7 +556,7 @@ async def ws_chat_send(hass, connection, msg):
     data = hass.data[DOMAIN]["data"]
     chat = next((c for c in data["chats"] if c["id"] == msg["chat_id"]), None)
     # katalog produktów sklepu — AI poleca pasujące pozycje z linkami
-    products = data.get("products") or []
+    products = await _shop_catalog(hass)
     if products:
         lines = "\n".join(
             f"- {p.get('name', '')} — {p.get('price', '?')} — {p.get('url', '')}"
@@ -740,6 +740,43 @@ async def ws_grow_apply(hass, connection, msg):
 # --- Zdjęcia roślin ---
 
 
+CATALOG_TTL = 6 * 3600  # katalog sklepu autora — odświeżanie co 6 h
+
+
+async def _shop_catalog(hass, force=False):
+    """Publiczny katalog produktów (SHOP_CATALOG_URL) z cache w pamięci.
+
+    Format: JSON-owa lista {name, price, url, desc}. Błąd sieci → ostatni cache
+    albo pusta lista; rekomendacje po prostu znikają, nic się nie wywala.
+    """
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+    from homeassistant.util import dt as dt_util
+
+    cache = hass.data[DOMAIN].setdefault("shop_catalog", {"at": 0, "items": []})
+    now = dt_util.utcnow().timestamp()
+    if not force and now - cache["at"] < CATALOG_TTL:
+        return cache["items"]
+    try:
+        resp = await async_get_clientsession(hass).get(SHOP_CATALOG_URL, timeout=20)
+        if resp.status == 200:
+            items = await resp.json(content_type=None)
+            if isinstance(items, list):
+                cache["items"] = [
+                    {
+                        "name": str(it.get("name", "")),
+                        "price": str(it.get("price", "")),
+                        "url": str(it.get("url", "")),
+                        "desc": str(it.get("desc", ""))[:200],
+                    }
+                    for it in items
+                    if isinstance(it, dict) and it.get("name")
+                ][:60]
+        cache["at"] = now
+    except Exception:  # noqa: BLE001 — katalog jest opcjonalny
+        cache["at"] = now  # nie młóć endpointu przy każdej wiadomości
+    return cache["items"]
+
+
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "rootlab/shop/save",
@@ -748,61 +785,20 @@ async def ws_grow_apply(hass, connection, msg):
 )
 @websocket_api.async_response
 async def ws_shop_save(hass, connection, msg):
-    """Konfiguracja sklepu: WooCommerce + zgoda na wyszukiwanie w internecie."""
+    """Ustawienia sklepu: zgoda na wyszukiwanie produktów w internecie."""
     shop = hass.data[DOMAIN]["data"]["shop"]
-    for key in ("woo_url", "woo_key", "woo_secret", "websearch"):
-        if key in msg["config"]:
-            shop[key] = msg["config"][key]
+    if "websearch" in msg["config"]:
+        shop["websearch"] = bool(msg["config"]["websearch"])
     await async_save(hass)
     connection.send_result(msg["id"], _public(hass))
 
 
-@websocket_api.websocket_command({vol.Required("type"): "rootlab/shop/sync"})
+@websocket_api.websocket_command({vol.Required("type"): "rootlab/shop/catalog"})
 @websocket_api.async_response
-async def ws_shop_sync(hass, connection, msg):
-    """Import produktów z WooCommerce (REST v3). Ręczne wpisy zostają."""
-    from homeassistant.helpers.aiohttp_client import async_get_clientsession
-
-    data = hass.data[DOMAIN]["data"]
-    shop = data["shop"]
-    if not shop.get("woo_url") or not shop.get("woo_key") or not shop.get("woo_secret"):
-        connection.send_error(msg["id"], "config", "Uzupełnij URL sklepu i klucze API WooCommerce")
-        return
-    url = shop["woo_url"].rstrip("/") + "/wp-json/wc/v3/products"
-    session = async_get_clientsession(hass)
-    try:
-        resp = await session.get(
-            url,
-            params={
-                "consumer_key": shop["woo_key"],
-                "consumer_secret": shop["woo_secret"],
-                "per_page": "100",
-                "status": "publish",
-            },
-            timeout=30,
-        )
-        if resp.status != 200:
-            connection.send_error(msg["id"], "http", f"WooCommerce: HTTP {resp.status}")
-            return
-        items = await resp.json()
-    except Exception as err:  # noqa: BLE001 — komunikat idzie wprost do UI
-        connection.send_error(msg["id"], "http", f"WooCommerce: {err}")
-        return
-    synced = [
-        {
-            "id": f"woo-{it['id']}",
-            "name": it.get("name", ""),
-            "price": (it.get("price") or "") and f"{it['price']} zł",
-            "url": it.get("permalink", ""),
-            "desc": (it.get("short_description") or "").replace("<p>", "").replace("</p>", "").strip()[:200],
-            "source": "woo",
-        }
-        for it in items
-        if isinstance(it, dict)
-    ]
-    data["products"] = [p for p in data["products"] if p.get("source") != "woo"] + synced
-    await async_save(hass)
-    connection.send_result(msg["id"], {"count": len(synced), "data": _public(hass)})
+async def ws_shop_catalog(hass, connection, msg):
+    """Podgląd/odświeżenie katalogu sklepu w Ustawieniach."""
+    items = await _shop_catalog(hass, force=True)
+    connection.send_result(msg["id"], {"url": SHOP_CATALOG_URL, "items": items})
 
 
 @websocket_api.websocket_command({vol.Required("type"): "rootlab/verify/stats"})

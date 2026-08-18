@@ -1,9 +1,6 @@
 import { t } from "../i18n.js";
 import { esc } from "../util.js";
 
-const IN_STYLE =
-  "width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--divider-color);border-radius:8px;background:var(--primary-background-color);color:var(--primary-text-color);font:inherit";
-
 const PROMPT_KEYS = ["system", "tasks", "diagnose", "ask", "season"];
 const TA_STYLE =
   "width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--divider-color);border-radius:8px;background:var(--primary-background-color);color:var(--primary-text-color);font:inherit;min-height:96px;margin-bottom:8px";
@@ -29,17 +26,15 @@ export function render(app) {
   ${shopCard(app)}`;
 }
 
-/* Sklep: katalog produktów polecanych przez AI + synchronizacja z WooCommerce. */
+/* Sklep autora: katalog pobierany automatycznie ze stałego adresu — bez konfiguracji. */
 function shopCard(app) {
   const shop = app.data.shop || {};
-  const products = app.data.products || [];
-  const rows = products
+  const cat = app._shopCatalog;
+  const rows = (cat?.items || [])
     .map(
       (p) => `<div class="note-row" style="align-items:center">
         <span class="txt"><b>${esc(p.name)}</b>${p.price ? ` · ${esc(p.price)}` : ""}
-          ${p.url ? ` · <a href="${esc(p.url)}" target="_blank" rel="noopener" style="color:var(--rl-green)">${t("shop.link")}</a>` : ""}
-          ${p.source === "woo" ? ` <span class="chip" style="font-size:11px;padding:1px 8px">WooCommerce</span>` : ""}</span>
-        <button class="icon-btn" data-prod-del="${p.id}" title="${t("delete")}"><ha-icon icon="mdi:trash-can-outline" style="--mdc-icon-size:16px"></ha-icon></button>
+          ${p.url ? ` · <a href="${esc(p.url)}" target="_blank" rel="noopener" style="color:var(--rl-green)">${t("shop.link")}</a>` : ""}</span>
       </div>`
     )
     .join("");
@@ -48,26 +43,17 @@ function shopCard(app) {
     <p style="font-size:13px;color:var(--secondary-text-color);margin-top:0">${t("shop.hint")}</p>
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px">
       <input type="checkbox" id="shop-websearch" ${shop.websearch ? "checked" : ""}>${t("shop.websearch")}</label>
-    <label>${t("shop.woo.url")}</label>
-    <input id="shop-url" placeholder="https://mojsklep.pl" value="${esc(shop.woo_url)}" style="${IN_STYLE}">
-    <div style="display:flex;gap:10px;margin-top:8px">
-      <span style="flex:1"><label>${t("shop.woo.key")}</label>
-      <input id="shop-key" placeholder="ck_…" value="${esc(shop.woo_key)}" style="${IN_STYLE}"></span>
-      <span style="flex:1"><label>${t("shop.woo.secret")}</label>
-      <input id="shop-secret" type="password" placeholder="cs_…" value="${esc(shop.woo_secret)}" style="${IN_STYLE}"></span>
-    </div>
     <div class="actions" style="justify-content:flex-start;margin-top:10px">
       <button class="btn" data-action="shop-save"><ha-icon icon="mdi:content-save-outline"></ha-icon>${t("save")}</button>
-      <button class="btn ghost" data-action="shop-sync"><ha-icon icon="mdi:sync"></ha-icon>${t("shop.sync")}</button>
+      <button class="btn ghost" data-action="shop-catalog"><ha-icon icon="mdi:sync"></ha-icon>${t("shop.refresh")}</button>
     </div>
-    <div class="section-title">${t("shop.products")} (${products.length})</div>
-    ${rows || `<p style="font-size:13px;color:var(--secondary-text-color)">${t("shop.empty")}</p>`}
-    <div style="display:flex;gap:8px;margin-top:10px;align-items:flex-end;flex-wrap:wrap">
-      <span style="flex:2;min-width:140px"><label>${t("name")}</label><input id="prod-name" style="${IN_STYLE}"></span>
-      <span style="flex:1;min-width:80px"><label>${t("shop.price")}</label><input id="prod-price" placeholder="29 zł" style="${IN_STYLE}"></span>
-      <span style="flex:3;min-width:180px"><label>URL</label><input id="prod-url" placeholder="https://…" style="${IN_STYLE}"></span>
-      <button class="btn small" data-action="prod-add"><ha-icon icon="mdi:plus"></ha-icon>${t("add")}</button>
-    </div>
+    ${
+      cat
+        ? `<div class="section-title">${t("shop.products")} (${cat.items.length})</div>
+           <p style="font-size:12px;color:var(--secondary-text-color);margin-top:0;word-break:break-all">${esc(cat.url)}</p>
+           ${rows || `<p style="font-size:13px;color:var(--secondary-text-color)">${t("shop.empty")}</p>`}`
+        : ""
+    }
   </div>`;
 }
 
@@ -77,11 +63,6 @@ export function bind(app, root) {
       const key = el.dataset.promptReset;
       root.querySelector(`textarea[data-prompt="${key}"]`).value =
         (app.data.ai_prompt_defaults || {})[key] || "";
-    })
-  );
-  root.querySelectorAll("[data-prod-del]").forEach((el) =>
-    el.addEventListener("click", () => {
-      if (confirm(t("hist.delete.confirm"))) app.deleteItem("products", el.dataset.prodDel);
     })
   );
 }
@@ -102,15 +83,9 @@ export const actions = {
     app.toast(t("toast.saved"));
   },
   "shop-save": async (app) => {
-    const $ = (id) => app.shadowRoot.getElementById(id);
     try {
       app.data = await app.ws("shop/save", {
-        config: {
-          websearch: $("shop-websearch").checked,
-          woo_url: $("shop-url").value.trim(),
-          woo_key: $("shop-key").value.trim(),
-          woo_secret: $("shop-secret").value.trim(),
-        },
+        config: { websearch: app.shadowRoot.getElementById("shop-websearch").checked },
       });
     } catch (e) {
       app.toast(`⚠ ${e.message || e}`, true);
@@ -119,28 +94,16 @@ export const actions = {
     app.render();
     app.toast(t("toast.saved"));
   },
-  "shop-sync": async (app, el) => {
+  "shop-catalog": async (app, el) => {
     el.disabled = true;
     try {
-      const res = await app.ws("shop/sync");
-      app.data = res.data;
-      app.render();
-      app.toast(t("shop.synced", { n: res.count }));
+      app._shopCatalog = await app.ws("shop/catalog");
     } catch (e) {
       app.toast(`⚠ ${e.message || e}`, true);
       el.disabled = false;
+      return;
     }
-  },
-  "prod-add": async (app) => {
-    const $ = (id) => app.shadowRoot.getElementById(id);
-    const name = $("prod-name").value.trim();
-    if (!name) return;
-    await app.saveItem("products", {
-      id: null,
-      name,
-      price: $("prod-price").value.trim(),
-      url: $("prod-url").value.trim(),
-      source: "manual",
-    });
+    app.render();
+    app.toast(t("shop.synced", { n: app._shopCatalog.items.length }));
   },
 };
