@@ -1,6 +1,7 @@
 import { t } from "../i18n.js";
-import { combo, emojiSvgUrl, esc, uid } from "../util.js";
-import { crownBase, insideRect, isShaded, northVector, shadowCapsule, solarPosition } from "../shade.js";
+import { combo, emojiSvgUrl, esc, uid, wireCombos } from "../util.js";
+import { crownBase, insideRect, isShaded, lineElements, northVector, shadowCapsule, solarPosition } from "../shade.js";
+import { PLANT_PRESETS } from "../presets.js";
 import { ATTRIBUTION, MAX_Z, gridHtml, latToY, lonToX, metersPerPixel, xToLon, yToLat } from "../satmap.js";
 import { openPlantCard, openZoneCard, plantDialog } from "./plants.js";
 
@@ -19,7 +20,8 @@ const KIND_FILL = {
   shrub: "var(--rl-soil)",
   compost: "color-mix(in srgb, var(--rl-soil) 65%, black)",
 };
-const KIND_GLYPH = { tree: "🌳", shrub: "🌿", compost: "♻️" };
+const KIND_GLYPH = { tree: "🌳", shrub: "🌿", compost: "♻️", hedge: "🌲", row: "🥕" };
+const isLine = (i) => i.kind === "hedge" || i.kind === "row";
 const AREA_EMOJI = { greenhouse: "🏠", bed: "🥕", orchard: "🍎", lawn: "🌱" };
 
 const st = (app) =>
@@ -106,6 +108,8 @@ export function render(app) {
           <option value="shrub" ${s.palette === "shrub" ? "selected" : ""}>🌿 ${t("editor.palette.shrub")}</option>
           <option value="compost" ${s.palette === "compost" ? "selected" : ""}>♻️ ${t("editor.palette.compost")}</option>
           <option value="fence" ${s.palette === "fence" ? "selected" : ""}>🪵 ${t("editor.palette.fence")}</option>
+          <option value="hedge" ${s.palette === "hedge" ? "selected" : ""}>🌲 ${t("editor.palette.hedge")}</option>
+          <option value="row" ${s.palette === "row" ? "selected" : ""}>🥕 ${t("editor.palette.row")}</option>
         </optgroup>
         ${irrOpts ? `<optgroup label="${t("editor.group.irrigation")}">${irrOpts}</optgroup>` : ""}
         ${plantOpts ? `<optgroup label="${t("tab.plants")}">${plantOpts}</optgroup>` : ""}
@@ -164,6 +168,26 @@ function circleNode(app, i, caps) {
   </g>`;
 }
 
+/* Żywopłot / rządek: niewidoczna gruba linia do klikania + elementy w rozstawie. */
+function lineNode(item) {
+  const els = lineElements(item);
+  const pts = item.path.map((p) => p.join(",")).join(" ");
+  const mid = item.path[Math.floor(item.path.length / 2)] || [0, 0];
+  const fill = item.kind === "hedge" ? KIND_FILL.tree : KIND_FILL.plant;
+  return `<g class="item path-item" data-id="${item.id}">
+    <polyline points="${pts}" fill="none" stroke="transparent" stroke-width="0.7"/>
+    ${els
+      .map((e) => {
+        const r = Math.max(e.diameter_m / 2, 0.15);
+        const gs = Math.max(Math.min(r * 1.6, 1.2), 0.35);
+        const url = emojiSvgUrl(e.emoji);
+        return `<g transform="translate(${e.x} ${e.y})"><circle r="${r}" fill="${fill}" fill-opacity="0.75"/>${url ? `<image href="${url}" x="${-gs / 2}" y="${-gs / 2}" width="${gs}" height="${gs}"/>` : ""}</g>`;
+      })
+      .join("")}
+    <text class="hover-label" x="${mid[0]}" y="${mid[1] - 0.4}">${KIND_GLYPH[item.kind]} ${esc(item.label)} (${els.length})</text>
+  </g>`;
+}
+
 function pathNode(item) {
   const pts = item.path.map((p) => p.join(",")).join(" ");
   const mid = item.path[Math.floor(item.path.length / 2)] || [0, 0];
@@ -188,7 +212,9 @@ function svg(app, satActive) {
   const { width_m: W, height_m: H, north_deg: north = 0, items } = app.data.layout;
   const sun = sunFor(app);
   const circles = items.filter(isCircle);
-  const caps = circles.map((c) => ({ c, cap: shadowCapsule(c, sun, north) }));
+  // nasadzenia liniowe rzucają cień jak seria kół
+  const lineEls = items.filter(isLine).flatMap((i) => lineElements(i));
+  const caps = [...circles, ...lineEls].map((c) => ({ c, cap: shadowCapsule(c, sun, north) }));
   const areas = items.filter(isArea);
 
   const areaNodes = areas
@@ -213,7 +239,8 @@ function svg(app, satActive) {
     )
     .join("");
 
-  const paths = items.filter(isPath).map(pathNode).join("");
+  const paths = items.filter((i) => isPath(i) && !isLine(i)).map(pathNode).join("");
+  const lines = items.filter(isLine).map((i) => lineNode(i)).join("");
   const sprays = items.filter(isSpray).map(sprayNode).join("");
   const nodes = circles.map((i) => circleNode(app, i, caps)).join("");
 
@@ -228,7 +255,7 @@ function svg(app, satActive) {
     <defs><pattern id="rl-grid" width="1" height="1" patternUnits="userSpaceOnUse">
       <path d="M 1 0 L 0 0 0 1" fill="none" class="grid-line"/></pattern></defs>
     <rect width="${W}" height="${H}" fill="url(#rl-grid)"/>
-    ${areaNodes}${sprays}${paths}${shadows}${nodes}${compass}
+    ${areaNodes}${sprays}${paths}${lines}${shadows}${nodes}${compass}
     <rect id="draw-preview" class="draw-preview" style="display:none" />
     <polyline id="path-preview" style="display:none" />
     <circle id="spray-preview" style="display:none" />
@@ -250,7 +277,8 @@ function renderDetail(app, area) {
   const north = layout.north_deg || 0;
   const sun = sunFor(app);
   const circles = layout.items.filter(isCircle);
-  const caps = circles.map((c) => ({ c, cap: shadowCapsule(c, sun, north) }));
+  const lineEls = layout.items.filter(isLine).flatMap((i) => lineElements(i));
+  const caps = [...circles, ...lineEls].map((c) => ({ c, cap: shadowCapsule(c, sun, north) }));
   const inside = circles.filter((i) => insideRect(i, area));
   const shadows = caps
     .filter(({ cap }) => cap)
@@ -412,7 +440,8 @@ export function bind(app, root) {
 
   const sectionFor = (pal) => app.data.irrigation.sections.find((x) => x.id === pal.slice(4));
   const isPathPalette = () =>
-    s.palette === "fence" || (s.palette.startsWith("irr:") && sectionFor(s.palette)?.kind === "drip");
+    ["fence", "hedge", "row"].includes(s.palette) ||
+    (s.palette.startsWith("irr:") && sectionFor(s.palette)?.kind === "drip");
   const isSprayPalette = () => s.palette.startsWith("irr:") && sectionFor(s.palette)?.kind !== "drip";
 
   svgEl.addEventListener("pointerdown", (ev) => {
@@ -561,8 +590,20 @@ export function bind(app, root) {
     } else if (d.type === "path") {
       if (d.pts.length >= 2) {
         let item;
+        let after = null;
         if (s.palette === "fence") {
           item = { id: uid(), kind: "fence", label: t("editor.palette.fence"), path: d.pts };
+          s.palette = "";
+        } else if (s.palette === "hedge") {
+          item = {
+            id: uid(), kind: "hedge", label: t("editor.palette.hedge"), path: d.pts,
+            name: "", emoji: "🌲", spacing_m: 0.5, diameter_m: 0.6, height_m: 2,
+          };
+          after = () => hedgeDialog(app, item);
+          s.palette = "";
+        } else if (s.palette === "row") {
+          item = { id: uid(), kind: "row", label: t("editor.palette.row"), path: d.pts, zone_id: null, plants: [] };
+          after = () => rowDialog(app, item);
           s.palette = "";
         } else {
           const section = sectionFor(s.palette);
@@ -582,6 +623,7 @@ export function bind(app, root) {
         }
         layout.items.push(item);
         saveLayout(app, t("toast.added"));
+        after?.();
       } else {
         app.render();
       }
@@ -710,6 +752,10 @@ function openItemDialog(app, item) {
   if (isArea(item)) {
     s.zoneDetail = item.id;
     app.render();
+  } else if (item.kind === "hedge") {
+    hedgeDialog(app, item);
+  } else if (item.kind === "row") {
+    rowDialog(app, item);
   } else if (isPath(item)) {
     pathDialog(app, item);
   } else if (isSpray(item)) {
@@ -820,6 +866,128 @@ function areaDialog(app, item) {
     if (!confirm(t("editor.item.delete.confirm"))) return;
     app.data.layout.items = app.data.layout.items.filter((i) => i.id !== item.id);
     st(app).zoneDetail = null;
+    dlg.close();
+    saveLayout(app, t("toast.deleted"));
+  });
+}
+
+const presetIdxByName = (name) => {
+  const i = PLANT_PRESETS.findIndex((p) => p.name === name);
+  return i >= 0 ? String(i) : "";
+};
+const presetComboOpts = () =>
+  PLANT_PRESETS.map((p, i) => ({ value: String(i), label: p.name, secondary: p.species, icon: p.emoji }));
+
+/* Żywopłot: jedna roślina powtarzana w rozstawie — wymiary głównie pod cień. */
+function hedgeDialog(app, item) {
+  const dlg = app.dialog(
+    `<h2>🌲 ${t("editor.palette.hedge")}</h2>
+    <form>
+      <label>${t("name")}</label>
+      <input name="label" required maxlength="60" value="${esc(item.label)}">
+      <label>${t("plant.preset")}</label>
+      ${combo({ name: "preset", value: presetIdxByName(item.name), options: presetComboOpts() })}
+      <div style="display:flex;gap:10px">
+        <span style="flex:1"><label>${t("hedge.spacing")}</label>
+        <input name="spacing" type="number" step="0.05" min="0.1" value="${item.spacing_m}" style="width:100%"></span>
+        <span style="flex:1"><label>${t("editor.diameter")}</label>
+        <input name="diameter" type="number" step="0.1" min="0.1" value="${item.diameter_m}" style="width:100%"></span>
+        <span style="flex:1"><label>${t("editor.heightm")}</label>
+        <input name="height" type="number" step="0.1" min="0.1" value="${item.height_m}" style="width:100%"></span>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn plain" id="line-del" style="margin-right:auto;color:var(--rl-crisis)">${t("delete")}</button>
+        <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
+        <button type="submit" class="btn">${t("save")}</button>
+      </div>
+    </form>`,
+    (fd) => {
+      const it = app.data.layout.items.find((i) => i.id === item.id) || item;
+      it.label = fd.get("label").trim();
+      it.spacing_m = parseFloat(fd.get("spacing")) || it.spacing_m;
+      it.diameter_m = parseFloat(fd.get("diameter")) || it.diameter_m;
+      it.height_m = parseFloat(fd.get("height")) || it.height_m;
+      const preset = PLANT_PRESETS[parseInt(fd.get("preset"), 10)];
+      if (preset) {
+        it.name = preset.name;
+        it.emoji = preset.emoji;
+      }
+      saveLayout(app, t("toast.saved"));
+    }
+  );
+  // preset → prefill nazwy i wymiarów (rozstaw = rozstawa presetu albo średnica)
+  dlg.querySelector('input[name="preset"]').addEventListener("change", (ev) => {
+    const p = PLANT_PRESETS[parseInt(ev.target.value, 10)];
+    if (!p) return;
+    dlg.querySelector('input[name="label"]').value = p.name;
+    dlg.querySelector('input[name="diameter"]').value = p.diameter_m || 0.6;
+    dlg.querySelector('input[name="height"]').value = p.height_m || 2;
+    dlg.querySelector('input[name="spacing"]').value = p.spacing_cm ? p.spacing_cm / 100 : p.diameter_m || 0.5;
+  });
+  lineDelete(app, dlg, item);
+}
+
+/* Rządek roślin: linia z kilkoma roślinami — równe odcinki, roślina na odcinek. */
+function rowDialog(app, item) {
+  const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: z.name, icon: z.emoji || "🪴" }));
+  const rowBlock = (pl = {}) => `<div class="rowdef" style="display:flex;gap:8px;align-items:flex-end;margin-bottom:6px">
+      <span style="flex:1">${combo({ name: "rp", value: presetIdxByName(pl.name), options: presetComboOpts(), allowEmpty: false })}</span>
+      <span><label style="font-size:11px">${t("hedge.spacing")}</label>
+      <input name="rs" type="number" step="0.05" min="0.05" value="${pl.spacing_m ?? 0.3}" style="width:80px"></span>
+      <button type="button" class="icon-btn rowdef-del" title="${t("delete")}"><ha-icon icon="mdi:close"></ha-icon></button>
+    </div>`;
+  const dlg = app.dialog(
+    `<h2>🥕 ${t("editor.palette.row")}</h2>
+    <form>
+      <label>${t("name")}</label>
+      <input name="label" required maxlength="60" value="${esc(item.label)}">
+      <label>${t("editor.zone.link")}</label>
+      ${combo({ name: "zone_id", value: item.zone_id || "", options: zoneOpts })}
+      <label>${t("row.plants")}</label>
+      <div id="row-plants">${(item.plants?.length ? item.plants : [{}]).map(rowBlock).join("")}</div>
+      <button type="button" class="btn small ghost" id="row-add"><ha-icon icon="mdi:plus"></ha-icon>${t("row.addplant")}</button>
+      <div class="dialog-actions">
+        <button type="button" class="btn plain" id="line-del" style="margin-right:auto;color:var(--rl-crisis)">${t("delete")}</button>
+        <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
+        <button type="submit" class="btn">${t("save")}</button>
+      </div>
+    </form>`,
+    (fd) => {
+      const it = app.data.layout.items.find((i) => i.id === item.id) || item;
+      it.label = fd.get("label").trim();
+      it.zone_id = fd.get("zone_id") || null;
+      it.plants = [...dlg.querySelectorAll(".rowdef")]
+        .map((el) => {
+          const p = PLANT_PRESETS[parseInt(el.querySelector('input[name="rp"]').value, 10)];
+          if (!p) return null;
+          return {
+            name: p.name,
+            emoji: p.emoji,
+            spacing_m: parseFloat(el.querySelector('input[name="rs"]').value) || 0.3,
+            diameter_m: p.diameter_m || 0.3,
+            height_m: p.height_m || 0.4,
+          };
+        })
+        .filter(Boolean);
+      saveLayout(app, t("toast.saved"));
+    }
+  );
+  dlg.querySelector("#row-add").addEventListener("click", () => {
+    const box = dlg.querySelector("#row-plants");
+    box.insertAdjacentHTML("beforeend", rowBlock());
+    wireCombos(box.lastElementChild);
+  });
+  dlg.querySelector("#row-plants").addEventListener("click", (ev) => {
+    const del = ev.target.closest(".rowdef-del");
+    if (del) del.closest(".rowdef").remove();
+  });
+  lineDelete(app, dlg, item);
+}
+
+function lineDelete(app, dlg, item) {
+  dlg.querySelector("#line-del").addEventListener("click", () => {
+    if (!confirm(t("editor.item.delete.confirm"))) return;
+    app.data.layout.items = app.data.layout.items.filter((i) => i.id !== item.id);
     dlg.close();
     saveLayout(app, t("toast.deleted"));
   });

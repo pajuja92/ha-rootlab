@@ -101,3 +101,46 @@ export function insideRect(item, rect) {
     item.y <= rect.y + rect.h
   );
 }
+
+/* Nasadzenie liniowe (żywopłot / rządek roślin): równo rozmieszczone elementy
+   wzdłuż ścieżki. Zwraca pseudo-koła zgodne z shadowCapsule/isShaded.
+   Żywopłot: wymiary na itemie; rządek: item.plants[] — linia dzielona na
+   równe odcinki, po jednym na roślinę. */
+export function lineElements(item) {
+  const path = item.path || [];
+  if (path.length < 2) return [];
+  const segs = [];
+  let total = 0;
+  for (let i = 1; i < path.length; i++) {
+    const [ax, ay] = path[i - 1];
+    const [bx, by] = path[i];
+    const len = Math.hypot(bx - ax, by - ay);
+    segs.push({ ax, ay, bx, by, len, start: total });
+    total += len;
+  }
+  if (!total) return [];
+  const pointAt = (d) => {
+    const s = segs.find((x) => d <= x.start + x.len) || segs[segs.length - 1];
+    const k = s.len ? (d - s.start) / s.len : 0;
+    return [s.ax + (s.bx - s.ax) * k, s.ay + (s.by - s.ay) * k];
+  };
+  const groups = item.plants?.length ? item.plants : [item];
+  const section = total / groups.length;
+  const out = [];
+  groups.forEach((g, gi) => {
+    const spacing = Math.max(g.spacing_m || 0.5, 0.1);
+    for (let d = gi * section + spacing / 2; d <= (gi + 1) * section; d += spacing) {
+      const [x, y] = pointAt(d);
+      out.push({
+        x: Math.round(x * 100) / 100,
+        y: Math.round(y * 100) / 100,
+        diameter_m: g.diameter_m || 0.4,
+        height_m: g.height_m || 0.5,
+        crown_base_m: 0,
+        emoji: g.emoji || (item.kind === "hedge" ? "🌲" : "🌱"),
+        name: g.name || item.label || "",
+      });
+    }
+  });
+  return out;
+}

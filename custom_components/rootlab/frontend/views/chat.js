@@ -1,6 +1,6 @@
 import { t } from "../i18n.js";
 import { combo, emo, esc, nowStamp, resizeImage, sensorState } from "../util.js";
-import { insideRect, isShaded, shadowCapsule, solarPosition } from "../shade.js";
+import { insideRect, isShaded, lineElements, shadowCapsule, solarPosition } from "../shade.js";
 import { SENSOR_FIELDS } from "./plants.js";
 
 /* Zakładka „Diagnoza AI" — rozmowy diagnostyczne per roślina.
@@ -114,15 +114,17 @@ function plantFacts(app, plant) {
       shadeLine = `🌙 ${t("chat.info.night")}`;
     } else {
       const north = layout.north_deg || 0;
-      const shadedBy = items
-        .filter((c) => isCircle(c) && c.id !== me.id)
+      // źródła cienia: pojedyncze rośliny/drzewa + elementy nasadzeń liniowych (żywopłot, rządek)
+      const lineEls = items.filter((c) => c.kind === "hedge" || c.kind === "row").flatMap((c) => lineElements(c));
+      const shadedBy = [...items.filter((c) => isCircle(c) && c.id !== me.id), ...lineEls]
         .filter((c) => isShaded(me, c, shadowCapsule(c, sun, north)))
         .map((c) => {
           const p = c.plant_id ? app.data.plants.find((pp) => pp.id === c.plant_id) : null;
-          return p ? `${p.emoji || "🌱"} ${p.name}` : c.label || t("editor.palette." + c.kind);
+          return p ? `${p.emoji || "🌱"} ${p.name}` : c.name || c.label || t("editor.palette." + c.kind);
         });
-      shadeLine = shadedBy.length
-        ? `☁ ${t("chat.info.shadedby")}: ${shadedBy.join(", ")}`
+      const uniq = [...new Set(shadedBy)]; // żywopłot = wiele elementów o tej samej nazwie
+      shadeLine = uniq.length
+        ? `☁ ${t("chat.info.shadedby")}: ${uniq.join(", ")}`
         : `☀ ${t("chat.info.sunny")}`;
     }
   }
