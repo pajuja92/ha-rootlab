@@ -240,6 +240,9 @@ async def _complete(hass, prompt, schema=None, images=None, media_type=None, web
     provider = _options(hass).get("ai_provider", "anthropic")
     if provider == "anthropic":
         return await _anthropic(hass, prompt, schema, images, media_type, web_search)
+    if provider == "google" and web_search and not schema:
+        # grounding w Google Search — warstwa OpenAI-compat go nie wystawia
+        return await _gemini_search(hass, prompt, images, media_type)
     if provider == "ha_ai_task":
         return await _ha_ai_task(hass, prompt, schema)
     return await _openai_compat(hass, provider, prompt, schema, images, media_type)
@@ -290,6 +293,43 @@ async def _anthropic(hass, prompt, schema, images, media_type, web_search=False)
     # z web search odpowiedź składa się z wielu bloków tekstowych przeplatanych wyszukiwaniami
     text = "".join(b.text for b in response.content if b.type == "text")
     return _parse_json_loose(text) if schema else text.strip()
+
+
+async def _gemini_search(hass, prompt, images, media_type):
+    """Czat z wyszukiwaniem: natywne API Gemini z narzędziem google_search."""
+    options = _options(hass)
+    api_key = options.get("api_key")
+    if not api_key:
+        raise NoApiKeyError
+    base = (options.get("ai_base_url") or OPENAI_COMPAT["google"][0]).rstrip("/")
+    if base.endswith("/openai"):
+        base = base[: -len("/openai")]
+    model = options.get("ai_model") or OPENAI_COMPAT["google"][1]
+    parts = [
+        {"inline_data": {"mime_type": media_type or "image/jpeg", "data": img}}
+        for img in images or []
+    ]
+    parts.append({"text": prompt})
+    session = async_get_clientsession(hass)
+    resp = await session.post(
+        f"{base}/models/{model}:generateContent",
+        json={
+            "system_instruction": {"parts": [{"text": _prompt(hass, "system")}]},
+            "contents": [{"role": "user", "parts": parts}],
+            "tools": [{"google_search": {}}],
+        },
+        headers={"x-goog-api-key": api_key},
+        timeout=aiohttp.ClientTimeout(total=180),
+    )
+    if resp.status != 200:
+        detail = (await resp.text())[:300]
+        raise RuntimeError(f"google: HTTP {resp.status} — {detail}")
+    payload = await resp.json()
+    out = ((payload.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+    text = "".join(p.get("text", "") for p in out).strip()
+    if not text:
+        raise RuntimeError("google: pusta odpowiedź")
+    return text
 
 
 async def _openai_compat(hass, provider, prompt, schema, images, media_type):
@@ -582,9 +622,9 @@ async def async_chat(hass, chat, plant, message, context=None, images=None):
         "Odpowiedz na ostatnią wiadomość konkretnie i praktycznie — pomóż doprecyzować "
         "diagnozę i zaplanować kolejne kroki. Dopytuj, jeśli brakuje Ci informacji."
     )
-    # wyszukiwanie produktów w internecie: opt-in w Ustawieniach, tylko Anthropic
+    # wyszukiwanie produktów w internecie: opt-in w Ustawieniach (Anthropic i Gemini)
     shop = hass.data[DOMAIN]["data"].get("shop") or {}
-    web = bool(shop.get("websearch")) and _options(hass).get("ai_provider", "anthropic") == "anthropic"
+    web = bool(shop.get("websearch")) and _options(hass).get("ai_provider", "anthropic") in ("anthropic", "google")
     return await _complete(hass, "\n\n".join(parts), images=images, web_search=web)
 
 
