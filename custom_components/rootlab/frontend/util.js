@@ -16,9 +16,19 @@ export const nowStamp = () => new Date().toLocaleString("sv-SE").slice(0, 16);
 /* Emoji → kolorowe SVG (OpenMoji, CC BY-SA 4.0). W danych zostaje emoji —
    render podmienia na obrazek, a bez internetu onerror wraca do znaku emoji. */
 const OPENMOJI_CDN = "https://cdn.jsdelivr.net/npm/openmoji@15.1.0/color/svg";
-export const emojiSvgUrl = (emoji) => {
+const emojiHex = (emoji) => {
   const codes = [...String(emoji || "").trim()].map((c) => c.codePointAt(0)).filter((c) => c !== 0xfe0f);
-  return codes.length ? `${OPENMOJI_CDN}/${codes.map((c) => c.toString(16).toUpperCase()).join("-")}.svg` : null;
+  return codes.length ? codes.map((c) => c.toString(16).toUpperCase()).join("-") : null;
+};
+export const emojiSvgUrl = (emoji) => {
+  const hex = emojiHex(emoji);
+  return hex ? `${OPENMOJI_CDN}/${hex}.svg` : null;
+};
+/* PNG do SVG-owego <image> na mapie — pliki SVG OpenMoji nie mają width/height
+   i Chrome nie renderuje ich wewnątrz <image>. */
+export const emojiPngUrl = (emoji) => {
+  const hex = emojiHex(emoji);
+  return hex ? `https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji@15.1.0/color/72x72/${hex}.png` : null;
 };
 export const emo = (emoji, size = 18) => {
   const url = emojiSvgUrl(emoji);

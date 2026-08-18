@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { combo, emojiSvgUrl, esc, uid, wireCombos } from "../util.js";
+import { combo, emojiPngUrl, esc, uid, wireCombos } from "../util.js";
 import { crownBase, insideRect, isShaded, lineElements, northVector, shadowCapsule, solarPosition } from "../shade.js";
 import { PLANT_PRESETS } from "../presets.js";
 import { ATTRIBUTION, MAX_Z, gridHtml, latToY, lonToX, metersPerPixel, xToLon, yToLat } from "../satmap.js";
@@ -160,7 +160,7 @@ function circleNode(app, i, caps) {
       if (!glyph) return "";
       // emoji → SVG OpenMoji; rozmiar w metrach dopasowany do promienia
       const gs = Math.max(Math.min(r * 1.2, 1.5), 0.45);
-      const url = emojiSvgUrl(glyph);
+      const url = emojiPngUrl(glyph);
       return url ? `<image href="${url}" x="${-gs / 2}" y="${-gs / 2}" width="${gs}" height="${gs}"/>` : "";
     })()}
     <text class="hover-label" y="${r + 0.65}">${hoverText}</text>
@@ -179,7 +179,7 @@ function lineNode(item) {
       .map((e) => {
         const r = Math.max(e.diameter_m / 2, 0.15);
         const gs = Math.max(Math.min(r * 1.6, 1.2), 0.35);
-        const url = emojiSvgUrl(e.emoji);
+        const url = emojiPngUrl(e.emoji);
         return `<g transform="translate(${e.x} ${e.y})"><circle r="${r}" fill="${fill}" fill-opacity="0.75"/>${url ? `<image href="${url}" x="${-gs / 2}" y="${-gs / 2}" width="${gs}" height="${gs}"/>` : ""}</g>`;
       })
       .join("")}
