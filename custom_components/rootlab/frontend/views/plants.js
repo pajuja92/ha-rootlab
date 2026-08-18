@@ -292,10 +292,13 @@ export function openZoneCard(app, zoneId) {
   );
 }
 
-/* Światłomierz z kamery: średnia luminancja podglądu (orientacyjnie, %) +
-   lux z AmbientLightSensor, gdy przeglądarka go udostępnia. */
+/* Światłomierz z kamery.
+   Android/Chrome: ręczna ekspozycja (exposureTime × ISO) → szacunek w luksach
+   z pełną rozpiętością (słońce ≫ cień). Gdzie się nie da (iOS): względny %
+   skorygowany o udział prześwietlonych pikseli (celowanie w słońce → ~100%).
+   Wynik = mediana z okna uśredniania (odporna na myszkowanie automatyki). */
 function lightMeterDialog(app, zone) {
-  const measured = { pct: null, lux: null };
+  const measured = { pct: null, lux: null, sensorLux: null, manual: false };
   const dlg = app.dialog(
     `<h2>💡 ${t("zone.light")}</h2>
     <div id="lm-err" class="warn-hint" style="display:none;margin-bottom:8px"></div>
@@ -303,11 +306,17 @@ function lightMeterDialog(app, zone) {
     <div style="text-align:center;margin:10px 0">
       <div id="lm-val" style="font-size:34px;font-weight:600">—</div>
       <div id="lm-cat" style="color:var(--secondary-text-color)"></div>
+      <div id="lm-range" style="font-size:12px;color:var(--secondary-text-color)"></div>
+      <div id="lm-mode" style="font-size:11px;color:var(--secondary-text-color);margin-top:2px"></div>
     </div>
-    <p style="font-size:12px;color:var(--secondary-text-color);margin:0 0 8px">${t("zone.light.hint")}</p>
     <form>
-      <label>${t("photo.note")}</label>
-      <textarea name="text" placeholder="${t("plant.note.ph")}" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--divider-color);border-radius:8px;background:var(--primary-background-color);color:var(--primary-text-color);font:inherit;min-height:44px"></textarea>
+      <div style="display:flex;gap:10px;align-items:flex-end">
+        <span><label>${t("zone.light.window")}</label>
+        <input name="window" id="lm-window" type="number" min="1" max="30" step="1" value="3" style="width:90px"></span>
+        <span style="flex:1"><label>${t("photo.note")}</label>
+        <input name="text" placeholder="${t("plant.note.ph")}"></span>
+      </div>
+      <p style="font-size:12px;color:var(--secondary-text-color);margin:8px 0">${t("zone.light.hint")}</p>
       <div class="dialog-actions">
         <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
         <button type="submit" class="btn"><ha-icon icon="mdi:content-save-outline"></ha-icon>${t("zone.light.save")}</button>
@@ -330,7 +339,7 @@ function lightMeterDialog(app, zone) {
         date: nowStamp(),
         text: (fd.get("text") || "").trim(),
         light_pct: measured.pct,
-        lux: measured.lux,
+        lux: measured.sensorLux ?? measured.lux,
         readings,
       };
       try {
@@ -352,11 +361,60 @@ function lightMeterDialog(app, zone) {
   canvas.height = 48;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   let stream = null;
+  let track = null;
   let timer = null;
+  const samples = []; // {t, pct, lux}
+  const median = (arr) => {
+    if (!arr.length) return null;
+    const s = [...arr].sort((a, b) => a - b);
+    return s[Math.floor(s.length / 2)];
+  };
+  const fmtLux = (lx) => (lx >= 10000 ? `${Math.round(lx / 1000)} klx` : lx >= 1000 ? `${(lx / 1000).toFixed(1)} klx` : `${Math.round(lx)} lx`);
+  // ręczna ekspozycja (Android/Chrome): auto-zakres czasu naświetlania
+  const exp = { manual: false, timeUnits: null, min: null, max: null, iso: 100, cooldown: 0 };
+  const setupManual = async () => {
+    const caps = track.getCapabilities?.() || {};
+    if (!caps.exposureTime || !(caps.exposureMode || []).includes("manual")) return;
+    exp.min = caps.exposureTime.min;
+    exp.max = caps.exposureTime.max;
+    exp.timeUnits = Math.min(Math.max(50, exp.min), exp.max); // start: krótko (jasno na dworze)
+    const adv = { exposureMode: "manual", exposureTime: exp.timeUnits };
+    if (caps.iso) {
+      exp.iso = caps.iso.min;
+      adv.iso = exp.iso;
+    }
+    try {
+      await track.applyConstraints({ advanced: [adv] });
+      exp.manual = true;
+      measured.manual = true;
+    } catch (e) {
+      exp.manual = false; // zostaje tryb względny
+    }
+  };
+  const retune = async (avg) => {
+    // trzymaj kadr w środku zakresu; poza nim zmieniaj czas naświetlania ×2
+    if (exp.cooldown > 0) {
+      exp.cooldown--;
+      return false;
+    }
+    let next = exp.timeUnits;
+    if (avg > 215 && exp.timeUnits > exp.min) next = Math.max(exp.min, exp.timeUnits / 2);
+    else if (avg < 35 && exp.timeUnits < exp.max) next = Math.min(exp.max, exp.timeUnits * 2);
+    if (next === exp.timeUnits) return false;
+    exp.timeUnits = next;
+    exp.cooldown = 3; // daj kamerze czas na zastosowanie
+    try {
+      await track.applyConstraints({ advanced: [{ exposureTime: next }] });
+    } catch (e) {}
+    return true;
+  };
   (async () => {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
       video.srcObject = stream;
+      track = stream.getVideoTracks()[0];
+      await setupManual();
+      dlg.querySelector("#lm-mode").textContent = t(exp.manual ? "zone.light.mode.lux" : "zone.light.mode.rel");
     } catch (e) {
       const err = dlg.querySelector("#lm-err");
       if (err) {
@@ -365,34 +423,71 @@ function lightMeterDialog(app, zone) {
       }
       return;
     }
-    timer = setInterval(() => {
+    timer = setInterval(async () => {
       const val = dlg.querySelector("#lm-val");
       if (!video.videoWidth || !val) return;
       ctx.drawImage(video, 0, 0, 64, 48);
       const d = ctx.getImageData(0, 0, 64, 48).data;
       let sum = 0;
-      for (let i = 0; i < d.length; i += 4) sum += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-      measured.pct = Math.round((sum / (d.length / 4) / 255) * 100);
-      val.textContent = `${measured.pct}%${measured.lux != null ? ` · ${measured.lux} lx` : ""}`;
+      let clipped = 0;
+      const n = d.length / 4;
+      for (let i = 0; i < d.length; i += 4) {
+        const y = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        sum += y;
+        if (y >= 250) clipped++;
+      }
+      const avg = sum / n;
+      if (exp.manual && (await retune(avg))) return; // po zmianie ekspozycji pomiń klatkę
+      const now = Date.now();
+      let pct;
+      let lux = null;
+      if (exp.manual) {
+        // luksy z fotometrii: jasność / (czas naświetlania × ISO); stała dobrana zgrubnie
+        const tSec = exp.timeUnits * 1e-4; // Chrome: jednostka 100 µs
+        lux = (15 * (avg / 255)) / (tSec * (exp.iso / 100));
+        pct = Math.round(Math.min(100, (Math.log10(Math.max(lux, 1)) / 5) * 100)); // 100 klx → 100%
+      } else {
+        // tryb względny: średnia + korekta o prześwietlone piksele (słońce w kadrze)
+        pct = Math.round(Math.min(100, (avg / 255) * 100 + (clipped / n) * 120));
+      }
+      samples.push({ t: now, pct, lux });
+      const win = (parseInt(dlg.querySelector("#lm-window").value, 10) || 3) * 1000;
+      while (samples.length && samples[0].t < now - win) samples.shift();
+      measured.pct = median(samples.map((s) => s.pct));
+      measured.lux = exp.manual ? Math.round(median(samples.map((s) => s.lux))) : null;
+      const shown = measured.sensorLux ?? measured.lux;
+      val.textContent = shown != null ? fmtLux(shown) : `${measured.pct}%`;
+      const pcts = samples.map((s) => s.pct);
+      dlg.querySelector("#lm-range").textContent =
+        pcts.length > 1 ? `${t("zone.light.window.short")}: ${Math.min(...pcts)}–${Math.max(...pcts)}%` : "";
+      const luxRef = shown;
       const cat =
-        measured.pct >= 75
-          ? "zone.light.full"
-          : measured.pct >= 45
-            ? "zone.light.bright"
-            : measured.pct >= 18
-              ? "zone.light.partial"
-              : "zone.light.shade";
-      dlg.querySelector("#lm-cat").textContent = t(cat);
+        luxRef != null
+          ? luxRef >= 30000
+            ? "zone.light.full"
+            : luxRef >= 8000
+              ? "zone.light.bright"
+              : luxRef >= 1500
+                ? "zone.light.partial"
+                : "zone.light.shade"
+          : measured.pct >= 75
+            ? "zone.light.full"
+            : measured.pct >= 45
+              ? "zone.light.bright"
+              : measured.pct >= 18
+                ? "zone.light.partial"
+                : "zone.light.shade";
+      dlg.querySelector("#lm-cat").textContent = `${t(cat)}${measured.pct != null ? ` · ${measured.pct}%` : ""}`;
     }, 400);
   })();
   if ("AmbientLightSensor" in window) {
     try {
       const sensor = new window.AmbientLightSensor();
-      sensor.addEventListener("reading", () => (measured.lux = Math.round(sensor.illuminance)));
+      sensor.addEventListener("reading", () => (measured.sensorLux = Math.round(sensor.illuminance)));
       sensor.start();
       dlg.addEventListener("close", () => sensor.stop(), { once: true });
     } catch (e) {
-      // brak wsparcia/uprawnień — zostaje sam pomiar z kamery
+      // brak wsparcia/uprawnień — zostaje pomiar z kamery
     }
   }
   dlg.addEventListener(
