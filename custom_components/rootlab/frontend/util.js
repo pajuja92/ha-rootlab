@@ -16,24 +16,32 @@ export const nowStamp = () => new Date().toLocaleString("sv-SE").slice(0, 16);
 /* Emoji → kolorowe SVG (OpenMoji, CC BY-SA 4.0). W danych zostaje emoji —
    render podmienia na obrazek, a bez internetu onerror wraca do znaku emoji. */
 const OPENMOJI_CDN = "https://cdn.jsdelivr.net/npm/openmoji@15.1.0/color/svg";
+/* Własne ikony (rośliny bez emoji w Unicode, np. malina): wartość "rl:nazwa"
+   → plik frontend/icons/nazwa.svg (ma width/height, więc działa też w <image>). */
+const rlIconUrl = (v) => new URL(`./icons/${v.slice(3)}.svg`, import.meta.url).href;
 const emojiHex = (emoji) => {
   const codes = [...String(emoji || "").trim()].map((c) => c.codePointAt(0)).filter((c) => c !== 0xfe0f);
   return codes.length ? codes.map((c) => c.toString(16).toUpperCase()).join("-") : null;
 };
 export const emojiSvgUrl = (emoji) => {
-  const hex = emojiHex(emoji);
+  const v = String(emoji || "").trim();
+  if (v.startsWith("rl:")) return rlIconUrl(v);
+  const hex = emojiHex(v);
   return hex ? `${OPENMOJI_CDN}/${hex}.svg` : null;
 };
 /* PNG do SVG-owego <image> na mapie — pliki SVG OpenMoji nie mają width/height
    i Chrome nie renderuje ich wewnątrz <image>. */
 export const emojiPngUrl = (emoji) => {
-  const hex = emojiHex(emoji);
+  const v = String(emoji || "").trim();
+  if (v.startsWith("rl:")) return rlIconUrl(v);
+  const hex = emojiHex(v);
   return hex ? `https://cdn.jsdelivr.net/gh/hfg-gmuend/openmoji@15.1.0/color/72x72/${hex}.png` : null;
 };
 export const emo = (emoji, size = 18) => {
-  const url = emojiSvgUrl(emoji);
+  const v = String(emoji || "").trim();
+  const url = emojiSvgUrl(v);
   return url
-    ? `<img class="emo" src="${url}" alt="${esc(String(emoji).trim())}" width="${size}" height="${size}" loading="lazy" onerror="this.outerHTML=this.alt">`
+    ? `<img class="emo" src="${url}" alt="${esc(v.startsWith("rl:") ? "🌱" : v)}" width="${size}" height="${size}" loading="lazy" onerror="this.outerHTML=this.alt">`
     : "";
 };
 
