@@ -95,8 +95,18 @@ export function wireCombos(root) {
               .join("")
           : `<div class="combo-empty">${t("combo.noresults")}</div>`);
       list.hidden = false;
-      // dialog ma overflow:auto — bez tego rozwinięta lista bywa ucięta dołem okna
-      list.scrollIntoView({ block: "nearest" });
+      // dialog przycina swój overflow — lista w position:fixed wystaje poza okno
+      // dialogu (na backdrop); gdy brak miejsca u dołu, otwiera się nad polem
+      const r = input.getBoundingClientRect();
+      list.style.position = "fixed";
+      list.style.left = `${r.left}px`;
+      list.style.width = `${r.width}px`;
+      list.style.right = "auto";
+      const h = Math.min(list.scrollHeight, 260);
+      list.style.top =
+        r.bottom + h + 4 > window.innerHeight && r.top - h - 4 > 0
+          ? `${r.top - h - 4}px`
+          : `${r.bottom + 2}px`;
     };
 
     // combo z ikonami: podgląd wybranej ikony po lewej stronie pola

@@ -231,7 +231,12 @@ class RootlabPanel extends HTMLElement {
     );
     const dlg = this.shadowRoot.getElementById("form-dialog");
     dlg.addEventListener("click", (ev) => {
-      if (ev.target === dlg) dlg.close(); // klik w tło zamyka
+      // klik w tło zamyka; target=dlg łapie też padding okna, więc sprawdzamy współrzędne
+      if (ev.target !== dlg) return;
+      const r = dlg.getBoundingClientRect();
+      const inside =
+        ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+      if (!inside) dlg.close();
     });
     dlg.addEventListener("close", () => {
       // zdarzenie close jest asynchroniczne — jeśli w międzyczasie otwarto kolejny
