@@ -1,7 +1,7 @@
 import { t } from "../i18n.js";
 import { combo, emo, esc, nowStamp, resizeImage, sensorState } from "../util.js";
 import { insideRect, isShaded, lineElements, shadowCapsule, solarPosition } from "../shade.js";
-import { SENSOR_FIELDS } from "./plants.js";
+import { SENSOR_FIELDS, plantIcon } from "./plants.js";
 
 /* Zakładka „Diagnoza AI" — rozmowy diagnostyczne per roślina.
    Rozmowa startuje z dialogu kryzysowego („Doprecyzuj w czacie") albo od zera. */
@@ -22,7 +22,7 @@ function chatRow(app, c) {
   const plant = app.data.plants.find((p) => p.id === c.plant_id);
   const last = (c.messages || [])[c.messages.length - 1];
   return `<div class="card" style="margin-bottom:8px;display:flex;align-items:center;gap:10px;cursor:pointer" data-action="chat-open" data-id="${c.id}">
-    <span style="flex:none">${emo(plant?.emoji || "💬", 22)}</span>
+    <span style="flex:none">${plant ? plantIcon(plant, 22) : emo("💬", 22)}</span>
     <div style="min-width:0;flex:1">
       <b>${esc(c.title || t("chat.untitled"))}</b>
       <div style="font-size:12px;color:var(--secondary-text-color);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
@@ -199,7 +199,7 @@ function renderChat(app, chat) {
     : "";
   return `<div class="toolbar">
       <button class="btn ghost" data-action="chat-back"><ha-icon icon="mdi:arrow-left"></ha-icon>${t("chat.back")}</button>
-      ${plant ? `<button class="btn small ghost" data-action="plant-card" data-id="${plant.id}">${emo(plant.emoji || "🌱", 16)}${esc(plant.name)}</button>` : ""}
+      ${plant ? `<button class="btn small ghost" data-action="plant-card" data-id="${plant.id}">${plantIcon(plant, 16)}${esc(plant.name)}</button>` : ""}
       <span style="flex:1"></span>
       <button class="btn small ai" data-action="chat-tasks"><ha-icon icon="mdi:clipboard-plus-outline"></ha-icon>${t("chat.tasks")}</button>
       <button class="btn small ghost" data-action="chat-kn"><ha-icon icon="mdi:book-plus-outline"></ha-icon>${t("knowledge.save")}</button>

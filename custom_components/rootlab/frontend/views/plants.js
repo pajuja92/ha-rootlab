@@ -5,6 +5,12 @@ import { PLANT_PRESETS } from "../presets.js";
 import { openCrisis } from "../crisis.js";
 import { areaLabel, areaOptions, bind as growBind, dateInput, fdMMDD, growDialog, plantingPhase, render as growRender } from "./grow.js";
 
+/* Ikona rośliny: własny obrazek (miniatura base64) albo emoji→SVG. */
+export const plantIcon = (p, size = 18) =>
+  p?.icon
+    ? `<img class="emo" src="data:image/jpeg;base64,${p.icon}" width="${size}" height="${size}" style="border-radius:50%;object-fit:cover" alt="">`
+    : emo(p?.emoji || "🌱", size);
+
 export const SENSOR_FIELDS = [
   { key: "soil", labelKey: "plant.sensor.soil", icon: "mdi:water-percent" },
   { key: "temp", labelKey: "plant.sensor.temp", icon: "mdi:thermometer" },
@@ -125,7 +131,7 @@ export function openZoneCard(app, zoneId) {
           return `<span class="sensor-chip ${st.unavailable ? "unavailable" : ""}" style="padding:2px 8px;font-size:12px"><ha-icon icon="${f.icon}" style="--mdc-icon-size:14px"></ha-icon>${esc(st.text)}</span>`;
         })
         .join(" ");
-      return `<div class="note-row">${emo(p.emoji || "🌱", 20)}
+      return `<div class="note-row">${plantIcon(p, 20)}
         <span class="txt"><b>${esc(p.name)}</b>${p.species ? ` <small style="color:var(--secondary-text-color)">${esc(p.species)}</small>` : ""}<br>${sensors}</span>
         <button class="btn small ghost" data-action="plant-card" data-id="${p.id}">${t("plant.details")}</button></div>`;
     })
@@ -176,7 +182,7 @@ function plantCard(app, p) {
   });
   const phase = tilePhase(app, p.id);
   return `<div class="card plant" ${phase ? `style="border-top:4px solid ${PHASE_COLOR[phase]}"` : ""}>
-    <div class="header">${emo(p.emoji || "🌱", 24)}<h3>${esc(p.name)}</h3></div>
+    <div class="header">${plantIcon(p, 24)}<h3>${esc(p.name)}</h3></div>
     ${p.species ? `<div class="species">${esc(p.species)}</div>` : ""}
     ${
       sensors.length
@@ -242,6 +248,14 @@ function plantFormFields(app, draft) {
     <input name="species" maxlength="80" value="${esc(draft.species)}">
     <label>${t("zone.emoji")}</label>
     ${combo({ name: "emoji", value: draft.emoji || "", options: iconOptions() })}
+    <label>${t("plant.icon")}</label>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <span id="pf-icon-prev">${plantIcon(draft, 22)}</span>
+      <input type="file" id="pf-icon-file" accept="image/*" hidden>
+      <input type="hidden" name="icon" value="${esc(draft.icon || "")}">
+      <button type="button" class="btn small ghost" id="pf-icon-btn"><ha-icon icon="mdi:image-plus-outline"></ha-icon>${t("plant.icon.upload")}</button>
+      ${draft.icon ? `<button type="button" class="btn small plain" id="pf-icon-del">${t("delete")}</button>` : ""}
+    </div>
     <label>${t("plant.zone")}</label>
     ${combo({ name: "zone_id", value: draft.zone_id, options: zoneOpts })}
     <label>${t("plant.planting")}</label>
@@ -276,6 +290,7 @@ const plantFromForm = (fd) => ({
   name: fd.get("name").trim(),
   species: fd.get("species").trim(),
   emoji: fd.get("emoji").trim(),
+  icon: fd.get("icon") || null,
   zone_id: fd.get("zone_id") || null,
   planting: fd.get("planting") || null,
   sensors: Object.fromEntries(SENSOR_FIELDS.map((f) => [f.key, fd.get(`sensor_${f.key}`) || null])),
@@ -285,6 +300,7 @@ const draftFromDlg = (dlg) => ({
   name: dlg.querySelector('input[name="name"]').value,
   species: dlg.querySelector('input[name="species"]').value,
   emoji: dlg.querySelector('input[name="emoji"]').value,
+  icon: dlg.querySelector('input[name="icon"]').value,
   zone_id: dlg.querySelector('input[name="zone_id"]').value,
   planting: dlg.querySelector('input[name="planting"]').value,
   sensors: Object.fromEntries(
@@ -292,9 +308,34 @@ const draftFromDlg = (dlg) => ({
   ),
 });
 
+/* Wgrywanie własnego obrazka rośliny (miniatura 96 px w plant.icon). */
+function wireIconField(app, dlg) {
+  const file = dlg.querySelector("#pf-icon-file");
+  const hidden = dlg.querySelector('input[name="icon"]');
+  if (!file) return;
+  dlg.querySelector("#pf-icon-btn").addEventListener("click", () => file.click());
+  file.addEventListener("change", async (ev) => {
+    if (!ev.target.files[0]) return;
+    try {
+      const img = await resizeImage(ev.target.files[0], 96, app);
+      hidden.value = img.data;
+      dlg.querySelector("#pf-icon-prev").innerHTML =
+        `<img src="${img.preview}" width="22" height="22" style="border-radius:50%;object-fit:cover">`;
+    } catch (e) {
+      app.toast(`⚠ ${t("photo.unreadable")}`, true);
+    }
+    ev.target.value = "";
+  });
+  dlg.querySelector("#pf-icon-del")?.addEventListener("click", (ev) => {
+    hidden.value = "";
+    dlg.querySelector("#pf-icon-prev").innerHTML = emo("🌱", 22);
+    ev.target.closest("button").remove();
+  });
+}
+
 /* Dialog nowej rośliny (edycja istniejącej = tryb edycji karty rośliny). */
 export function plantDialog(app, draft = null) {
-  draft ??= { name: "", species: "", emoji: "", zone_id: "", planting: "", sensors: {} };
+  draft ??= { name: "", species: "", emoji: "", icon: "", zone_id: "", planting: "", sensors: {} };
   const presetOpts = PLANT_PRESETS.map((p, i) => ({
     value: String(i),
     label: p.name,
@@ -327,6 +368,7 @@ export function plantDialog(app, draft = null) {
   dlg.querySelector('input[name="zone_id"]').addEventListener("change", () => {
     plantDialog(app, draftFromDlg(dlg));
   });
+  wireIconField(app, dlg);
 }
 
 /* --- Karta rośliny: czujniki, notatki, zdjęcia, historia diagnoz, AI --- */
@@ -448,7 +490,7 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false, histEdi
     })
     .join("");
   const dlg = app.dialog(
-    `<h2>${emo(plant.emoji || "🌱", 26)} ${esc(plant.name)}</h2>
+    `<h2>${plantIcon(plant, 26)} ${esc(plant.name)}</h2>
     ${plant.species ? `<div class="species" style="margin:0 0 8px">${esc(plant.species)}</div>` : ""}
     ${infoChips ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${infoChips}</div>` : ""}
     ${sensors ? `<div class="sensors">${sensors}</div>` : ""}
@@ -636,6 +678,7 @@ function renderCardEdit(app, plant, photos, draft = null) {
     name: plant.name || "",
     species: plant.species || "",
     emoji: plant.emoji || "",
+    icon: plant.icon || "",
     zone_id: plant.zone_id || "",
     planting: plant.planting || "",
     sensors: { ...(plant.sensors || {}) },
@@ -644,7 +687,7 @@ function renderCardEdit(app, plant, photos, draft = null) {
   const active = linked.find((x) => !x.done?.finished) || linked[linked.length - 1] || null;
   const gyear = active?.year ?? new Date().getFullYear();
   const dlg = app.dialog(
-    `<h2>${emo(plant.emoji || "🌱", 26)} ${esc(plant.name)} — ${t("edit")}</h2>
+    `<h2>${plantIcon(plant, 26)} ${esc(plant.name)} — ${t("edit")}</h2>
     <form>
       ${plantFormFields(app, draft)}
       <div class="section-title">${t("tab.grow")}</div>
@@ -741,6 +784,7 @@ function renderCardEdit(app, plant, photos, draft = null) {
   dlg.querySelector('input[name="zone_id"]').addEventListener("change", () => {
     renderCardEdit(app, plant, photos, draftFromDlg(dlg));
   });
+  wireIconField(app, dlg);
   dlg.querySelectorAll("[data-mark]").forEach((el) =>
     el.addEventListener("click", async () => {
       const done = { ...(active.done || {}), [el.dataset.mark]: todayISO() };

@@ -1,7 +1,7 @@
 import { t } from "../i18n.js";
 import { combo, emo, esc, todayISO, wireCombos } from "../util.js";
 import { PLANT_PRESETS } from "../presets.js";
-import { openPlantCard } from "./plants.js"; // cykl plants↔grow bezpieczny: użycie dopiero w handlerze
+import { openPlantCard, plantIcon } from "./plants.js"; // cykl plants↔grow bezpieczny: użycie dopiero w handlerze
 
 /* Zakładka „Uprawy" — kalendarz upraw per miejsce z planu ogrodu, dziennik obsadzeń,
    siewy sukcesywne, ostrzeżenia płodozmianowe i plan sezonu z AI. */
@@ -76,7 +76,7 @@ function rowHtml(app, p) {
   const finished = Boolean(p.done?.finished);
   const doneBits = [p.done?.sow ? "🌱✓" : "", p.done?.transplant ? "🪴✓" : ""].filter(Boolean).join(" ");
   return `<div class="grow-row ${finished ? "done" : ""}" data-grow-edit="${p.id}">
-    <div class="grow-name">${emo(p.emoji || "🌱", 18)} <b>${esc(p.name)}</b> ${doneBits}
+    <div class="grow-name">${plantIcon(app.data.plants.find((x) => x.id === p.plant_id) || p, 18)} <b>${esc(p.name)}</b> ${doneBits}
       <br><small style="color:var(--secondary-text-color)">${esc(areaLabel(app, p.zone_id))} · ${t("grow.method." + (p.method || "direct"))}${finished ? ` · ${t("grow.finished")}` : ""}</small>
     </div>
     <div class="grow-track">
@@ -92,7 +92,7 @@ function rowHtml(app, p) {
 function plantRowHtml(app, p, year) {
   const zone = app.data.zones.find((z) => z.id === p.zone_id);
   return `<div class="grow-row" data-grow-plant="${p.id}">
-    <div class="grow-name">${emo(p.emoji || "🌱", 18)} <b>${esc(p.name)}</b>
+    <div class="grow-name">${plantIcon(p, 18)} <b>${esc(p.name)}</b>
       <br><small style="color:var(--secondary-text-color)">${zone ? `${emo(zone.emoji || "🪴", 14)} ${esc(zone.name)}` : t("zone.none")} · ${t("grow.nodates")}</small>
     </div>
     <div class="grow-track">${todayMark(year)}</div>

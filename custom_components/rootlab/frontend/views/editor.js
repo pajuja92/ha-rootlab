@@ -157,10 +157,10 @@ function circleNode(app, i, caps) {
     <circle r="${r}" fill="${KIND_FILL[i.kind] || KIND_FILL.shrub}" fill-opacity="0.8"/>
     ${assignable ? `<circle class="unassigned-ring" r="${r + 0.12}"/>` : ""}
     ${(() => {
-      if (!glyph) return "";
-      // emoji → SVG OpenMoji; rozmiar w metrach dopasowany do promienia
+      if (!glyph && !plant?.icon) return "";
+      // własny obrazek rośliny albo emoji → PNG OpenMoji; rozmiar w metrach wg promienia
       const gs = Math.max(Math.min(r * 1.2, 1.5), 0.45);
-      const url = emojiPngUrl(glyph);
+      const url = plant?.icon ? `data:image/jpeg;base64,${plant.icon}` : emojiPngUrl(glyph);
       return url ? `<image href="${url}" x="${-gs / 2}" y="${-gs / 2}" width="${gs}" height="${gs}"/>` : "";
     })()}
     <text class="hover-label" y="${r + 0.65}">${hoverText}</text>
