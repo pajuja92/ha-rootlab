@@ -1,8 +1,10 @@
 import { t } from "../i18n.js";
-import { combo, emo, entityOptions, esc, nowStamp, optionsWithSuggestions, resizeImage, sensorState, todayISO, uid, zoneSuggestions } from "../util.js";
+import { combo, emo, emojiPngUrl, entityOptions, esc, nowStamp, optionsWithSuggestions, resizeImage, sensorState, todayISO, uid, zoneSuggestions } from "../util.js";
 import { iconOptions } from "../icons.js";
 import { PLANT_PRESETS } from "../presets.js";
 import { openCrisis } from "../crisis.js";
+import { startChat } from "./chat.js"; // cykl bezpieczny: użycie w handlerze
+import { lineElements } from "../shade.js";
 import { areaLabel, areaOptions, bind as growBind, dateInput, fdMMDD, growDialog, plantingPhase, render as growRender } from "./grow.js";
 
 /* Ikona rośliny: własny obrazek (miniatura base64) albo emoji→SVG. */
@@ -57,7 +59,8 @@ export function render(app) {
       <div class="section-title">${emo(g.zone.emoji || "🪴", 20)}${esc(g.zone.name)}
         ${
           g.zone.id
-            ? `<button class="icon-btn" data-action="edit-zone" data-id="${g.zone.id}" title="${t("edit")}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
+            ? `<button class="icon-btn" data-action="zone-card" data-id="${g.zone.id}" title="${t("plant.details")}"><ha-icon icon="mdi:card-account-details-outline"></ha-icon></button>
+        <button class="icon-btn" data-action="edit-zone" data-id="${g.zone.id}" title="${t("edit")}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
         <button class="icon-btn" data-action="delete-zone" data-id="${g.zone.id}" title="${t("delete")}"><ha-icon icon="mdi:trash-can-outline"></ha-icon></button>`
             : ""
         }
@@ -114,7 +117,42 @@ export function bind(app, root) {
   );
 }
 
-/* Karta strefy (podgląd bez edycji): statystyki, rośliny, zadania. */
+/* Wycinek planu ogrodu ze strefą: prostokąty + rośliny/nasadzenia w środku. */
+function zoneMiniMap(app, zone) {
+  const items = app.data.layout?.items || [];
+  const rects = items.filter((i) => "w" in i && i.zone_id === zone.id);
+  if (!rects.length) return "";
+  const pad = 0.8;
+  const minX = Math.min(...rects.map((r) => r.x)) - pad;
+  const minY = Math.min(...rects.map((r) => r.y)) - pad;
+  const maxX = Math.max(...rects.map((r) => r.x + r.w)) + pad;
+  const maxY = Math.max(...rects.map((r) => r.y + r.h)) + pad;
+  const inView = (x, y) => x >= minX && x <= maxX && y >= minY && y <= maxY;
+  const circles = items.filter(
+    (i) => !("w" in i) && !Array.isArray(i.path) && i.kind !== "irrigation" && inView(i.x, i.y)
+  );
+  const lineEls = items
+    .filter((i) => i.kind === "row" || i.kind === "hedge")
+    .flatMap((i) => lineElements(i))
+    .filter((e) => inView(e.x, e.y));
+  const nodes = [...circles, ...lineEls]
+    .map((c) => {
+      const r = Math.max((c.diameter_m || 0.5) / 2, 0.15);
+      const plant = c.plant_id ? app.data.plants.find((p) => p.id === c.plant_id) : null;
+      const href = plant?.icon
+        ? `data:image/jpeg;base64,${plant.icon}`
+        : emojiPngUrl(plant?.emoji || c.emoji || "🌱");
+      const gs = Math.max(Math.min(r * 1.2, 1.4), 0.4);
+      return `<g transform="translate(${c.x} ${c.y})"><circle r="${r}" fill="var(--rl-green)" fill-opacity="0.35"/>${href ? `<image href="${href}" x="${-gs / 2}" y="${-gs / 2}" width="${gs}" height="${gs}"/>` : ""}</g>`;
+    })
+    .join("");
+  return `<svg viewBox="${minX} ${minY} ${maxX - minX} ${maxY - minY}" style="width:100%;max-height:220px;background:color-mix(in srgb, var(--rl-green) 6%, transparent);border-radius:8px;display:block;margin-bottom:8px">
+    ${rects.map((r) => `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}" rx="0.2" fill="none" stroke="var(--rl-soil)" stroke-width="0.08"/>`).join("")}
+    ${nodes}
+  </svg>`;
+}
+
+/* Karta strefy: diagnoza AI, mini-plan, rośliny, uprawy, notatki + pomiary światła. */
 export function openZoneCard(app, zoneId) {
   const zone = app.data.zones.find((z) => z.id === zoneId);
   if (!zone) return;
@@ -123,6 +161,9 @@ export function openZoneCard(app, zoneId) {
   const zoneTasks = (app.data.tasks || []).filter(
     (task) => !task.done && task.plant_id && plantIds.has(task.plant_id)
   );
+  const year = new Date().getFullYear();
+  const zonePlantings = (app.data.plantings || []).filter((p) => p.zone_id === zone.id && p.year === year);
+  const notes = [...(zone.notes || [])].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const plantRows = zonePlants
     .map((p) => {
       const sensors = SENSOR_FIELDS.filter((f) => p.sensors?.[f.key])
@@ -136,14 +177,55 @@ export function openZoneCard(app, zoneId) {
         <button class="btn small ghost" data-action="plant-card" data-id="${p.id}">${t("plant.details")}</button></div>`;
     })
     .join("");
-  app.dialog(
+  const noteRows = notes
+    .map((n) => {
+      const light =
+        n.light_pct != null
+          ? `<span class="chip">💡 ${n.light_pct}%${n.lux ? ` · ${n.lux} lx` : ""}</span> `
+          : "";
+      const reads = Object.entries(n.readings || {})
+        .map(([k, v]) => `<span class="sensor-chip" style="padding:2px 8px;font-size:11px">${esc(k)}: ${esc(v)}</span>`)
+        .join(" ");
+      return `<div class="history-item" style="display:flex;gap:10px;align-items:flex-start">
+        <ha-icon icon="${n.light_pct != null ? "mdi:white-balance-sunny" : "mdi:note-text-outline"}" style="--mdc-icon-size:18px;color:var(--secondary-text-color);flex:none;margin-top:2px"></ha-icon>
+        <div style="min-width:0;flex:1"><span style="color:var(--secondary-text-color);font-size:12px">${esc(n.date || "")}</span><br>
+          ${light}${esc(n.text || "")}${reads ? `<br>${reads}` : ""}</div>
+        <button class="icon-btn" data-zn-del="${n.id}" title="${t("delete")}"><ha-icon icon="mdi:trash-can-outline" style="--mdc-icon-size:16px"></ha-icon></button>
+      </div>`;
+    })
+    .join("");
+  const dlg = app.dialog(
     `<h2>${emo(zone.emoji || "🪴", 26)} ${esc(zone.name)}</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      ${zone.kind ? `<span class="chip">${t("editor.palette." + zone.kind)}</span>` : ""}
+      ${zone.planting ? `<span class="chip">${t("planting." + zone.planting)}</span>` : ""}
       <span class="chip">${zonePlants.length} ${zonePlants.length === 1 ? t("zone.plants.one") : t("zone.plants.many")}</span>
       <span class="chip ${zoneTasks.length ? "harvest" : ""}">${zoneTasks.length} ⏳</span>
     </div>
+    <div class="actions" style="justify-content:flex-start">
+      <button type="button" class="btn small ai" id="zc-diag"><ha-icon icon="mdi:stethoscope"></ha-icon>${t("zone.diagnose")}</button>
+      <button type="button" class="btn small ghost" id="zc-light"><ha-icon icon="mdi:white-balance-sunny"></ha-icon>${t("zone.light")}</button>
+      <button type="button" class="btn small ghost" data-action="edit-zone" data-id="${zone.id}"><ha-icon icon="mdi:pencil-outline"></ha-icon>${t("edit")}</button>
+    </div>
+    ${zoneMiniMap(app, zone)}
     <div class="section-title">${t("zonecard.plants")}</div>
     ${plantRows || `<p style="font-size:14px;color:var(--secondary-text-color)">${t("zonecard.empty")}</p>`}
+    ${
+      zonePlantings.length
+        ? `<div class="section-title">${t("zone.plantings")}</div>` +
+          zonePlantings
+            .map((p) => `<div class="note-row">${emo(p.emoji || "🌱", 18)}<span class="txt">${esc(p.name)}</span></div>`)
+            .join("")
+        : ""
+    }
+    <div class="section-title">${t("zone.notes")}</div>
+    <div class="mic-wrap">
+      <textarea id="zc-note" placeholder="${t("plant.note.ph")}" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--divider-color);border-radius:8px;background:var(--primary-background-color);color:var(--primary-text-color);font:inherit;min-height:44px"></textarea>
+    </div>
+    <div class="actions" style="justify-content:flex-start">
+      <button type="button" class="btn small ghost" id="zc-note-add"><ha-icon icon="mdi:plus"></ha-icon>${t("plant.note.add")}</button>
+    </div>
+    ${noteRows || `<div class="history-item">${t("plant.history.empty")}</div>`}
     <div class="section-title">${t("zonecard.tasks")}</div>
     ${
       zoneTasks.length
@@ -160,6 +242,166 @@ export function openZoneCard(app, zoneId) {
     <div class="dialog-actions"><button type="button" class="btn plain" data-cancel>${t("close")}</button></div>`,
     () => {},
     { wide: true }
+  );
+  import("../stt.js").then((stt) => stt.attachMic(app, dlg.querySelector("#zc-note")));
+  dlg.querySelector("#zc-diag").addEventListener("click", async () => {
+    dlg.close();
+    const stamp = nowStamp();
+    try {
+      await startChat(app, {
+        id: null,
+        plant_id: null,
+        zone_id: zone.id,
+        title: `${t("zone.diagnose")}: ${zone.name}`,
+        created: stamp,
+        updated: stamp,
+        messages: [],
+      });
+    } catch (e) {
+      app.toast(`⚠ ${e.message || e}`, true);
+      return;
+    }
+    app.render();
+  });
+  dlg.querySelector("#zc-light").addEventListener("click", () => lightMeterDialog(app, zone));
+  const saveNotes = async (list) => {
+    try {
+      app.data = await app.ws("item/save", { kind: "zones", item: { id: zone.id, notes: list } });
+    } catch (e) {
+      app.toast(`⚠ ${e.message || e}`, true);
+      return false;
+    }
+    return true;
+  };
+  dlg.querySelector("#zc-note-add").addEventListener("click", async () => {
+    const text = dlg.querySelector("#zc-note").value.trim();
+    if (!text) return;
+    if (await saveNotes([...(zone.notes || []), { id: uid(), date: nowStamp(), text }])) {
+      app.toast(t("toast.added"));
+      openZoneCard(app, zone.id);
+    }
+  });
+  dlg.querySelectorAll("[data-zn-del]").forEach((el) =>
+    el.addEventListener("click", async () => {
+      if (!confirm(t("hist.delete.confirm"))) return;
+      if (await saveNotes((zone.notes || []).filter((n) => n.id !== el.dataset.znDel))) {
+        app.toast(t("toast.deleted"));
+        openZoneCard(app, zone.id);
+      }
+    })
+  );
+}
+
+/* Światłomierz z kamery: średnia luminancja podglądu (orientacyjnie, %) +
+   lux z AmbientLightSensor, gdy przeglądarka go udostępnia. */
+function lightMeterDialog(app, zone) {
+  const measured = { pct: null, lux: null };
+  const dlg = app.dialog(
+    `<h2>💡 ${t("zone.light")}</h2>
+    <div id="lm-err" class="warn-hint" style="display:none;margin-bottom:8px"></div>
+    <video id="lm-video" autoplay playsinline muted style="width:100%;max-height:240px;object-fit:cover;border-radius:8px;background:#000"></video>
+    <div style="text-align:center;margin:10px 0">
+      <div id="lm-val" style="font-size:34px;font-weight:600">—</div>
+      <div id="lm-cat" style="color:var(--secondary-text-color)"></div>
+    </div>
+    <p style="font-size:12px;color:var(--secondary-text-color);margin:0 0 8px">${t("zone.light.hint")}</p>
+    <form>
+      <label>${t("photo.note")}</label>
+      <textarea name="text" placeholder="${t("plant.note.ph")}" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--divider-color);border-radius:8px;background:var(--primary-background-color);color:var(--primary-text-color);font:inherit;min-height:44px"></textarea>
+      <div class="dialog-actions">
+        <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
+        <button type="submit" class="btn"><ha-icon icon="mdi:content-save-outline"></ha-icon>${t("zone.light.save")}</button>
+      </div>
+    </form>`,
+    async (fd) => {
+      // odczyty czujników roślin strefy w chwili pomiaru
+      const readings = {};
+      app.data.plants
+        .filter((p) => p.zone_id === zone.id)
+        .forEach((p) =>
+          SENSOR_FIELDS.forEach((f) => {
+            if (!p.sensors?.[f.key]) return;
+            const st = sensorState(app.hass, p.sensors[f.key]);
+            if (!st.unavailable) readings[`${p.name} · ${t(f.labelKey)}`] = st.text;
+          })
+        );
+      const note = {
+        id: uid(),
+        date: nowStamp(),
+        text: (fd.get("text") || "").trim(),
+        light_pct: measured.pct,
+        lux: measured.lux,
+        readings,
+      };
+      try {
+        app.data = await app.ws("item/save", {
+          kind: "zones",
+          item: { id: zone.id, notes: [...(zone.notes || []), note] },
+        });
+      } catch (e) {
+        app.toast(`⚠ ${e.message || e}`, true);
+        return;
+      }
+      app.toast(t("toast.added"));
+      openZoneCard(app, zone.id);
+    }
+  );
+  const video = dlg.querySelector("#lm-video");
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 48;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  let stream = null;
+  let timer = null;
+  (async () => {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+      video.srcObject = stream;
+    } catch (e) {
+      const err = dlg.querySelector("#lm-err");
+      if (err) {
+        err.style.display = "";
+        err.textContent = t("zone.light.nocam");
+      }
+      return;
+    }
+    timer = setInterval(() => {
+      const val = dlg.querySelector("#lm-val");
+      if (!video.videoWidth || !val) return;
+      ctx.drawImage(video, 0, 0, 64, 48);
+      const d = ctx.getImageData(0, 0, 64, 48).data;
+      let sum = 0;
+      for (let i = 0; i < d.length; i += 4) sum += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+      measured.pct = Math.round((sum / (d.length / 4) / 255) * 100);
+      val.textContent = `${measured.pct}%${measured.lux != null ? ` · ${measured.lux} lx` : ""}`;
+      const cat =
+        measured.pct >= 75
+          ? "zone.light.full"
+          : measured.pct >= 45
+            ? "zone.light.bright"
+            : measured.pct >= 18
+              ? "zone.light.partial"
+              : "zone.light.shade";
+      dlg.querySelector("#lm-cat").textContent = t(cat);
+    }, 400);
+  })();
+  if ("AmbientLightSensor" in window) {
+    try {
+      const sensor = new window.AmbientLightSensor();
+      sensor.addEventListener("reading", () => (measured.lux = Math.round(sensor.illuminance)));
+      sensor.start();
+      dlg.addEventListener("close", () => sensor.stop(), { once: true });
+    } catch (e) {
+      // brak wsparcia/uprawnień — zostaje sam pomiar z kamery
+    }
+  }
+  dlg.addEventListener(
+    "close",
+    () => {
+      clearInterval(timer);
+      stream?.getTracks().forEach((tr) => tr.stop());
+    },
+    { once: true }
   );
 }
 

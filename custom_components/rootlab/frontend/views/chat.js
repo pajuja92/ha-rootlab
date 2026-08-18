@@ -20,13 +20,14 @@ export function render(app) {
 
 function chatRow(app, c) {
   const plant = app.data.plants.find((p) => p.id === c.plant_id);
+  const czone = !plant && c.zone_id ? app.data.zones.find((z) => z.id === c.zone_id) : null;
   const last = (c.messages || [])[c.messages.length - 1];
   return `<div class="card" style="margin-bottom:8px;display:flex;align-items:center;gap:10px;cursor:pointer" data-action="chat-open" data-id="${c.id}">
-    <span style="flex:none">${plant ? plantIcon(plant, 22) : emo("💬", 22)}</span>
+    <span style="flex:none">${plant ? plantIcon(plant, 22) : czone ? emo(czone.emoji || "🪴", 22) : emo("💬", 22)}</span>
     <div style="min-width:0;flex:1">
       <b>${esc(c.title || t("chat.untitled"))}</b>
       <div style="font-size:12px;color:var(--secondary-text-color);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-        ${plant ? esc(plant.name) + " · " : ""}${esc(c.updated || "")}${last ? " · " + esc(last.content.slice(0, 80)) : ""}
+        ${plant ? esc(plant.name) + " · " : czone ? esc(czone.name) + " · " : ""}${esc(c.updated || "")}${last ? " · " + esc(last.content.slice(0, 80)) : ""}
       </div>
     </div>
     <button class="icon-btn" data-action="chat-del" data-id="${c.id}" title="${t("delete")}"><ha-icon icon="mdi:trash-can-outline"></ha-icon></button>
@@ -49,7 +50,8 @@ function renderList(app, chats) {
   const keyOf = (c) => {
     const plant = app.data.plants.find((p) => p.id === c.plant_id);
     if (group === "plant") return plant ? plant.id : null;
-    return plant?.zone_id && app.data.zones.some((z) => z.id === plant.zone_id) ? plant.zone_id : null;
+    const zid = plant?.zone_id || c.zone_id;
+    return zid && app.data.zones.some((z) => z.id === zid) ? zid : null;
   };
   const labelOf = (key) => {
     if (key === null) return group === "plant" ? `💬 ${t("chat.noplant")}` : `🏷️ ${t("zone.none")}`;
@@ -188,9 +190,60 @@ export function plantInfoText(app, plant) {
     .join("\n");
 }
 
+/* Fakty o strefie — panel w czacie strefy i kontekst dla AI. */
+function zoneFactLines(app, zone) {
+  const head = [];
+  if (zone.kind) head.push(`${t("zone.kind")}: ${t("editor.palette." + zone.kind)}`);
+  if (zone.planting) head.push(`${t("zone.planting")}: ${t("planting." + zone.planting)}`);
+  if (zone.kind === "greenhouse")
+    head.push(
+      `${t("editor.palette.greenhouse")}: +${zone.gh_temp_delta ?? 5}°C, ~${zone.gh_light_pct ?? 80}% ${t("zone.light.word")}${zone.gh_heated ? `, ${t("zone.gh.heated").toLowerCase()}` : ""}`
+    );
+  const rect = (app.data.layout?.items || []).find((i) => "w" in i && i.zone_id === zone.id);
+  if (rect) head.push(`${t("chat.info.plan")}: ${rect.w} × ${rect.h} m`);
+  const plants = app.data.plants.filter((p) => p.zone_id === zone.id);
+  const plantLines = plants.map((p) => {
+    const reads = SENSOR_FIELDS.filter((f) => p.sensors?.[f.key]).map(
+      (f) => `${t(f.labelKey)}: ${sensorState(app.hass, p.sensors[f.key]).text}`
+    );
+    return `${p.name}${p.species ? ` (${p.species})` : ""}${reads.length ? ` — ${reads.join(", ")}` : ""}`;
+  });
+  const noteLines = (zone.notes || [])
+    .slice(-3)
+    .reverse()
+    .map(
+      (n) =>
+        `${n.date} — ${[n.light_pct != null ? `${t("zone.light.short")} ~${n.light_pct}%${n.lux ? ` (${n.lux} lx)` : ""}` : "", n.text || ""].filter(Boolean).join("; ")}`
+    );
+  return { head, plantLines, noteLines };
+}
+
+function zoneInfo(app, zone) {
+  const f = zoneFactLines(app, zone);
+  return `<div class="section-title" style="margin-top:0">ℹ️ ${emo(zone.emoji || "🪴", 16)} ${esc(zone.name)}</div>
+    <div style="font-size:13px;display:grid;gap:6px">
+      ${f.head.map((l) => `<div>${esc(l)}</div>`).join("")}
+      <div><b>${t("zonecard.plants")}:</b></div>
+      ${f.plantLines.length ? f.plantLines.map((l) => `<div style="font-size:12px">· ${esc(l)}</div>`).join("") : `<div style="font-size:12px;color:var(--secondary-text-color)">${t("zonecard.empty")}</div>`}
+      ${f.noteLines.length ? `<div><b>${t("zone.notes")}:</b></div>` + f.noteLines.map((l) => `<div style="font-size:12px;color:var(--secondary-text-color)">· ${esc(l)}</div>`).join("") : ""}
+    </div>`;
+}
+
+export function zoneInfoText(app, zone) {
+  const f = zoneFactLines(app, zone);
+  return [
+    `Strefa: ${zone.name}`,
+    ...f.head,
+    `Rośliny w strefie (${f.plantLines.length}):`,
+    ...f.plantLines.map((l) => `- ${l}`),
+    ...(f.noteLines.length ? ["Ostatnie notatki/pomiary:", ...f.noteLines.map((l) => `- ${l}`)] : []),
+  ].join("\n");
+}
+
 function renderChat(app, chat) {
   const s = st(app);
   const plant = app.data.plants.find((p) => p.id === chat.plant_id);
+  const zone = !plant && chat.zone_id ? app.data.zones.find((z) => z.id === chat.zone_id) : null;
   const bubbles = (chat.messages || [])
     .map((m) => {
       const imgs = (m.images || [])
@@ -208,12 +261,13 @@ function renderChat(app, chat) {
   return `<div class="toolbar">
       <button class="btn ghost" data-action="chat-back"><ha-icon icon="mdi:arrow-left"></ha-icon>${t("chat.back")}</button>
       ${plant ? `<button class="btn small ghost" data-action="plant-card" data-id="${plant.id}">${plantIcon(plant, 16)}${esc(plant.name)}</button>` : ""}
+      ${zone ? `<button class="btn small ghost" data-action="zone-card" data-id="${zone.id}">${emo(zone.emoji || "🪴", 16)}${esc(zone.name)}</button>` : ""}
       <span style="flex:1"></span>
       <button class="btn small ai" data-action="chat-tasks"><ha-icon icon="mdi:clipboard-plus-outline"></ha-icon>${t("chat.tasks")}</button>
       <button class="btn small ghost" data-action="chat-kn"><ha-icon icon="mdi:book-plus-outline"></ha-icon>${t("knowledge.save")}</button>
     </div>
-    <div class="chat-layout ${plant ? "" : "solo"}">
-      ${plant ? `<div class="card chat-side">${plantInfo(app, plant)}</div>` : ""}
+    <div class="chat-layout ${plant || zone ? "" : "solo"}">
+      ${plant ? `<div class="card chat-side">${plantInfo(app, plant)}</div>` : zone ? `<div class="card chat-side">${zoneInfo(app, zone)}</div>` : ""}
       <div class="card">
         <h3 style="margin:0 0 8px">${esc(chat.title || t("chat.untitled"))}</h3>
         <div class="chat-msgs" id="chat-msgs">
@@ -296,13 +350,14 @@ async function send(app) {
   app.render();
   const chat = (app.data.chats || []).find((c) => c.id === s.openId);
   const plant = app.data.plants.find((p) => p.id === chat?.plant_id);
+  const zone = !plant && chat?.zone_id ? app.data.zones.find((z) => z.id === chat.zone_id) : null;
   const images = s.att.map((a) => a.data);
   try {
     const updated = await app.ws("chat/send", {
       chat_id: s.openId,
       message: text,
-      // AI dostaje dokładnie to, co pokazuje panel „Informacje o roślinie" (plan, cień, czujniki)
-      context: plant ? plantInfoText(app, plant) : null,
+      // AI dostaje dokładnie to, co pokazuje panel informacji (roślina albo strefa)
+      context: plant ? plantInfoText(app, plant) : zone ? zoneInfoText(app, zone) : null,
       images: images.length ? images : null,
     });
     s.full = updated;
@@ -356,23 +411,29 @@ export const actions = {
     app.deleteItem("chats", el.dataset.id);
   },
   "chat-new": (app) => {
-    const plantOpts = app.data.plants.map((p) => ({ value: p.id, label: p.name, secondary: p.species, icon: p.emoji || "🌱" }));
+    // rozmowa o roślinie albo o całej strefie
+    const opts = [
+      ...app.data.zones.map((z) => ({ value: `zone:${z.id}`, label: z.name, secondary: t("chat.zone.opt"), icon: z.emoji || "🪴" })),
+      ...app.data.plants.map((p) => ({ value: p.id, label: p.name, secondary: p.species, icon: p.emoji || "🌱" })),
+    ];
     app.dialog(
       `<h2>${t("chat.new")}</h2>
       <form>
-        <label>${t("crisis.plant")}</label>
-        ${combo({ name: "plant_id", options: plantOpts })}
+        <label>${t("chat.subject")}</label>
+        ${combo({ name: "subject", options: opts })}
         <div class="dialog-actions">
           <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
           <button type="submit" class="btn">${t("add")}</button>
         </div>
       </form>`,
       async (fd) => {
+        const v = fd.get("subject") || "";
         const stamp = nowStamp();
         try {
           await startChat(app, {
             id: null,
-            plant_id: fd.get("plant_id") || null,
+            plant_id: v && !v.startsWith("zone:") ? v : null,
+            zone_id: v.startsWith("zone:") ? v.slice(5) : null,
             title: "",
             created: stamp,
             updated: stamp,
