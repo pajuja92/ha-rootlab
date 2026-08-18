@@ -109,7 +109,6 @@ export function render(app) {
           <option value="compost" ${s.palette === "compost" ? "selected" : ""}>♻️ ${t("editor.palette.compost")}</option>
           <option value="fence" ${s.palette === "fence" ? "selected" : ""}>🪵 ${t("editor.palette.fence")}</option>
           <option value="hedge" ${s.palette === "hedge" ? "selected" : ""}>🌲 ${t("editor.palette.hedge")}</option>
-          <option value="row" ${s.palette === "row" ? "selected" : ""}>🥕 ${t("editor.palette.row")}</option>
         </optgroup>
         ${irrOpts ? `<optgroup label="${t("editor.group.irrigation")}">${irrOpts}</optgroup>` : ""}
         ${plantOpts ? `<optgroup label="${t("tab.plants")}">${plantOpts}</optgroup>` : ""}
@@ -295,6 +294,7 @@ function renderDetail(app, area) {
       <div class="spacer"></div>
       <select class="inline" data-bind="detail-palette">
         <option value="">${t("editor.palette.pick")}</option>
+        <option value="row" ${s.detailPalette === "row" ? "selected" : ""}>🥕 ${t("editor.palette.row")}</option>
         <optgroup label="${t("tab.plants")}">
           <option value="new">➕ ${t("plant.new")}</option>
           ${plantOpts}
@@ -313,8 +313,13 @@ function renderDetail(app, area) {
           <path d="M 1 0 L 0 0 0 1" fill="none" class="grid-line"/></pattern></defs>
         <rect x="${area.x - pad}" y="${area.y - pad}" width="${area.w + 2 * pad}" height="${area.h + 2 * pad}" fill="url(#rl-grid2)"/>
         <rect class="area ${area.kind}" x="${area.x}" y="${area.y}" width="${area.w}" height="${area.h}" rx="0.2"/>
+        ${layout.items
+          .filter((i) => isLine(i) && i.path?.some(([x, y]) => x >= area.x && x <= area.x + area.w && y >= area.y && y <= area.y + area.h))
+          .map((i) => lineNode(i))
+          .join("")}
         ${shadows}
         ${inside.map((i) => circleNode(app, i, caps)).join("")}
+        <polyline id="path-preview" style="display:none" />
       </svg>
     </div>
     <div class="editor-hint">${t("editor.detail.hint")}</div>`;
@@ -440,7 +445,7 @@ export function bind(app, root) {
 
   const sectionFor = (pal) => app.data.irrigation.sections.find((x) => x.id === pal.slice(4));
   const isPathPalette = () =>
-    ["fence", "hedge", "row"].includes(s.palette) ||
+    ["fence", "hedge"].includes(s.palette) ||
     (s.palette.startsWith("irr:") && sectionFor(s.palette)?.kind === "drip");
   const isSprayPalette = () => s.palette.startsWith("irr:") && sectionFor(s.palette)?.kind !== "drip";
 
@@ -601,10 +606,6 @@ export function bind(app, root) {
           };
           after = () => hedgeDialog(app, item);
           s.palette = "";
-        } else if (s.palette === "row") {
-          item = { id: uid(), kind: "row", label: t("editor.palette.row"), path: d.pts, zone_id: null, plants: [] };
-          after = () => rowDialog(app, item);
-          s.palette = "";
         } else {
           const section = sectionFor(s.palette);
           if (!section) {
@@ -672,6 +673,7 @@ function bindDetail(app, root) {
   let drag = null;
   const clampA = (v, min, max) => Math.round(Math.min(Math.max(v, min), max) * 10) / 10;
 
+  const inArea = (x, y) => [clampA(x, area.x, area.x + area.w), clampA(y, area.y, area.y + area.h)];
   svgEl.addEventListener("pointerdown", (ev) => {
     ev.preventDefault();
     const p = svgPoint(svgEl, ev);
@@ -679,25 +681,46 @@ function bindDetail(app, root) {
     svgEl.setPointerCapture(ev.pointerId);
     if (node) {
       const item = layout.items.find((i) => i.id === node.dataset.id);
-      drag = ev.shiftKey
-        ? { type: "move", item, node, dx: item.x - p.x, dy: item.y - p.y, moved: false }
-        : { type: "click", item };
+      if (item && isLine(item)) {
+        drag = { type: "line-click", item };
+      } else {
+        drag = ev.shiftKey
+          ? { type: "move", item, node, dx: item.x - p.x, dy: item.y - p.y, moved: false }
+          : { type: "click", item };
+      }
+    } else if (s.detailPalette === "row") {
+      drag = { type: "path", pts: [inArea(p.x, p.y)] };
     } else {
       drag = { type: "place", x: p.x, y: p.y };
     }
   });
   svgEl.addEventListener("pointermove", (ev) => {
-    if (!drag || drag.type !== "move") return;
+    if (!drag) return;
     const p = svgPoint(svgEl, ev);
-    drag.moved = true;
-    drag.item.x = clampA(p.x + drag.dx, area.x, area.x + area.w);
-    drag.item.y = clampA(p.y + drag.dy, area.y, area.y + area.h);
-    drag.node.setAttribute("transform", `translate(${drag.item.x} ${drag.item.y})`);
+    if (drag.type === "move") {
+      drag.moved = true;
+      drag.item.x = clampA(p.x + drag.dx, area.x, area.x + area.w);
+      drag.item.y = clampA(p.y + drag.dy, area.y, area.y + area.h);
+      drag.node.setAttribute("transform", `translate(${drag.item.x} ${drag.item.y})`);
+    } else if (drag.type === "path") {
+      const [nx, ny] = inArea(p.x, p.y);
+      const last = drag.pts[drag.pts.length - 1];
+      if (Math.hypot(nx - last[0], ny - last[1]) > 0.2) {
+        drag.pts.push([nx, ny]);
+        const pr = root.getElementById("path-preview");
+        pr.style.display = "";
+        pr.setAttribute("points", drag.pts.map((pt) => pt.join(",")).join(" "));
+      }
+    }
   });
   svgEl.addEventListener("pointerup", () => {
     if (!drag) return;
     const d = drag;
     drag = null;
+    if (d.type === "line-click") {
+      (d.item.kind === "hedge" ? hedgeDialog : rowDialog)(app, d.item);
+      return;
+    }
     if (d.type === "click") {
       circleDialog(app, d.item);
       return;
@@ -705,6 +728,21 @@ function bindDetail(app, root) {
     if (d.type === "move") {
       if (d.moved) saveLayout(app);
       else circleDialog(app, d.item);
+      return;
+    }
+    if (d.type === "path") {
+      if (d.pts.length >= 2) {
+        const item = {
+          id: uid(), kind: "row", label: t("editor.palette.row"), path: d.pts,
+          zone_id: area.zone_id || null, plants: [],
+        };
+        layout.items.push(item);
+        s.detailPalette = ""; // jednorazowe dodawanie
+        saveLayout(app, t("toast.added"));
+        rowDialog(app, item);
+      } else {
+        app.render();
+      }
       return;
     }
     if (!s.detailPalette) return;
