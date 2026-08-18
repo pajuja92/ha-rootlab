@@ -428,27 +428,42 @@ function lightMeterDialog(app, zone) {
       if (!video.videoWidth || !val) return;
       ctx.drawImage(video, 0, 0, 64, 48);
       const d = ctx.getImageData(0, 0, 64, 48).data;
+      const n = d.length / 4;
+      const ys = new Float32Array(n);
       let sum = 0;
       let clipped = 0;
-      const n = d.length / 4;
-      for (let i = 0; i < d.length; i += 4) {
+      for (let i = 0, j = 0; i < d.length; i += 4, j++) {
         const y = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        ys[j] = y;
         sum += y;
         if (y >= 250) clipped++;
       }
       const avg = sum / n;
+      const clipFrac = clipped / n;
       if (exp.manual && (await retune(avg))) return; // po zmianie ekspozycji pomiń klatkę
       const now = Date.now();
       let pct;
       let lux = null;
-      if (exp.manual) {
-        // luksy z fotometrii: jasność / (czas naświetlania × ISO); stała dobrana zgrubnie
-        const tSec = exp.timeUnits * 1e-4; // Chrome: jednostka 100 µs
-        lux = (15 * (avg / 255)) / (tSec * (exp.iso / 100));
+      // luksy z fotometrii: jasność / (czas naświetlania × ISO); stała dobrana zgrubnie.
+      // Działa też w trybie auto, jeśli kamera raportuje dobrane wartości ekspozycji.
+      const auto = !exp.manual ? track.getSettings?.() || {} : null;
+      const tUnits = exp.manual ? exp.timeUnits : auto.exposureTime;
+      if (tUnits) {
+        const tSec = tUnits * 1e-4; // Chrome: jednostka 100 µs
+        const iso = exp.manual ? exp.iso : auto.iso || 100;
+        lux = (15 * (avg / 255)) / (tSec * (iso / 100));
         pct = Math.round(Math.min(100, (Math.log10(Math.max(lux, 1)) / 5) * 100)); // 100 klx → 100%
+        if (!exp.manual && !exp.autoLuxSeen) {
+          exp.autoLuxSeen = true;
+          const mode = dlg.querySelector("#lm-mode");
+          if (mode) mode.textContent = t("zone.light.mode.autolux");
+        }
       } else {
-        // tryb względny: średnia + korekta o prześwietlone piksele (słońce w kadrze)
-        pct = Math.round(Math.min(100, (avg / 255) * 100 + (clipped / n) * 120));
+        // tryb względny: automatyka ekspozycji normalizuje kadr do „średnio szarego",
+        // więc silne źródło światła poznajemy po prześwietleniach i jasnych percentylach
+        ys.sort();
+        const p90 = ys[Math.floor(n * 0.9)] / 255;
+        pct = Math.round(100 * Math.min(1, 0.55 * (avg / 255) + 0.45 * p90 + Math.min(0.5, clipFrac * 3)));
       }
       samples.push({ t: now, pct, lux });
       const win = (parseInt(dlg.querySelector("#lm-window").value, 10) || 3) * 1000;
