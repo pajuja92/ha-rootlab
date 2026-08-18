@@ -1,5 +1,6 @@
 """Klient AI — wielu dostawców: Anthropic, endpointy zgodne z OpenAI, usługa ai_task z HA."""
 import json
+import logging
 import uuid
 from datetime import date
 
@@ -242,7 +243,13 @@ async def _complete(hass, prompt, schema=None, images=None, media_type=None, web
         return await _anthropic(hass, prompt, schema, images, media_type, web_search)
     if provider == "google" and web_search and not schema:
         # grounding w Google Search — warstwa OpenAI-compat go nie wystawia
-        return await _gemini_search(hass, prompt, images, media_type)
+        try:
+            return await _gemini_search(hass, prompt, images, media_type)
+        except RuntimeError as err:
+            # np. HTTP 429 — brak limitu na grounding; odpowiedz bez wyszukiwania
+            logging.getLogger(__name__).warning(
+                "Gemini grounding niedostępny (%s) — odpowiadam bez wyszukiwania", err
+            )
     if provider == "ha_ai_task":
         return await _ha_ai_task(hass, prompt, schema)
     return await _openai_compat(hass, provider, prompt, schema, images, media_type)
