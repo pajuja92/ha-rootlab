@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { esc, todayISO } from "../util.js";
+import { emo, esc, todayISO } from "../util.js";
 import { dueLabel, pendingTasks } from "./tasks.js";
 
 const num = (v) => (v == null || v === "" ? null : parseFloat(v));
@@ -107,7 +107,7 @@ function zonesSection(app) {
           const ids = new Set(zonePlants.map((p) => p.id));
           const open = (tasks || []).filter((task) => !task.done && ids.has(task.plant_id)).length;
           return `<div class="card" data-action="zone-card" data-id="${z.id}" style="cursor:pointer">
-            <div class="header"><span class="emoji">${esc(z.emoji || "🪴")}</span><h3>${esc(z.name)}</h3></div>
+            <div class="header">${emo(z.emoji || "🪴", 22)}<h3>${esc(z.name)}</h3></div>
             <div class="zone-stat"><span class="num">${zonePlants.length}</span><span class="lbl">${zonePlants.length === 1 ? t("zone.plants.one") : t("zone.plants.many")}</span>
               ${open ? `<span class="chip harvest" style="margin-left:auto">${open} ⏳</span>` : ""}</div>
           </div>`;

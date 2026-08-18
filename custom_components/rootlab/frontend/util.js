@@ -13,6 +13,20 @@ export const uid = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, 
 /* "YYYY-MM-DD HH:MM" w czasie lokalnym — wspólny stempel wpisów historii. */
 export const nowStamp = () => new Date().toLocaleString("sv-SE").slice(0, 16);
 
+/* Emoji → kolorowe SVG (OpenMoji, CC BY-SA 4.0). W danych zostaje emoji —
+   render podmienia na obrazek, a bez internetu onerror wraca do znaku emoji. */
+const OPENMOJI_CDN = "https://cdn.jsdelivr.net/npm/openmoji@15.1.0/color/svg";
+export const emojiSvgUrl = (emoji) => {
+  const codes = [...String(emoji || "").trim()].map((c) => c.codePointAt(0)).filter((c) => c !== 0xfe0f);
+  return codes.length ? `${OPENMOJI_CDN}/${codes.map((c) => c.toString(16).toUpperCase()).join("-")}.svg` : null;
+};
+export const emo = (emoji, size = 18) => {
+  const url = emojiSvgUrl(emoji);
+  return url
+    ? `<img class="emo" src="${url}" alt="${esc(String(emoji).trim())}" width="${size}" height="${size}" loading="lazy" onerror="this.outerHTML=this.alt">`
+    : "";
+};
+
 /* Opcje encji dla comboboxa: [{value, label, secondary}] */
 export const entityOptions = (hass, domains) =>
   Object.values(hass.states)
@@ -58,7 +72,7 @@ export function wireCombos(root) {
               .slice(0, 60)
               .map(
                 (o) => `<div class="combo-opt ${o.value === hidden.value ? "selected" : ""}" data-value="${esc(o.value)}">
-                  <span>${esc(o.label)}</span>${o.secondary ? `<small>${esc(o.secondary)}</small>` : ""}</div>`
+                  ${o.icon ? emo(o.icon, 20) : ""}<span>${esc(o.label)}</span>${o.secondary ? `<small>${esc(o.secondary)}</small>` : ""}</div>`
               )
               .join("")
           : `<div class="combo-empty">${t("combo.noresults")}</div>`);
@@ -66,6 +80,21 @@ export function wireCombos(root) {
       // dialog ma overflow:auto — bez tego rozwinięta lista bywa ucięta dołem okna
       list.scrollIntoView({ block: "nearest" });
     };
+
+    // combo z ikonami: podgląd wybranej ikony po lewej stronie pola
+    if (options.some((o) => o.icon)) {
+      el.classList.add("has-icon");
+      const pre = document.createElement("span");
+      pre.className = "combo-pre";
+      el.prepend(pre);
+      const upd = () => {
+        const s = options.find((o) => o.value === hidden.value);
+        pre.innerHTML = s?.icon ? emo(s.icon, 20) : hidden.value ? emo(hidden.value, 20) : "";
+        input.value = s ? s.label : hidden.value || "";
+      };
+      upd();
+      hidden.addEventListener("change", upd);
+    }
 
     input.addEventListener("focus", () => {
       input.select();

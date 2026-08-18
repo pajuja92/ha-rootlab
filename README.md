@@ -63,6 +63,7 @@ Dyktowanie objawów (🎤) używa pipeline'u STT z HA (np. Google AI STT); gdy n
 - Mapa drogowa: [docs/ROADMAP.md](docs/ROADMAP.md) · Design system: [docs/DESIGN.md](docs/DESIGN.md)
 - Testy logiki: `python3 tests/test_logic.py` oraz `node tests/test_shade.mjs`
 - Frontend to vanilla Web Components (moduły ES) — zero zależności i bundlera.
+- Ikony: [OpenMoji](https://openmoji.org) (CC BY-SA 4.0), ładowane z CDN z fallbackiem do emoji systemowych.
 
 ## Status
 

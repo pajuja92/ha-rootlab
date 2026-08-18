@@ -1,5 +1,6 @@
 import { t } from "../i18n.js";
-import { combo, entityOptions, esc, nowStamp, optionsWithSuggestions, resizeImage, sensorState, todayISO, uid, zoneSuggestions } from "../util.js";
+import { combo, emo, entityOptions, esc, nowStamp, optionsWithSuggestions, resizeImage, sensorState, todayISO, uid, zoneSuggestions } from "../util.js";
+import { iconOptions } from "../icons.js";
 import { PLANT_PRESETS } from "../presets.js";
 import { openCrisis } from "../crisis.js";
 import { areaLabel, areaOptions, bind as growBind, dateInput, fdMMDD, growDialog, plantingPhase, render as growRender } from "./grow.js";
@@ -47,7 +48,7 @@ export function render(app) {
       .filter((g) => g.plants.length || g.zone.id) // puste strefy też widoczne (edycja tylko tutaj)
       .map(
         (g) => `
-      <div class="section-title"><span class="emoji">${esc(g.zone.emoji || "🪴")}</span>${esc(g.zone.name)}
+      <div class="section-title">${emo(g.zone.emoji || "🪴", 20)}${esc(g.zone.name)}
         ${
           g.zone.id
             ? `<button class="icon-btn" data-action="edit-zone" data-id="${g.zone.id}" title="${t("edit")}"><ha-icon icon="mdi:pencil-outline"></ha-icon></button>
@@ -84,7 +85,7 @@ function plantingsCard(app, list, year) {
     .map((p) => {
       const phase = plantingPhase(p);
       return `<div class="note-row" data-planting="${p.id}" style="cursor:pointer;border-left:4px solid ${PHASE_COLOR[phase]};padding-left:10px;align-items:center">
-        <span>${esc(p.emoji || "🌱")}</span>
+        ${emo(p.emoji || "🌱", 20)}
         <span class="txt"><b>${esc(p.name)}</b> <small style="color:var(--secondary-text-color)">${esc(areaLabel(app, p.zone_id))}</small></span>
         <span class="chip" style="background:color-mix(in srgb, ${PHASE_COLOR[phase]} 18%, transparent);color:inherit">${t("grow.phase." + phase)}</span>
       </div>`;
@@ -124,13 +125,13 @@ export function openZoneCard(app, zoneId) {
           return `<span class="sensor-chip ${st.unavailable ? "unavailable" : ""}" style="padding:2px 8px;font-size:12px"><ha-icon icon="${f.icon}" style="--mdc-icon-size:14px"></ha-icon>${esc(st.text)}</span>`;
         })
         .join(" ");
-      return `<div class="note-row"><span>${esc(p.emoji || "🌱")}</span>
+      return `<div class="note-row">${emo(p.emoji || "🌱", 20)}
         <span class="txt"><b>${esc(p.name)}</b>${p.species ? ` <small style="color:var(--secondary-text-color)">${esc(p.species)}</small>` : ""}<br>${sensors}</span>
         <button class="btn small ghost" data-action="plant-card" data-id="${p.id}">${t("plant.details")}</button></div>`;
     })
     .join("");
   app.dialog(
-    `<h2><span class="emoji">${esc(zone.emoji || "🪴")}</span> ${esc(zone.name)}</h2>
+    `<h2>${emo(zone.emoji || "🪴", 26)} ${esc(zone.name)}</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
       <span class="chip">${zonePlants.length} ${zonePlants.length === 1 ? t("zone.plants.one") : t("zone.plants.many")}</span>
       <span class="chip ${zoneTasks.length ? "harvest" : ""}">${zoneTasks.length} ⏳</span>
@@ -175,7 +176,7 @@ function plantCard(app, p) {
   });
   const phase = tilePhase(app, p.id);
   return `<div class="card plant" ${phase ? `style="border-top:4px solid ${PHASE_COLOR[phase]}"` : ""}>
-    <div class="header"><span class="emoji">${esc(p.emoji || "🌱")}</span><h3>${esc(p.name)}</h3></div>
+    <div class="header">${emo(p.emoji || "🌱", 24)}<h3>${esc(p.name)}</h3></div>
     ${p.species ? `<div class="species">${esc(p.species)}</div>` : ""}
     ${
       sensors.length
@@ -202,7 +203,7 @@ function zoneDialog(app, zone) {
       <label>${t("name")}</label>
       <input name="name" required maxlength="60" value="${esc(zone?.name)}" placeholder="${t("zone.name.ph")}" autofocus>
       <label>${t("zone.emoji")}</label>
-      <input name="emoji" maxlength="4" value="${esc(zone?.emoji)}" placeholder="🏡">
+      ${combo({ name: "emoji", value: zone?.emoji || "", options: iconOptions() })}
       <label>${t("zone.kind")}</label>
       ${combo({ name: "kind", value: zone?.kind || "", options: kindOpts })}
       <label>${t("zone.planting")}</label>
@@ -233,14 +234,14 @@ function plantFormFields(app, draft) {
     }
   });
   const anySugg = SENSOR_FIELDS.some((f) => zoneSuggestions(app, draft.zone_id, f.key).length);
-  const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: `${z.emoji || "🪴"} ${z.name}` }));
+  const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: z.name, icon: z.emoji || "🪴" }));
   const baseSensorOpts = entityOptions(app.hass, ["sensor"]);
   return `<label>${t("name")}</label>
     <input name="name" required maxlength="60" value="${esc(draft.name)}" placeholder="${t("plant.name.ph")}">
     <label>${t("plant.species")}</label>
     <input name="species" maxlength="80" value="${esc(draft.species)}">
     <label>${t("zone.emoji")}</label>
-    <input name="emoji" maxlength="4" value="${esc(draft.emoji)}" placeholder="🍅">
+    ${combo({ name: "emoji", value: draft.emoji || "", options: iconOptions() })}
     <label>${t("plant.zone")}</label>
     ${combo({ name: "zone_id", value: draft.zone_id, options: zoneOpts })}
     <label>${t("plant.planting")}</label>
@@ -296,8 +297,9 @@ export function plantDialog(app, draft = null) {
   draft ??= { name: "", species: "", emoji: "", zone_id: "", planting: "", sensors: {} };
   const presetOpts = PLANT_PRESETS.map((p, i) => ({
     value: String(i),
-    label: `${p.emoji} ${p.name}`,
+    label: p.name,
     secondary: p.species,
+    icon: p.emoji,
   }));
   const dlg = app.dialog(
     `<h2>${t("plant.new")}</h2>
@@ -317,7 +319,9 @@ export function plantDialog(app, draft = null) {
     if (!preset) return;
     dlg.querySelector('input[name="name"]').value = preset.name;
     dlg.querySelector('input[name="species"]').value = preset.species;
-    dlg.querySelector('input[name="emoji"]').value = preset.emoji;
+    const em = dlg.querySelector('input[name="emoji"]');
+    em.value = preset.emoji;
+    em.dispatchEvent(new Event("change")); // odśwież podgląd ikony w combo
   });
   // zmiana strefy → przelicz sugestie czujników z urządzeń tej strefy
   dlg.querySelector('input[name="zone_id"]').addEventListener("change", () => {
@@ -406,7 +410,7 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false, histEdi
   const zone = app.data.zones.find((z) => z.id === plant.zone_id);
   const plantingKind = plant.planting || zone?.planting;
   const infoChips = [
-    zone ? `<span class="chip">${esc(zone.emoji || "🪴")} ${esc(zone.name)}</span>` : "",
+    zone ? `<span class="chip">${emo(zone.emoji || "🪴", 14)} ${esc(zone.name)}</span>` : "",
     plantingKind ? `<span class="chip">${t("planting." + plantingKind)}</span>` : "",
   ]
     .filter(Boolean)
@@ -438,7 +442,7 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false, histEdi
     })
     .join("");
   const dlg = app.dialog(
-    `<h2><span class="emoji">${esc(plant.emoji || "🌱")}</span> ${esc(plant.name)}</h2>
+    `<h2>${emo(plant.emoji || "🌱", 26)} ${esc(plant.name)}</h2>
     ${plant.species ? `<div class="species" style="margin:0 0 8px">${esc(plant.species)}</div>` : ""}
     ${infoChips ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${infoChips}</div>` : ""}
     ${sensors ? `<div class="sensors">${sensors}</div>` : ""}
@@ -634,7 +638,7 @@ function renderCardEdit(app, plant, photos, draft = null) {
   const active = linked.find((x) => !x.done?.finished) || linked[linked.length - 1] || null;
   const gyear = active?.year ?? new Date().getFullYear();
   const dlg = app.dialog(
-    `<h2><span class="emoji">${esc(plant.emoji || "🌱")}</span> ${esc(plant.name)} — ${t("edit")}</h2>
+    `<h2>${emo(plant.emoji || "🌱", 26)} ${esc(plant.name)} — ${t("edit")}</h2>
     <form>
       ${plantFormFields(app, draft)}
       <div class="section-title">${t("tab.grow")}</div>

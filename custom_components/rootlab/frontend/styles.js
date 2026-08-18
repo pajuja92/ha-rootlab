@@ -252,6 +252,11 @@ dialog.wide { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 64
 .combo-opt.selected { background: var(--rl-green-bg); }
 .combo-opt span { font-size: 14px; color: var(--primary-text-color); }
 .combo-opt small { font-size: 11px; color: var(--secondary-text-color); }
+.emo { vertical-align: -3px; }
+.combo-opt:has(.emo) { flex-direction: row; align-items: center; gap: 8px; }
+.combo-opt .emo { flex: none; }
+.combo.has-icon .combo-input { padding-left: 36px; }
+.combo-pre { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); pointer-events: none; display: flex; z-index: 1; }
 .combo-empty { padding: 10px 12px; font-size: 13px; color: var(--secondary-text-color); }
 /* Mikrofon (dyktowanie) */
 .mic-btn { position: absolute; right: 6px; bottom: 6px; }

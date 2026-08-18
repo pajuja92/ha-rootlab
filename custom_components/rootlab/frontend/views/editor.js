@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { combo, esc, uid } from "../util.js";
+import { combo, emojiSvgUrl, esc, uid } from "../util.js";
 import { crownBase, insideRect, isShaded, northVector, shadowCapsule, solarPosition } from "../shade.js";
 import { ATTRIBUTION, MAX_Z, gridHtml, latToY, lonToX, metersPerPixel, xToLon, yToLat } from "../satmap.js";
 import { openPlantCard, openZoneCard, plantDialog } from "./plants.js";
@@ -153,7 +153,13 @@ function circleNode(app, i, caps) {
   return `<g class="item circle-item ${shaded ? "is-shaded" : ""}" data-id="${i.id}" transform="translate(${i.x} ${i.y})">
     <circle r="${r}" fill="${KIND_FILL[i.kind] || KIND_FILL.shrub}" fill-opacity="0.8"/>
     ${assignable ? `<circle class="unassigned-ring" r="${r + 0.12}"/>` : ""}
-    ${glyph ? `<text class="glyph" y="${Math.min(r * 0.45, 0.5)}" text-anchor="middle" style="font-size:${Math.max(Math.min(r * 1.1, 1.4), 0.45)}px">${glyph}</text>` : ""}
+    ${(() => {
+      if (!glyph) return "";
+      // emoji → SVG OpenMoji; rozmiar w metrach dopasowany do promienia
+      const gs = Math.max(Math.min(r * 1.2, 1.5), 0.45);
+      const url = emojiSvgUrl(glyph);
+      return url ? `<image href="${url}" x="${-gs / 2}" y="${-gs / 2}" width="${gs}" height="${gs}"/>` : "";
+    })()}
     <text class="hover-label" y="${r + 0.65}">${hoverText}</text>
   </g>`;
 }

@@ -2,6 +2,16 @@
 
 Cześć! 👋 Tu Claude od wdrożeń — instaluję kolejne bety przez HACS i przeklikuję je w HA. Plik untracked, nie commituj go.
 
+## v0.4.0-beta.27 — wdrożona i przetestowana ✅ (2026-08-17)
+
+Uwaga: instalacja opóźniona przez awarię GitHuba (release'y chwilowo znikły z API — „major - Partial System Outage"); po jej ustąpieniu poszło normalnie.
+
+- **Migracja na zone_id przeszła czysto** — wszystkie strefy (Szklarnia, Grządki, Sad, Krzewy) i rośliny na miejscu po restarcie, zero błędów w konsoli.
+- **Pełne spięcie Rośliny↔Uprawy działa**: kalendarz Upraw pokazuje wszystkie rośliny — z terminami (Cebula, paski faz) i bez („bez terminów — kliknij, aby ustawić", tylko linia „dziś"); każda z przypisaną strefą.
+- Klik wiersza bez terminów otwiera edycję rośliny ze zintegrowaną sekcją UPRAWY i podpowiedzią o ustawieniu terminów — OK.
+- **Nienarysowane strefy w palecie planu**: „🪴 Sad (narysuj strefę)" i „🪴 Krzewy (narysuj strefę)" jako zone-draw — jest.
+- Bonus: osierocona „Marchew" zniknęła z palety planu — refactor uporządkował stare wpisy. 👍
+
 ## v0.4.0-beta.26 — wdrożona i przetestowana ✅ (2026-08-17)
 
 - HACS → beta.26 → restart HA, start czysty.

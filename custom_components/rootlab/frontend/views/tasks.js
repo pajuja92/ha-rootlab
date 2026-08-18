@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { combo, esc, todayISO } from "../util.js";
+import { combo, emo, esc, todayISO } from "../util.js";
 
 const CATEGORIES = ["maintenance", "protection", "crisis", "manual"];
 const CAT_ICONS = {
@@ -131,7 +131,7 @@ function list(app) {
       .filter((g) => g.tasks.length)
       .map(
         (g) => `
-      <div class="section-title">${g.icon ? `<ha-icon icon="${g.icon}"></ha-icon>` : `<span class="emoji">${esc(g.emoji)}</span>`}${esc(g.label)}</div>
+      <div class="section-title">${g.icon ? `<ha-icon icon="${g.icon}"></ha-icon>` : emo(g.emoji, 18)}${esc(g.label)}</div>
       <div class="card">${g.tasks.map((task) => row(app, task)).join("")}</div>`
       )
       .join("") +

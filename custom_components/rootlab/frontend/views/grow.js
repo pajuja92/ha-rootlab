@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { combo, esc, todayISO, wireCombos } from "../util.js";
+import { combo, emo, esc, todayISO, wireCombos } from "../util.js";
 import { PLANT_PRESETS } from "../presets.js";
 import { openPlantCard } from "./plants.js"; // cykl plants↔grow bezpieczny: użycie dopiero w handlerze
 
@@ -17,8 +17,9 @@ const areas = (app) => (app.data.layout?.items || []).filter((i) => "w" in i);
 export function areaOptions(app) {
   return (app.data.zones || []).map((z) => ({
     value: z.id,
-    label: `${z.emoji || "🪴"} ${z.name}`,
+    label: z.name,
     secondary: z.kind ? t("editor.palette." + z.kind) : "",
+    icon: z.emoji || "🪴",
   }));
 }
 
@@ -75,7 +76,7 @@ function rowHtml(app, p) {
   const finished = Boolean(p.done?.finished);
   const doneBits = [p.done?.sow ? "🌱✓" : "", p.done?.transplant ? "🪴✓" : ""].filter(Boolean).join(" ");
   return `<div class="grow-row ${finished ? "done" : ""}" data-grow-edit="${p.id}">
-    <div class="grow-name">${esc(p.emoji || "🌱")} <b>${esc(p.name)}</b> ${doneBits}
+    <div class="grow-name">${emo(p.emoji || "🌱", 18)} <b>${esc(p.name)}</b> ${doneBits}
       <br><small style="color:var(--secondary-text-color)">${esc(areaLabel(app, p.zone_id))} · ${t("grow.method." + (p.method || "direct"))}${finished ? ` · ${t("grow.finished")}` : ""}</small>
     </div>
     <div class="grow-track">
@@ -91,8 +92,8 @@ function rowHtml(app, p) {
 function plantRowHtml(app, p, year) {
   const zone = app.data.zones.find((z) => z.id === p.zone_id);
   return `<div class="grow-row" data-grow-plant="${p.id}">
-    <div class="grow-name">${esc(p.emoji || "🌱")} <b>${esc(p.name)}</b>
-      <br><small style="color:var(--secondary-text-color)">${zone ? esc(`${zone.emoji || "🪴"} ${zone.name}`) : t("zone.none")} · ${t("grow.nodates")}</small>
+    <div class="grow-name">${emo(p.emoji || "🌱", 18)} <b>${esc(p.name)}</b>
+      <br><small style="color:var(--secondary-text-color)">${zone ? `${emo(zone.emoji || "🪴", 14)} ${esc(zone.name)}` : t("zone.none")} · ${t("grow.nodates")}</small>
     </div>
     <div class="grow-track">${todayMark(year)}</div>
   </div>`;
@@ -178,7 +179,7 @@ export const fdMMDD = (fd, name) => {
 
 export function growDialog(app, editing = null) {
   const s = st(app);
-  const presetOpts = PHENO.map((p, i) => ({ value: String(i), label: `${p.emoji} ${p.name}`, secondary: p.family }));
+  const presetOpts = PHENO.map((p, i) => ({ value: String(i), label: p.name, secondary: p.family, icon: p.emoji }));
   const presetIdx = editing ? PHENO.findIndex((p) => p.name === editing.name) : -1;
   const methodOpts = (preset) =>
     [
