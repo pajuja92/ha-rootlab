@@ -128,8 +128,16 @@ export function lineElements(item) {
   const section = total / groups.length;
   const out = [];
   groups.forEach((g, gi) => {
-    const spacing = Math.max(g.spacing_m || 0.5, 0.1);
-    for (let d = gi * section + spacing / 2; d <= (gi + 1) * section; d += spacing) {
+    // grządka: zadana liczba sztuk równo na odcinku; żywopłot: co zadany rozstaw
+    const ds = [];
+    if (g.count) {
+      const n = Math.max(1, Math.round(g.count));
+      for (let i = 0; i < n; i++) ds.push(gi * section + (section * (i + 0.5)) / n);
+    } else {
+      const spacing = Math.max(g.spacing_m || 0.5, 0.1);
+      for (let d = gi * section + spacing / 2; d <= (gi + 1) * section; d += spacing) ds.push(d);
+    }
+    for (const d of ds) {
       const [x, y] = pointAt(d);
       out.push({
         x: Math.round(x * 100) / 100,

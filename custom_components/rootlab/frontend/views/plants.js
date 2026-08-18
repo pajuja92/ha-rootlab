@@ -409,9 +409,15 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false, histEdi
     .join("");
   const zone = app.data.zones.find((z) => z.id === plant.zone_id);
   const plantingKind = plant.planting || zone?.planting;
+  // sztuki zasadzone na grządkach liniowych z planu ogrodu
+  const onRows = (app.data.layout?.items || [])
+    .filter((i) => i.kind === "row")
+    .flatMap((i) => (i.plants || []).filter((pl) => pl.plant_id === plant.id));
+  const rowTotal = onRows.reduce((s, x) => s + (x.count || 0), 0);
   const infoChips = [
     zone ? `<span class="chip">${emo(zone.emoji || "🪴", 14)} ${esc(zone.name)}</span>` : "",
     plantingKind ? `<span class="chip">${t("planting." + plantingKind)}</span>` : "",
+    rowTotal ? `<span class="chip">🥕 ${t("plant.onrow", { n: rowTotal })}</span>` : "",
   ]
     .filter(Boolean)
     .join(" ");

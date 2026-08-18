@@ -927,13 +927,14 @@ function hedgeDialog(app, item) {
   lineDelete(app, dlg, item);
 }
 
-/* Rządek roślin: linia z kilkoma roślinami — równe odcinki, roślina na odcinek. */
+/* Grządka (linia): rośliny z kart + liczba sztuk — równe odcinki, roślina na odcinek. */
 function rowDialog(app, item) {
   const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: z.name, icon: z.emoji || "🪴" }));
+  const plantOpts = app.data.plants.map((p) => ({ value: p.id, label: p.name, secondary: p.species, icon: p.emoji || "🌱" }));
   const rowBlock = (pl = {}) => `<div class="rowdef" style="display:flex;gap:8px;align-items:flex-end;margin-bottom:6px">
-      <span style="flex:1">${combo({ name: "rp", value: presetIdxByName(pl.name), options: presetComboOpts(), allowEmpty: false })}</span>
-      <span><label style="font-size:11px">${t("hedge.spacing")}</label>
-      <input name="rs" type="number" step="0.05" min="0.05" value="${pl.spacing_m ?? 0.3}" style="width:80px"></span>
+      <span style="flex:1">${combo({ name: "rp", value: pl.plant_id || "", options: plantOpts, allowEmpty: false })}</span>
+      <span><label style="font-size:11px">${t("row.count")}</label>
+      <input name="rc" type="number" step="1" min="1" max="500" value="${pl.count ?? 5}" style="width:70px"></span>
       <button type="button" class="icon-btn rowdef-del" title="${t("delete")}"><ha-icon icon="mdi:close"></ha-icon></button>
     </div>`;
   const dlg = app.dialog(
@@ -958,14 +959,16 @@ function rowDialog(app, item) {
       it.zone_id = fd.get("zone_id") || null;
       it.plants = [...dlg.querySelectorAll(".rowdef")]
         .map((el) => {
-          const p = PLANT_PRESETS[parseInt(el.querySelector('input[name="rp"]').value, 10)];
-          if (!p) return null;
+          const plant = app.data.plants.find((p) => p.id === el.querySelector('input[name="rp"]').value);
+          if (!plant) return null;
+          const preset = PLANT_PRESETS.find((x) => x.name === plant.name);
           return {
-            name: p.name,
-            emoji: p.emoji,
-            spacing_m: parseFloat(el.querySelector('input[name="rs"]').value) || 0.3,
-            diameter_m: p.diameter_m || 0.3,
-            height_m: p.height_m || 0.4,
+            plant_id: plant.id,
+            name: plant.name,
+            emoji: plant.emoji || "🌱",
+            count: Math.max(1, parseInt(el.querySelector('input[name="rc"]').value, 10) || 1),
+            diameter_m: preset?.diameter_m || 0.3,
+            height_m: preset?.height_m || 0.4,
           };
         })
         .filter(Boolean);
