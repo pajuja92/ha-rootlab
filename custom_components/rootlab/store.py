@@ -19,6 +19,8 @@ DEFAULTS = {
     "ai_prompts": {},
     "chats": [],
     "plantings": [],
+    "products": [],
+    "shop": {"woo_url": "", "woo_key": "", "woo_secret": "", "websearch": False},
     "verify": {"snapshot": None, "actuals": None, "stats": {}},
     "layout": {"width_m": 20.0, "height_m": 12.0, "north_deg": 0, "location": None, "items": []},
 }
@@ -34,6 +36,8 @@ async def async_load_data(hass):
         data["irrigation"].setdefault(key, copy.deepcopy(default))
     for key, default in DEFAULTS["layout"].items():
         data["layout"].setdefault(key, copy.deepcopy(default))
+    for key, default in DEFAULTS["shop"].items():
+        data["shop"].setdefault(key, default)
     for item in data["layout"]["items"]:
         if item.get("kind") == "object":  # dawny „Obiekt" → „Krzew"
             item["kind"] = "shrub"

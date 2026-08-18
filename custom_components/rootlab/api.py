@@ -13,7 +13,7 @@ from .const import DOMAIN
 from .store import async_save
 from .verification import OPEN_METEO_MODELS, fetch_openmeteo_forecast, stats_payload
 
-KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices", "chats", "plantings"]
+KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices", "chats", "plantings", "products"]
 # pola pomijane w liście (duże base64) — dostępne przez dedykowane komendy
 HEAVY_PLANT_FIELDS = ("photos",)
 
@@ -98,6 +98,8 @@ def async_register(hass):
         ws_image_convert,
         ws_grow_generate,
         ws_grow_apply,
+        ws_shop_save,
+        ws_shop_sync,
         ws_verify_stats,
         ws_plant_photos,
         ws_photo_add,
@@ -553,6 +555,21 @@ async def ws_ai_ask(hass, connection, msg):
 async def ws_chat_send(hass, connection, msg):
     data = hass.data[DOMAIN]["data"]
     chat = next((c for c in data["chats"] if c["id"] == msg["chat_id"]), None)
+    # katalog produktów sklepu — AI poleca pasujące pozycje z linkami
+    products = data.get("products") or []
+    if products:
+        lines = "\n".join(
+            f"- {p.get('name', '')} — {p.get('price', '?')} — {p.get('url', '')}"
+            + (f" ({p['desc']})" if p.get("desc") else "")
+            for p in products[:40]
+        )
+        extra = (
+            "Katalog produktów naszego sklepu — gdy rozmowa dotyczy środków ochrony, "
+            "nawozów, narzędzi, nasion itp., polecaj pasujące pozycje z katalogu "
+            "i podawaj ich linki (możesz też sugerować inne produkty, jeśli katalog "
+            "nie pokrywa potrzeby):\n" + lines
+        )
+        msg["context"] = f"{msg['context']}\n\n{extra}" if msg["context"] else extra
     if not chat:
         connection.send_error(msg["id"], "not_found", "Nie ma takiej rozmowy")
         return
@@ -721,6 +738,71 @@ async def ws_grow_apply(hass, connection, msg):
 
 
 # --- Zdjęcia roślin ---
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rootlab/shop/save",
+        vol.Required("config"): dict,
+    }
+)
+@websocket_api.async_response
+async def ws_shop_save(hass, connection, msg):
+    """Konfiguracja sklepu: WooCommerce + zgoda na wyszukiwanie w internecie."""
+    shop = hass.data[DOMAIN]["data"]["shop"]
+    for key in ("woo_url", "woo_key", "woo_secret", "websearch"):
+        if key in msg["config"]:
+            shop[key] = msg["config"][key]
+    await async_save(hass)
+    connection.send_result(msg["id"], _public(hass))
+
+
+@websocket_api.websocket_command({vol.Required("type"): "rootlab/shop/sync"})
+@websocket_api.async_response
+async def ws_shop_sync(hass, connection, msg):
+    """Import produktów z WooCommerce (REST v3). Ręczne wpisy zostają."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+    data = hass.data[DOMAIN]["data"]
+    shop = data["shop"]
+    if not shop.get("woo_url") or not shop.get("woo_key") or not shop.get("woo_secret"):
+        connection.send_error(msg["id"], "config", "Uzupełnij URL sklepu i klucze API WooCommerce")
+        return
+    url = shop["woo_url"].rstrip("/") + "/wp-json/wc/v3/products"
+    session = async_get_clientsession(hass)
+    try:
+        resp = await session.get(
+            url,
+            params={
+                "consumer_key": shop["woo_key"],
+                "consumer_secret": shop["woo_secret"],
+                "per_page": "100",
+                "status": "publish",
+            },
+            timeout=30,
+        )
+        if resp.status != 200:
+            connection.send_error(msg["id"], "http", f"WooCommerce: HTTP {resp.status}")
+            return
+        items = await resp.json()
+    except Exception as err:  # noqa: BLE001 — komunikat idzie wprost do UI
+        connection.send_error(msg["id"], "http", f"WooCommerce: {err}")
+        return
+    synced = [
+        {
+            "id": f"woo-{it['id']}",
+            "name": it.get("name", ""),
+            "price": (it.get("price") or "") and f"{it['price']} zł",
+            "url": it.get("permalink", ""),
+            "desc": (it.get("short_description") or "").replace("<p>", "").replace("</p>", "").strip()[:200],
+            "source": "woo",
+        }
+        for it in items
+        if isinstance(it, dict)
+    ]
+    data["products"] = [p for p in data["products"] if p.get("source") != "woo"] + synced
+    await async_save(hass)
+    connection.send_result(msg["id"], {"count": len(synced), "data": _public(hass)})
 
 
 @websocket_api.websocket_command({vol.Required("type"): "rootlab/verify/stats"})

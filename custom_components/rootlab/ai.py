@@ -232,21 +232,22 @@ def _parse_json_loose(text):
     return json.loads(text[start : end + 1])
 
 
-async def _complete(hass, prompt, schema=None, images=None, media_type=None):
+async def _complete(hass, prompt, schema=None, images=None, media_type=None, web_search=False):
     """Jedno zapytanie do skonfigurowanego dostawcy. schema=None → wolny tekst.
 
     images: lista base64 (bez prefiksu data:), wszystkie tego samego media_type.
     """
     provider = _options(hass).get("ai_provider", "anthropic")
     if provider == "anthropic":
-        return await _anthropic(hass, prompt, schema, images, media_type)
+        return await _anthropic(hass, prompt, schema, images, media_type, web_search)
     if provider == "ha_ai_task":
         return await _ha_ai_task(hass, prompt, schema)
     return await _openai_compat(hass, provider, prompt, schema, images, media_type)
 
 
-async def _anthropic(hass, prompt, schema, images, media_type):
+async def _anthropic(hass, prompt, schema, images, media_type, web_search=False):
     import anthropic
+    import re as _re
 
     api_key = _options(hass).get("api_key")
     if not api_key:
@@ -267,6 +268,15 @@ async def _anthropic(hass, prompt, schema, images, media_type):
     kwargs = {}
     if schema:
         kwargs["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
+    elif web_search:
+        # narzędzie serwerowe Anthropic — wariant wg generacji modelu
+        model_id = _options(hass).get("ai_model") or ANTHROPIC_MODEL
+        wtype = (
+            "web_search_20260209"
+            if _re.search(r"opus-4-[678]|sonnet-5|sonnet-4-6|fable", model_id)
+            else "web_search_20250305"
+        )
+        kwargs["tools"] = [{"type": wtype, "name": "web_search", "max_uses": 3}]
     response = await client.messages.create(
         model=_options(hass).get("ai_model") or ANTHROPIC_MODEL,
         max_tokens=16000,
@@ -277,7 +287,8 @@ async def _anthropic(hass, prompt, schema, images, media_type):
     )
     if response.stop_reason == "refusal":
         raise RuntimeError("Model odmówił odpowiedzi na to zapytanie.")
-    text = next(b.text for b in response.content if b.type == "text")
+    # z web search odpowiedź składa się z wielu bloków tekstowych przeplatanych wyszukiwaniami
+    text = "".join(b.text for b in response.content if b.type == "text")
     return _parse_json_loose(text) if schema else text.strip()
 
 
@@ -571,7 +582,10 @@ async def async_chat(hass, chat, plant, message, context=None, images=None):
         "Odpowiedz na ostatnią wiadomość konkretnie i praktycznie — pomóż doprecyzować "
         "diagnozę i zaplanować kolejne kroki. Dopytuj, jeśli brakuje Ci informacji."
     )
-    return await _complete(hass, "\n\n".join(parts), images=images)
+    # wyszukiwanie produktów w internecie: opt-in w Ustawieniach, tylko Anthropic
+    shop = hass.data[DOMAIN]["data"].get("shop") or {}
+    web = bool(shop.get("websearch")) and _options(hass).get("ai_provider", "anthropic") == "anthropic"
+    return await _complete(hass, "\n\n".join(parts), images=images, web_search=web)
 
 
 async def async_chat_tasks(hass, chat, plant):
