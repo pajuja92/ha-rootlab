@@ -1,1 +1,122 @@
-[]
+[
+  {
+    "name": "Nawóz organiczny do pomidorów i papryki 1 kg",
+    "price": "24,90 zł",
+    "url": "https://mateuszokla.pl/sklep/nawoz-pomidory-papryka",
+    "desc": "Granulat NPK 4-3-8 z magnezem; dawka 1 łyżka na roślinę co 2 tygodnie, od kwitnienia do końca zbiorów."
+  },
+  {
+    "name": "Biohumus uniwersalny 1 l",
+    "price": "16,50 zł",
+    "url": "https://mateuszokla.pl/sklep/biohumus-uniwersalny",
+    "desc": "Płynny wermikompost do warzyw, ziół i rozsady; rozcieńczać 1:20, podlewać co 10–14 dni."
+  },
+  {
+    "name": "Nawóz do borówek i roślin kwaśnolubnych 1 kg",
+    "price": "21,90 zł",
+    "url": "https://mateuszokla.pl/sklep/nawoz-borowki",
+    "desc": "Zakwaszający, z siarką; dla borówki, żurawiny, hortensji i iglaków. Stosować IV–VII."
+  },
+  {
+    "name": "Obornik granulowany bydlęcy 10 kg",
+    "price": "34,90 zł",
+    "url": "https://mateuszokla.pl/sklep/obornik-granulowany",
+    "desc": "Przedsiewnie i pogłównie pod warzywa; 1–2 garście/m², wymieszać z glebą."
+  },
+  {
+    "name": "Dolomit wapniowo-magnezowy 5 kg",
+    "price": "14,90 zł",
+    "url": "https://mateuszokla.pl/sklep/dolomit",
+    "desc": "Odkwasza glebę i uzupełnia magnez; zapobiega suchej zgniliźnie wierzchołkowej pomidora."
+  },
+  {
+    "name": "Nasiona: Pomidor koktajlowy 'Cherry Coctail' 0,2 g",
+    "price": "5,90 zł",
+    "url": "https://mateuszokla.pl/sklep/nasiona-pomidor-cherry",
+    "desc": "Wysiew na rozsadę II–IV, wysadzanie po 15 V; owoce słodkie, do szklarni i gruntu."
+  },
+  {
+    "name": "Nasiona: Marchew 'Nantejska' 5 g",
+    "price": "4,50 zł",
+    "url": "https://mateuszokla.pl/sklep/nasiona-marchew-nantejska",
+    "desc": "Siew wprost III–VI co 2–3 tyg. na sukcesję; gleba lekka, głęboko spulchniona."
+  },
+  {
+    "name": "Nasiona: Sałata masłowa 'Attractie' 1 g",
+    "price": "3,90 zł",
+    "url": "https://mateuszokla.pl/sklep/nasiona-salata-attractie",
+    "desc": "Siew III–VII; odporna na wybijanie w pęd, idealna do siewu sukcesywnego."
+  },
+  {
+    "name": "Nasiona: Ogórek gruntowy 'Śremski' 3 g",
+    "price": "5,50 zł",
+    "url": "https://mateuszokla.pl/sklep/nasiona-ogorek-sremski",
+    "desc": "Siew do gruntu po 15 V; odmiana konserwowa, tolerancyjna na mączniaka rzekomego."
+  },
+  {
+    "name": "Zestaw nasion ziół (bazylia, koperek, pietruszka naciowa, szczypiorek)",
+    "price": "12,90 zł",
+    "url": "https://mateuszokla.pl/sklep/zestaw-nasiona-ziola",
+    "desc": "Cztery paczki do doniczek i gruntu; wysiew III–VIII, także na parapecie."
+  },
+  {
+    "name": "Mydło potasowe ogrodnicze z czosnkiem 0,5 l",
+    "price": "19,90 zł",
+    "url": "https://mateuszokla.pl/sklep/mydlo-potasowe",
+    "desc": "Na mszyce, przędziorki i mączliki; oprysk 2% co 5–7 dni, bez okresu karencji."
+  },
+  {
+    "name": "Preparat miedziowy na zarazę ziemniaka 100 g",
+    "price": "17,90 zł",
+    "url": "https://mateuszokla.pl/sklep/preparat-miedziowy",
+    "desc": "Zapobiegawczo na zarazę pomidora/ziemniaka i kędzierzawość brzoskwini; oprysk co 7–10 dni w okresach wilgotnych."
+  },
+  {
+    "name": "Biopreparat z Bacillus thuringiensis na gąsienice 6 g",
+    "price": "15,90 zł",
+    "url": "https://mateuszokla.pl/sklep/bt-gasienice",
+    "desc": "Na bielinka, piętnówki i inne gąsienice na kapustnych; bezpieczny dla pszczół."
+  },
+  {
+    "name": "Pułapka feromonowa na owocówkę jabłkóweczkę",
+    "price": "22,90 zł",
+    "url": "https://mateuszokla.pl/sklep/pulapka-owocowka",
+    "desc": "Monitoring i ograniczanie owocówki w sadzie; wieszać w połowie V, wkład na 6 tygodni."
+  },
+  {
+    "name": "Skoncentrowany wyciąg z pokrzywy 1 l",
+    "price": "18,50 zł",
+    "url": "https://mateuszokla.pl/sklep/gnojowka-pokrzywa",
+    "desc": "Wzmacnia rośliny i odstrasza mszyce; rozcieńczać 1:10 do podlewania, 1:20 do oprysku."
+  },
+  {
+    "name": "Agrowłóknina wiosenna P17 1,6 × 10 m",
+    "price": "24,90 zł",
+    "url": "https://mateuszokla.pl/sklep/agrowloknina-p17",
+    "desc": "Osłona przed przymrozkami do -2°C; przyspiesza wschody i chroni rozsadę w V."
+  },
+  {
+    "name": "Maty ściółkujące z juty pod truskawki (10 szt.)",
+    "price": "29,90 zł",
+    "url": "https://mateuszokla.pl/sklep/maty-jutowe-truskawki",
+    "desc": "Ograniczają chwasty i gnicie owoców; biodegradowalne, na 2 sezony."
+  },
+  {
+    "name": "Sekator ogrodowy obejmowy 21 cm",
+    "price": "44,90 zł",
+    "url": "https://mateuszokla.pl/sklep/sekator-obejmowy",
+    "desc": "Do cięcia suchych pędów i formowania krzewów; ostrze ze stali węglowej."
+  },
+  {
+    "name": "pH-metr glebowy elektroniczny",
+    "price": "59,90 zł",
+    "url": "https://mateuszokla.pl/sklep/ph-metr-glebowy",
+    "desc": "Pomiar pH i wilgotności gleby bez baterii; przydatny przed wapnowaniem i doborem nawozu."
+  },
+  {
+    "name": "Taśma kropelkowa 25 m z akcesoriami",
+    "price": "39,90 zł",
+    "url": "https://mateuszokla.pl/sklep/tasma-kropelkowa-25m",
+    "desc": "Zestaw startowy do nawadniania grządek; emitery co 20 cm, złączki i zaślepka w komplecie."
+  }
+]
