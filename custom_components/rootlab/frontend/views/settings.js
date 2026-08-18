@@ -43,6 +43,8 @@ function shopCard(app) {
     <p style="font-size:13px;color:var(--secondary-text-color);margin-top:0">${t("shop.hint")}</p>
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px">
       <input type="checkbox" id="shop-websearch" ${shop.websearch ? "checked" : ""}>${t("shop.websearch")}</label>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;margin-top:8px">
+      <input type="checkbox" id="shop-feedback" ${shop.feedback ? "checked" : ""}>${t("shop.feedback")}</label>
     <div class="actions" style="justify-content:flex-start;margin-top:10px">
       <button class="btn" data-action="shop-save"><ha-icon icon="mdi:content-save-outline"></ha-icon>${t("save")}</button>
       <button class="btn ghost" data-action="shop-catalog"><ha-icon icon="mdi:sync"></ha-icon>${t("shop.refresh")}</button>
@@ -85,7 +87,10 @@ export const actions = {
   "shop-save": async (app) => {
     try {
       app.data = await app.ws("shop/save", {
-        config: { websearch: app.shadowRoot.getElementById("shop-websearch").checked },
+        config: {
+          websearch: app.shadowRoot.getElementById("shop-websearch").checked,
+          feedback: app.shadowRoot.getElementById("shop-feedback").checked,
+        },
       });
     } catch (e) {
       app.toast(`⚠ ${e.message || e}`, true);

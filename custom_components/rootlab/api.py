@@ -9,7 +9,7 @@ from homeassistant.core import callback
 import homeassistant.util.dt as dt_util
 
 from . import ai
-from .const import DOMAIN, SHOP_CATALOG_URL
+from .const import DOMAIN, SHOP_CATALOG_URL, SHOP_FEEDBACK_URL, VERSION
 from .store import async_save
 from .verification import OPEN_METEO_MODELS, fetch_openmeteo_forecast, stats_payload
 
@@ -564,11 +564,22 @@ async def ws_chat_send(hass, connection, msg):
             for p in products[:40]
         )
         extra = (
-            "Katalog produktów naszego sklepu — gdy rozmowa dotyczy środków ochrony, "
-            "nawozów, narzędzi, nasion itp., polecaj pasujące pozycje z katalogu "
-            "i podawaj ich linki (możesz też sugerować inne produkty, jeśli katalog "
-            "nie pokrywa potrzeby):\n" + lines
+            "Masz dostęp do katalogu produktów sklepu (niżej). Zasady — wiedza przede "
+            "wszystkim: najpierw pełna, merytoryczna pomoc (diagnoza, przyczyny, co "
+            "zrobić, także domowymi sposobami). Produkt wspomnij TYLKO wtedy, gdy wprost "
+            "odpowiada na zdiagnozowany problem — krótko, najwyżej jedną pozycję, z "
+            "linkiem, jako wtrącenie w stylu „pomocny może być…”. Nigdy: nie dopytuj o "
+            "preferencje zakupowe, nie proponuj „doboru produktów z katalogu”, nie "
+            "wracaj do tematu zakupów, jeśli użytkownik go nie podjął.\n" + lines
         )
+        shop = data.get("shop") or {}
+        if shop.get("feedback"):
+            extra += (
+                "\n\nJeśli z problemu użytkownika naturalnie wynika potrzeba produktu, "
+                "którego NIE ma w katalogu, dopisz na samym końcu odpowiedzi osobną "
+                "linię w formacie: [POTRZEBA: krótki opis produktu]. Nie pytaj o to "
+                "użytkownika i nie wspominaj o tym w treści."
+            )
         msg["context"] = f"{msg['context']}\n\n{extra}" if msg["context"] else extra
     if not chat:
         connection.send_error(msg["id"], "not_found", "Nie ma takiej rozmowy")
@@ -582,6 +593,14 @@ async def ws_chat_send(hass, connection, msg):
     except Exception as err:  # noqa: BLE001
         _ai_error(connection, msg["id"], err)
         return
+    # opt-in: markery [POTRZEBA: …] → anonimowe zgłoszenie do sklepu, znikają z odpowiedzi
+    if (data.get("shop") or {}).get("feedback"):
+        import re as _re
+
+        needs = _re.findall(r"\[POTRZEBA:\s*(.*?)\]", reply)
+        if needs:
+            reply = _re.sub(r"\s*\[POTRZEBA:.*?\]", "", reply).strip()
+            hass.async_create_task(_send_shop_feedback(hass, needs))
     now = dt_util.now().strftime("%Y-%m-%d %H:%M")
     user_msg = {"role": "user", "content": msg["message"], "created": now}
     if images:
@@ -777,6 +796,25 @@ async def _shop_catalog(hass, force=False):
     return cache["items"]
 
 
+async def _send_shop_feedback(hass, needs):
+    """Anonimowy POST z potrzebami produktowymi; brak endpointu = cisza."""
+    from homeassistant.helpers.aiohttp_client import async_get_clientsession
+    from homeassistant.util import dt as dt_util_local
+
+    try:
+        await async_get_clientsession(hass).post(
+            SHOP_FEEDBACK_URL,
+            json={
+                "needs": [n.strip()[:200] for n in needs],
+                "date": dt_util_local.now().strftime("%Y-%m-%d"),
+                "version": VERSION,
+            },
+            timeout=15,
+        )
+    except Exception:  # noqa: BLE001 — feedback jest best-effort
+        pass
+
+
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "rootlab/shop/save",
@@ -787,8 +825,9 @@ async def _shop_catalog(hass, force=False):
 async def ws_shop_save(hass, connection, msg):
     """Ustawienia sklepu: zgoda na wyszukiwanie produktów w internecie."""
     shop = hass.data[DOMAIN]["data"]["shop"]
-    if "websearch" in msg["config"]:
-        shop["websearch"] = bool(msg["config"]["websearch"])
+    for key in ("websearch", "feedback"):
+        if key in msg["config"]:
+            shop[key] = bool(msg["config"][key])
     await async_save(hass)
     connection.send_result(msg["id"], _public(hass))
 
