@@ -252,10 +252,12 @@ function renderChat(app, chat) {
             `<img src="data:image/jpeg;base64,${b}" alt="" data-msg-zoom style="max-width:150px;border-radius:8px;display:block;margin-top:6px;cursor:pointer">`
         )
         .join("");
-      // linkifikacja po esc(): encje typu &amp; w URL-u są poprawne w atrybucie href
+      // linkifikacja po esc(): najpierw markdownowe [tekst](url) — modele tak linkują
+      // produkty — potem gołe URL-e; jedno przejście, żeby nie linkować dwa razy
       const body = esc(m.content).replace(
-        /(https?:\/\/[^\s<]+)/g,
-        '<a href="$1" target="_blank" rel="noopener" style="color:var(--rl-green)">$1</a>'
+        /\[([^\]]+)\]\s*\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<]+)/g,
+        (m0, txt, url, bare) =>
+          `<a href="${url || bare}" target="_blank" rel="noopener" style="color:var(--rl-green)">${txt || bare}</a>`
       );
       return `<div class="chat-msg ${m.role === "user" ? "user" : "ai"}">${body}${imgs}<span class="when">${esc(m.created || "")}</span></div>`;
     })
