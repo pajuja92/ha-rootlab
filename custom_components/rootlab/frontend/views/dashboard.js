@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { emo, esc, todayISO } from "../util.js";
+import { chartW, emo, esc, todayISO } from "../util.js";
 import { dueLabel, pendingTasks } from "./tasks.js";
 
 const num = (v) => (v == null || v === "" ? null : parseFloat(v));
@@ -271,7 +271,7 @@ const xLabel = (r, mode) => {
 
 /* Wykres łączony: temperatura (linia), opad (słupki), szansa opadów (kreskowana). */
 function chartCombined(rows, mode) {
-  const W = 720, H = 200, padL = 30, padR = 30, padT = 16, padB = 26;
+  const W = chartW(), H = 200, padL = 30, padR = 30, padT = 16, padB = 26;
   const iw = W - padL - padR, ih = H - padT - padB;
   const temps = rows.flatMap((r) => [num(r.temperature), num(r.templow)]).filter((v) => v != null);
   if (!temps.length) return `<div class="ai-hint">${t("forecast.unavailable")}</div>`;
@@ -298,7 +298,7 @@ function chartCombined(rows, mode) {
       .filter(Boolean);
     return pts.length > 1 ? `<polyline class="${cls}" points="${pts.join(" ")}"/>` : "";
   };
-  const step = mode === "hourly" ? 4 : 1;
+  const step = (mode === "hourly" ? 4 : 1) * (W < 500 ? 2 : 1);
   const labels = rows
     .map((r, i) => (i % step ? "" : `<text x="${x(i)}" y="${H - 8}" text-anchor="middle">${xLabel(r, mode)}</text>`))
     .join("");
@@ -368,7 +368,7 @@ function chartsSplit(rows, mode) {
 }
 
 function chartMini(rows, metric, mode) {
-  const W = 720, H = 130, padL = 34, padR = 30, padT = 18, padB = 22;
+  const W = chartW(), H = 130, padL = 34, padR = 30, padT = 18, padB = 22;
   const iw = W - padL - padR, ih = H - padT - padB;
   const slot = iw / rows.length;
   const x = (i) => padL + (i + 0.5) * slot;
@@ -408,7 +408,7 @@ function chartMini(rows, metric, mode) {
       if (pts.length > 1) out += `<polyline class="temp-line ${cls}" points="${pts.join(" ")}"/>`;
     }
   }
-  const step = mode === "hourly" ? 4 : 1;
+  const step = (mode === "hourly" ? 4 : 1) * (W < 500 ? 2 : 1);
   out += rows
     .map((r, i) => (i % step ? "" : `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${xLabel(r, mode)}</text>`))
     .join("");

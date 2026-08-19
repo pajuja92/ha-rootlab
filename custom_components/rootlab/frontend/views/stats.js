@@ -2,7 +2,7 @@
    dodawanie / usuwanie / przesuwanie, per-karta tryb godzinowy/dzienny
    i wykresy rozdzielone. Poniżej: weryfikacja modeli (ranking, dziś). */
 import { t } from "../i18n.js";
-import { esc } from "../util.js";
+import { chartW, esc } from "../util.js";
 import { OM_MODELS, haEntityName, forecastBody } from "./dashboard.js";
 
 const COLORS = [
@@ -213,7 +213,7 @@ function todayCard(app, v) {
       <div class="section-title"><ha-icon icon="mdi:chart-timeline-variant"></ha-icon>${t("stats.today")}</div>
       <div class="card"><div class="ai-hint"><ha-icon icon="mdi:weather-night"></ha-icon>${t("stats.nodata")}</div></div>`;
   }
-  const W = 720, H = 240, padL = 32, padR = 10, padT = 14, padB = 24;
+  const W = chartW(), H = 240, padL = 32, padR = 10, padT = 14, padB = 24;
   const iw = W - padL - padR, ih = H - padT - padB;
   const all = today.sources
     .flatMap((src) => src.temps || [])
@@ -250,7 +250,7 @@ function todayCard(app, v) {
       <text x="2" y="${y(val) + 3}">${Math.round(val)}°</text>`
     )
     .join("");
-  const labels = [0, 4, 8, 12, 16, 20]
+  const labels = (W < 500 ? [0, 6, 12, 18] : [0, 4, 8, 12, 16, 20])
     .map((h) => `<text x="${x(h)}" y="${H - 6}" text-anchor="middle">${h}:00</text>`)
     .join("");
   const legend =

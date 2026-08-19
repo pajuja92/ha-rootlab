@@ -53,6 +53,10 @@ export const emo = (emoji, size = 18) => {
     : "";
 };
 
+/* Szerokość viewBoxu wykresów: na wąskich ekranach węższy viewBox = brak
+   pomniejszania tekstu SVG poniżej czytelności (audyt mobilny, P1). */
+export const chartW = () => (matchMedia("(max-width: 700px)").matches ? 380 : 720);
+
 /* Opcje encji dla comboboxa: [{value, label, secondary}] */
 export const entityOptions = (hass, domains) =>
   Object.values(hass.states)
@@ -86,10 +90,17 @@ export function wireCombos(root) {
     const options = JSON.parse(el.querySelector(".combo-data").textContent);
     const allowEmpty = !!el.dataset.allowEmpty;
 
+    // wyszukiwanie bez diakrytyków: „ogo" znajduje „Ogórek" (ł nie rozkłada się w NFD — mapa ręczna)
+    const norm = (s) =>
+      String(s)
+        .toLowerCase()
+        .replace(/ł/g, "l")
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "");
     const renderList = (filter) => {
-      const f = (filter || "").toLowerCase();
+      const f = norm(filter || "");
       const matched = options.filter(
-        (o) => !f || o.label.toLowerCase().includes(f) || (o.secondary || "").toLowerCase().includes(f)
+        (o) => !f || norm(o.label).includes(f) || norm(o.secondary || "").includes(f)
       );
       list.innerHTML =
         (allowEmpty ? `<div class="combo-opt" data-value=""><span>${t("none")}</span></div>` : "") +

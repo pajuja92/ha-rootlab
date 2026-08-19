@@ -45,6 +45,8 @@ export const CSS = `
 .tab[data-active] { opacity: 1; background: color-mix(in srgb, currentColor 15%, transparent); font-weight: 500; }
 .tab ha-icon { --mdc-icon-size: 18px; }
 .content { max-width: 1400px; margin: 0 auto; padding: var(--rl-gap); padding-bottom: 96px; }
+/* dotyk: FAB kryzysowy nie może zasłaniać ostatniego wiersza list ani checkboxów */
+@media (max-width: 700px) { .content { padding-bottom: 132px; } }
 .section-title {
   font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase;
   color: var(--secondary-text-color); margin: 24px 0 8px;
@@ -266,7 +268,7 @@ dialog.wide { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 64
 /* Wykresy prognozy */
 .chart-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
 .chart-svg { width: 100%; height: auto; display: block; }
-.chart-svg text { font-size: 10px; fill: var(--secondary-text-color); }
+.chart-svg text { font-size: 11px; fill: var(--secondary-text-color); }
 .chart-svg .temp-line { fill: none; stroke: var(--rl-harvest); stroke-width: 2; }
 .chart-svg .temp-line.min { stroke: var(--rl-water); }
 .chart-svg .rain-bar { fill: var(--rl-water); opacity: 0.55; }
@@ -443,7 +445,13 @@ dialog input[type=checkbox], dialog input[type=radio] { width: auto; accent-colo
 .grow-band.grow { background: var(--rl-green); opacity: 0.7; }
 .grow-band.harvest { background: var(--rl-harvest); }
 .grow-today { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--rl-crisis); border-radius: 1px; }
-@media (max-width: 700px) { .grow-row { grid-template-columns: 130px 1fr; } .grow-name { font-size: 12px; } }
+@media (max-width: 700px) {
+  .grow-row { grid-template-columns: 130px 1fr; }
+  .grow-name { font-size: 12px; }
+  /* wąski ekran: co drugi miesiąc, żeby skróty się nie sklejały (siatka zostaje) */
+  .grow-months { font-size: 10px; }
+  .grow-months span:nth-child(even) { visibility: hidden; }
+}
 
 /* --- Diagnoza AI: czat --- */
 .chat-layout { display: grid; grid-template-columns: 320px 1fr; gap: var(--rl-gap); align-items: start; }

@@ -209,7 +209,7 @@ function calendar(app) {
       dayTasks = [...overdue, ...dayTasks];
     }
     const shown = dayTasks.slice(0, 3);
-    cells.push(`<div class="cal-cell ${iso === today ? "today" : ""}">
+    cells.push(`<div class="cal-cell ${iso === today ? "today" : ""} ${dayTasks.length ? "has-tasks" : ""}" ${dayTasks.length ? `data-cal-day="${iso}"` : ""}>
       <div class="d">${d}</div>
       ${shown
         .map(
@@ -236,6 +236,25 @@ function calendar(app) {
            <div class="card">${noDate.map((task) => row(app, task)).join("")}</div>`
         : ""
     }`;
+}
+
+/* Lista zadań wybranego dnia (kalendarz na dotyku nie ma hoverów). */
+function dayDialog(app, iso) {
+  const today = todayISO();
+  let tasks = (app.data.tasks || []).filter((task) => !task.done && task.due === iso);
+  if (iso === today) {
+    tasks = [
+      ...(app.data.tasks || []).filter((task) => !task.done && task.due && task.due < today),
+      ...tasks,
+    ];
+  }
+  app.dialog(
+    `<h2>${esc(iso)}</h2>
+    ${tasks.length ? `<div class="card">${tasks.map((task) => row(app, task)).join("")}</div>` : `<p style="font-size:14px;color:var(--secondary-text-color)">${t("tasks.day.empty")}</p>`}
+    <div class="dialog-actions"><button type="button" class="btn plain" data-cancel>${t("close")}</button></div>`,
+    () => {},
+    { wide: true }
+  );
 }
 
 function taskDialog(app, task) {
@@ -290,6 +309,13 @@ function addDialog(app) {
 }
 
 export function bind(app, root) {
+  // tap w dzień kalendarza → lista zadań tego dnia (audyt mobilny P1)
+  root.querySelectorAll("[data-cal-day]").forEach((el) =>
+    el.addEventListener("click", (ev) => {
+      if (ev.target.closest(".cal-chip")) return; // chip otwiera pojedyncze zadanie
+      dayDialog(app, el.dataset.calDay);
+    })
+  );
   const s = st(app);
   root.querySelectorAll(".filter-bar input[type=hidden]").forEach((el) =>
     el.addEventListener("change", () => {
