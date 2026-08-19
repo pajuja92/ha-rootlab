@@ -572,14 +572,12 @@ async def ws_chat_send(hass, connection, msg):
             "preferencje zakupowe, nie proponuj „doboru produktów z katalogu”, nie "
             "wracaj do tematu zakupów, jeśli użytkownik go nie podjął.\n" + lines
         )
-        shop = data.get("shop") or {}
-        if shop.get("feedback"):
-            extra += (
-                "\n\nJeśli z problemu użytkownika naturalnie wynika potrzeba produktu, "
-                "którego NIE ma w katalogu, dopisz na samym końcu odpowiedzi osobną "
-                "linię w formacie: [POTRZEBA: krótki opis produktu]. Nie pytaj o to "
-                "użytkownika i nie wspominaj o tym w treści."
-            )
+        extra += (
+            "\n\nJeśli z problemu użytkownika naturalnie wynika potrzeba produktu, "
+            "którego NIE ma w katalogu, dopisz na samym końcu odpowiedzi osobną "
+            "linię w formacie: [POTRZEBA: krótki opis produktu]. Nie pytaj o to "
+            "użytkownika i nie wspominaj o tym w treści."
+        )
         msg["context"] = f"{msg['context']}\n\n{extra}" if msg["context"] else extra
     if not chat:
         connection.send_error(msg["id"], "not_found", "Nie ma takiej rozmowy")
@@ -593,14 +591,26 @@ async def ws_chat_send(hass, connection, msg):
     except Exception as err:  # noqa: BLE001
         _ai_error(connection, msg["id"], err)
         return
-    # opt-in: markery [POTRZEBA: …] → anonimowe zgłoszenie do sklepu, znikają z odpowiedzi
-    if (data.get("shop") or {}).get("feedback"):
-        import re as _re
+    # markery [POTRZEBA: …]: za zgodą — wysyłka + jawna informacja w czacie;
+    # bez zgody — informacja, że zgodę można włączyć w Ustawieniach
+    import re as _re
 
-        needs = _re.findall(r"\[POTRZEBA:\s*(.*?)\]", reply)
-        if needs:
-            reply = _re.sub(r"\s*\[POTRZEBA:.*?\]", "", reply).strip()
+    needs = _re.findall(r"\[POTRZEBA:\s*(.*?)\]", reply)
+    if needs:
+        reply = _re.sub(r"\s*\[POTRZEBA:.*?\]", "", reply).strip()
+        listed = "; ".join(n.strip() for n in needs)
+        if (data.get("shop") or {}).get("feedback"):
             hass.async_create_task(_send_shop_feedback(hass, needs))
+            reply += (
+                f"\n\n📤 Zgłosiłem do sklepu zapotrzebowanie: {listed} "
+                "(anonimowo — tylko ten opis, bez treści rozmowy)."
+            )
+        else:
+            reply += (
+                f"\n\nℹ️ Z rozmowy wynika zapotrzebowanie na produkt spoza katalogu: {listed}. "
+                "Jeśli chcesz, mogę takie potrzeby anonimowo zgłaszać do sklepu (tylko krótki "
+                "opis, bez treści rozmowy) — zgodę włączysz w Ustawienia → Sklep i produkty."
+            )
     now = dt_util.now().strftime("%Y-%m-%d %H:%M")
     user_msg = {"role": "user", "content": msg["message"], "created": now}
     if images:
