@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "RootLab",
-        "description": "Add the RootLab garden planner to Home Assistant."
+        "title": "Gardener's Almanac",
+        "description": "Add the Gardener's Almanac garden planner to Home Assistant."
       }
     },
     "abort": {
@@ -13,7 +13,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "RootLab options",
+        "title": "Gardener's Almanac options",
         "data": {
           "imgw_station": "IMGW station (current conditions)",
           "weather_entity": "Weather entity (hourly & daily forecasts)",

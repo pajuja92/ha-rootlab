@@ -8,5 +8,5 @@ SHOP_CATALOG_URL = "https://mateuszokla.pl/sklep/catalog.json"
 # {need, date, version} — brak endpointu = ciche pominięcie.
 SHOP_FEEDBACK_URL = "https://mateuszokla.pl/sklep/feedback"
 PANEL_URL = "/rootlab"
-PANEL_TITLE = "RootLab"
+PANEL_TITLE = "Gardener's Almanac"
 PANEL_ICON = "mdi:sprout"

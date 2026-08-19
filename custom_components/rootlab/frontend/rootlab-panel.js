@@ -1,4 +1,4 @@
-/* RootLab — custom panel Home Assistant.
+/* Gardener's Almanac — custom panel Home Assistant.
    ponytail: vanilla Web Components + moduły ES, bez bundlera. */
 import { CSS } from "./styles.js";
 import { t, setLang } from "./i18n.js";
@@ -202,7 +202,7 @@ class RootlabPanel extends HTMLElement {
       <div class="appbar">
         <ha-menu-button></ha-menu-button>
         <nav class="tabs">
-          <h1 class="title">🌱 <b>Root</b><span>Lab</span></h1>
+          <h1 class="title">🌱 <b>Gardener's</b><span>&nbsp;Almanac</span></h1>
           ${TABS.map(
             (tb) => `<button class="tab" data-tab="${tb.id}" ${tb.id === this.tab ? "data-active" : ""}>
               <ha-icon icon="${tb.icon}"></ha-icon>${t(`tab.${tb.id}`)}</button>`

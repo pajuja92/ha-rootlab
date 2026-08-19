@@ -44,6 +44,8 @@ export const CSS = `
 }
 .tab[data-active] { opacity: 1; background: color-mix(in srgb, currentColor 15%, transparent); font-weight: 500; }
 .tab ha-icon { --mdc-icon-size: 18px; }
+/* wąskie ekrany: samo 🌱 zamiast pełnego logo (audyt mobilny) */
+@media (max-width: 700px) { .appbar .title b, .appbar .title span { display: none; } }
 .content { max-width: 1400px; margin: 0 auto; padding: var(--rl-gap); padding-bottom: 96px; }
 /* dotyk: FAB kryzysowy nie może zasłaniać ostatniego wiersza list ani checkboxów */
 @media (max-width: 700px) { .content { padding-bottom: 132px; } }
