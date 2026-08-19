@@ -195,11 +195,7 @@ function forecastSection(app) {
     if (!rows?.length) {
       body = `<div class="ai-hint"><ha-icon icon="mdi:weather-cloudy-alert"></ha-icon>${t("forecast.unavailable")}</div>`;
     } else {
-      body =
-        (split ? chartsSplit(rows, mode) : chartCombined(rows, mode)) +
-        legendHtml(rows, mode, split) +
-        (mode === "hourly" ? summaryChips(app, rows) : "") +
-        sourceLine(app);
+      body = forecastBody(app, rows, mode, split, "dash") + sourceLine(app);
     }
   }
   return `
@@ -269,8 +265,73 @@ const xLabel = (r, mode) => {
   return mode === "hourly" ? `${d.getHours()}:00` : t("days")[(d.getDay() + 6) % 7];
 };
 
+/* Ostatni wiersz z przeszłości = „teraz" (hourly) albo „dziś" (daily). */
+const nowIdxOf = (rows) => {
+  const now = Date.now();
+  let idx = -1;
+  rows.forEach((r, i) => {
+    if (new Date(r.datetime).getTime() <= now) idx = i;
+  });
+  return idx;
+};
+
+/* Zakres dat nad wykresem — wiadomo, którego dnia dotyczą dane. */
+function dateLine(app, rows, mode) {
+  if (!rows.length) return "";
+  const lang = app.hass?.language || "pl";
+  const d0 = new Date(rows[0].datetime);
+  const d1 = new Date(rows[rows.length - 1].datetime);
+  const one = (d) => d.toLocaleDateString(lang, { weekday: "short", day: "numeric", month: "long" });
+  const short = (d) => d.toLocaleDateString(lang, { weekday: "short", day: "numeric", month: "numeric" });
+  const label = d0.toDateString() === d1.toDateString() ? one(d0) : `${short(d0)} – ${short(d1)}`;
+  return `<div style="font-size:12px;color:var(--secondary-text-color);margin:2px 0 4px">📅 ${esc(label)}</div>`;
+}
+
+/* Odczyt punktowy po kliknięciu wykresu — zastępuje chipy zbiorcze do czasu ✕. */
+function pointChips(app, rows, mode, idx, key) {
+  const r = rows[idx];
+  const d = new Date(r.datetime);
+  const lang = app.hass?.language || "pl";
+  const when =
+    mode === "hourly"
+      ? d.toLocaleString(lang, { weekday: "short", hour: "2-digit", minute: "2-digit" })
+      : d.toLocaleDateString(lang, { weekday: "long", day: "numeric", month: "numeric" });
+  const chip = (icon, label, val) =>
+    val == null
+      ? ""
+      : `<span class="sensor-chip" title="${esc(label)}"><ha-icon icon="${icon}"></ha-icon>${esc(label)}: ${esc(val)}</span>`;
+  const t1 = num(r.temperature);
+  const t2 = num(r.templow);
+  return `<div class="sensors" style="margin-top:10px;align-items:center">
+    <span class="sensor-chip" style="background:var(--rl-green-bg)"><ha-icon icon="mdi:clock-outline"></ha-icon>${esc(when)}</span>
+    ${chip("mdi:thermometer", t("forecast.legend.temp"), t1 != null ? `${Math.round(t1)}°${mode === "daily" && t2 != null ? ` / ${Math.round(t2)}°` : ""}` : null)}
+    ${chip("mdi:weather-pouring", t("forecast.legend.rain"), num(r.precipitation) != null ? `${num(r.precipitation)} mm` : null)}
+    ${chip("mdi:umbrella-outline", t("forecast.legend.prob"), num(r.precipitation_probability) != null ? `${Math.round(num(r.precipitation_probability))} %` : null)}
+    ${chip("mdi:cloud-percent-outline", t("forecast.hum"), num(r.humidity) != null ? `${Math.round(num(r.humidity))} %` : null)}
+    ${chip("mdi:gauge", t("forecast.press"), num(r.pressure) != null ? `${Math.round(num(r.pressure))} hPa` : null)}
+    <button class="icon-btn" data-action="fc-clear" data-key="${esc(key)}" title="${t("close")}"><ha-icon icon="mdi:close" style="--mdc-icon-size:16px"></ha-icon></button>
+  </div>`;
+}
+
+/* Klik/tap w wykres prognozy → wybór punktu (wspólne dla Pulpitu i Pogody). */
+export function bindForecastCharts(app, root) {
+  root.querySelectorAll("svg[data-fc]").forEach((svg) =>
+    svg.addEventListener("click", (ev) => {
+      const n = parseInt(svg.dataset.n, 10);
+      const padL = parseFloat(svg.dataset.pl);
+      const padR = parseFloat(svg.dataset.pr);
+      const rect = svg.getBoundingClientRect();
+      const W = chartW();
+      const xv = ((ev.clientX - rect.left) / rect.width) * W;
+      const idx = Math.max(0, Math.min(n - 1, Math.floor((xv - padL) / ((W - padL - padR) / n))));
+      (app._fcSel ??= {})[svg.dataset.fc] = idx;
+      app.render();
+    })
+  );
+}
+
 /* Wykres łączony: temperatura (linia), opad (słupki), szansa opadów (kreskowana). */
-function chartCombined(rows, mode) {
+function chartCombined(rows, mode, key = null, sel = null) {
   const W = chartW(), H = 200, padL = 30, padR = 30, padT = 16, padB = 26;
   const iw = W - padL - padR, ih = H - padT - padB;
   const temps = rows.flatMap((r) => [num(r.temperature), num(r.templow)]).filter((v) => v != null);
@@ -343,14 +404,20 @@ function chartCombined(rows, mode) {
           })
           .join("")
       : "";
-  return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+  const mi = sel != null ? sel : nowIdxOf(rows);
+  const marker =
+    mi >= 0 && mi < rows.length
+      ? `<line class="fc-now ${sel != null ? "sel" : ""}" x1="${x(mi)}" x2="${x(mi)}" y1="${padT - 6}" y2="${padT + ih}"/>`
+      : "";
+  return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"
+      ${key ? `data-fc="${key}" data-n="${rows.length}" data-pl="${padL}" data-pr="${padR}"` : ""}>
     ${grid}${probAxis}${bars}${line("templow", "temp-line min", yT)}${line("temperature", "temp-line", yT)}
-    ${line("precipitation_probability", "prob-line", yP)}${tempLabels}${labels}${tips}
+    ${line("precipitation_probability", "prob-line", yP)}${tempLabels}${labels}${marker}${tips}
   </svg>`;
 }
 
 /* Tryb rozdzielony: osobny mini-wykres na każdą dostępną wielkość. */
-function chartsSplit(rows, mode) {
+function chartsSplit(rows, mode, key = null, sel = null) {
   const metrics = [
     { label: `${t("forecast.legend.temp")} (°C)`, series: [["temperature", "temp-line"], ["templow", "temp-line min"]] },
     { label: `${t("forecast.legend.rain")} + ${t("forecast.legend.prob")}`, bars: "precipitation", prob: true },
@@ -361,13 +428,13 @@ function chartsSplit(rows, mode) {
     .map((metric) => {
       const keys = (metric.series || []).map(([k]) => k).concat(metric.bars ? [metric.bars] : []);
       if (!keys.some((k) => S(rows, k).some((v) => v != null))) return "";
-      return chartMini(rows, metric, mode);
+      return chartMini(rows, metric, mode, key, sel);
     })
     .filter(Boolean)
     .join("");
 }
 
-function chartMini(rows, metric, mode) {
+function chartMini(rows, metric, mode, key = null, sel = null) {
   const W = chartW(), H = 130, padL = 34, padR = 30, padT = 18, padB = 22;
   const iw = W - padL - padR, ih = H - padT - padB;
   const slot = iw / rows.length;
@@ -412,7 +479,11 @@ function chartMini(rows, metric, mode) {
   out += rows
     .map((r, i) => (i % step ? "" : `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${xLabel(r, mode)}</text>`))
     .join("");
-  return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="margin-top:4px">${out}</svg>`;
+  const mi = sel != null ? sel : nowIdxOf(rows);
+  if (mi >= 0 && mi < rows.length)
+    out += `<line class="fc-now ${sel != null ? "sel" : ""}" x1="${x(mi)}" x2="${x(mi)}" y1="${padT - 4}" y2="${padT + ih}"/>`;
+  return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="margin-top:4px"
+      ${key ? `data-fc="${key}" data-n="${rows.length}" data-pl="${padL}" data-pr="${padR}"` : ""}>${out}</svg>`;
 }
 
 /* Ranking trafności prognoz (weryfikator: modele vs czujniki/IMGW). */
@@ -482,6 +553,7 @@ function weatherSection(app) {
 }
 
 export function bind(app, root) {
+  bindForecastCharts(app, root);
   root.querySelector('[data-bind="fc-source"]')?.addEventListener("change", async (ev) => {
     localStorage.setItem("rootlab_fc_source", ev.target.value);
     app.forecast = undefined;
@@ -499,6 +571,10 @@ export const actions = {
   "weather-skip": (app) => app.ws("irrigation/skip", { date: todayISO() }).then((d) => { app.data = d; app.render(); }),
   "weather-dismiss": (app) => { app.rainDismissed = true; app.render(); },
   "forecast-mode": (app, el) => { app.forecastMode = el.dataset.mode; app.render(); },
+  "fc-clear": (app, el) => {
+    if (app._fcSel) delete app._fcSel[el.dataset.key];
+    app.render();
+  },
   "forecast-split": (app) => { app.forecastSplit = !app.forecastSplit; app.render(); },
   "dash-edit": (app) => { app.dashEdit = !app.dashEdit; app.render(); },
   "dash-move": (app, el) => {
@@ -521,10 +597,13 @@ export const actions = {
 
 /* Współdzielone z zakładką Pogoda — te same karty prognozy co na pulpicie. */
 export { OM_MODELS, haEntityName };
-export function forecastBody(app, rows, mode, split) {
+export function forecastBody(app, rows, mode, split, key = "wx") {
+  let sel = (app._fcSel || {})[key];
+  if (sel != null && (sel < 0 || sel >= rows.length)) sel = null;
   return (
-    (split ? chartsSplit(rows, mode) : chartCombined(rows, mode)) +
+    dateLine(app, rows, mode) +
+    (split ? chartsSplit(rows, mode, key, sel) : chartCombined(rows, mode, key, sel)) +
     legendHtml(rows, mode, split) +
-    (mode === "hourly" ? summaryChips(app, rows) : "")
+    (sel != null ? pointChips(app, rows, mode, sel, key) : mode === "hourly" ? summaryChips(app, rows) : "")
   );
 }

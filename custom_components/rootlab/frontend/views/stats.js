@@ -3,7 +3,7 @@
    i wykresy rozdzielone. Poniżej: weryfikacja modeli (ranking, dziś). */
 import { t } from "../i18n.js";
 import { chartW, esc } from "../util.js";
-import { OM_MODELS, haEntityName, forecastBody } from "./dashboard.js";
+import { OM_MODELS, haEntityName, forecastBody, bindForecastCharts } from "./dashboard.js";
 
 const COLORS = [
   "var(--rl-harvest)",
@@ -70,7 +70,7 @@ function weatherCard(app, src, idx, total) {
   } else {
     const rows = fc[mode];
     body = rows?.length
-      ? forecastBody(app, rows, mode, split)
+      ? forecastBody(app, rows, mode, split, src)
       : `<div class="ai-hint"><ha-icon icon="mdi:weather-cloudy-alert"></ha-icon>${t("forecast.unavailable")}</div>`;
   }
   const ib = (action, icon, title, extra = "", disabled = false) =>
@@ -85,9 +85,13 @@ function weatherCard(app, src, idx, total) {
         <div class="spacer" style="flex:1"></div>
         <button class="btn small ${split ? "" : "plain"}" data-action="wcard-split" data-src="${src}" title="${t("forecast.split")}">
           <ha-icon icon="mdi:chart-multiple" style="--mdc-icon-size:16px"></ha-icon></button>
-        ${ib("wcard-move", "mdi:arrow-up", t("weather.up"), 'data-dir="-1"', idx === 0)}
-        ${ib("wcard-move", "mdi:arrow-down", t("weather.down"), 'data-dir="1"', idx === total - 1)}
-        ${ib("wcard-del", "mdi:close", t("weather.remove"))}
+        ${
+          app._wxEdit
+            ? ib("wcard-move", "mdi:arrow-up", t("weather.up"), 'data-dir="-1"', idx === 0) +
+              ib("wcard-move", "mdi:arrow-down", t("weather.down"), 'data-dir="1"', idx === total - 1) +
+              ib("wcard-del", "mdi:close", t("weather.remove"))
+            : ""
+        }
       </div>
       ${body}
     </div>`;
@@ -98,6 +102,9 @@ function weatherCard(app, src, idx, total) {
 export function render(app) {
   ensureForecasts(app);
   const list = cardList();
+  const editBar = `<div class="toolbar"><div class="spacer"></div>
+    <button class="btn small ${app._wxEdit ? "" : "plain"}" data-action="wcard-edit">
+      <ha-icon icon="mdi:pencil" style="--mdc-icon-size:16px"></ha-icon>${t("edit")}</button></div>`;
   const cardsHtml = list.map((src, i) => weatherCard(app, src, i, list.length)).join("");
   const empty = list.length
     ? ""
@@ -108,10 +115,14 @@ export function render(app) {
         <button class="btn small" data-action="wcard-add"><ha-icon icon="mdi:plus" style="--mdc-icon-size:16px"></ha-icon>${t("weather.add")}</button>
       </div>`
     : "";
-  return cardsHtml + empty + addBtn + verificationSection(app);
+  return editBar + cardsHtml + empty + addBtn + verificationSection(app);
 }
 
 export const actions = {
+  "wcard-edit": (app) => {
+    app._wxEdit = !app._wxEdit;
+    app.render();
+  },
   "wcard-mode": (app, el) => {
     const s = cardState();
     s[el.dataset.src] = { ...(s[el.dataset.src] || {}), mode: el.dataset.mode };
@@ -272,4 +283,9 @@ function infoCard() {
   return `<div class="card" style="margin-top:var(--rl-gap)">
     <div class="ai-hint" style="margin-top:0"><ha-icon icon="mdi:information-outline"></ha-icon>${t("verify.note")}</div>
   </div>`;
+}
+
+
+export function bind(app, root) {
+  bindForecastCharts(app, root);
 }

@@ -271,6 +271,9 @@ dialog.wide { width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 64
 .chart-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
 .chart-svg { width: 100%; height: auto; display: block; }
 .chart-svg text { font-size: 11px; fill: var(--secondary-text-color); }
+.chart-svg .fc-now { stroke: var(--rl-crisis); stroke-width: 1.4; stroke-dasharray: 4 3; opacity: 0.85; }
+.chart-svg .fc-now.sel { stroke: var(--rl-ai); stroke-dasharray: none; stroke-width: 1.8; opacity: 1; }
+svg[data-fc] { cursor: crosshair; }
 .chart-svg .temp-line { fill: none; stroke: var(--rl-harvest); stroke-width: 2; }
 .chart-svg .temp-line.min { stroke: var(--rl-water); }
 .chart-svg .rain-bar { fill: var(--rl-water); opacity: 0.55; }
