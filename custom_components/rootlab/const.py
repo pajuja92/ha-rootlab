@@ -1,5 +1,5 @@
 DOMAIN = "rootlab"
-VERSION = "0.4.0-beta.40"
+VERSION = "1.0.0-rc.1"
 
 # Katalog produktów sklepu autora — pobierany automatycznie przez każdą instalację.
 # Format JSON i sposób podpięcia sklepu: docs/SHOP.md.
