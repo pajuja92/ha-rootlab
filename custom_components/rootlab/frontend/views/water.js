@@ -354,14 +354,14 @@ export const actions = {
   "add-section": (app) => sectionDialog(app),
   "device-add": (app) => deviceDialog(app),
   "device-edit": (app, el) => deviceDialog(app, app.data.devices.find((d) => d.id === el.dataset.id)),
-  "device-delete": (app, el) => {
+  "device-delete": async (app, el) => {
     const d = app.data.devices.find((x) => x.id === el.dataset.id);
-    if (confirm(t("device.delete.confirm", { name: d.name }))) app.deleteItem("devices", d.id);
+    if (await app.confirm(t("device.delete.confirm", { name: d.name }))) app.deleteItem("devices", d.id);
   },
   "edit-section": (app, el) => sectionDialog(app, app.data.irrigation.sections.find((s) => s.id === el.dataset.id)),
-  "delete-section": (app, el) => {
+  "delete-section": async (app, el) => {
     const s = app.data.irrigation.sections.find((x) => x.id === el.dataset.id);
-    if (confirm(t("water.section.delete.confirm", { name: s.name }))) app.deleteItem("sections", s.id);
+    if (await app.confirm(t("water.section.delete.confirm", { name: s.name }))) app.deleteItem("sections", s.id);
   },
   "water-run": async (app, el) => {
     app.data = await app.ws("irrigation/run", { section_id: el.dataset.id, minutes: parseInt(el.dataset.min, 10) });
@@ -371,8 +371,8 @@ export const actions = {
   "water-pause-run": call("irrigation/pause_run"),
   "water-resume-run": call("irrigation/resume_run"),
   "water-oneoff": (app, el) => oneOffDialog(app, el.dataset.id),
-  "water-oneoff-del": (app, el) => {
-    if (confirm(t("water.oneoff.delete.confirm"))) app.deleteItem("one_offs", el.dataset.id);
+  "water-oneoff-del": async (app, el) => {
+    if (await app.confirm(t("water.oneoff.delete.confirm"))) app.deleteItem("one_offs", el.dataset.id);
   },
   "water-pause": (app) => pauseDialog(app),
   "water-resume": async (app) => {

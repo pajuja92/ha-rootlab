@@ -1037,8 +1037,8 @@ function rowDialog(app, item) {
 }
 
 function lineDelete(app, dlg, item) {
-  dlg.querySelector("#line-del").addEventListener("click", () => {
-    if (!confirm(t("editor.item.delete.confirm"))) return;
+  dlg.querySelector("#line-del").addEventListener("click", async () => {
+    if (!await app.confirm(t("editor.item.delete.confirm"))) return;
     app.data.layout.items = app.data.layout.items.filter((i) => i.id !== item.id);
     dlg.close();
     saveLayout(app, t("toast.deleted"));
@@ -1111,8 +1111,8 @@ function circleDialog(app, item) {
       saveLayout(app, t("toast.saved"));
     }
   );
-  dlg.querySelector("#circle-del").addEventListener("click", () => {
-    if (!confirm(t("editor.item.delete.confirm"))) return;
+  dlg.querySelector("#circle-del").addEventListener("click", async () => {
+    if (!await app.confirm(t("editor.item.delete.confirm"))) return;
     app.data.layout.items = app.data.layout.items.filter((i) => i.id !== item.id);
     dlg.close();
     saveLayout(app, t("toast.deleted"));
@@ -1136,8 +1136,8 @@ function sprayDialog(app, item) {
       saveLayout(app, t("toast.saved"));
     }
   );
-  dlg.querySelector("#spray-del").addEventListener("click", () => {
-    if (!confirm(t("editor.item.delete.confirm"))) return;
+  dlg.querySelector("#spray-del").addEventListener("click", async () => {
+    if (!await app.confirm(t("editor.item.delete.confirm"))) return;
     app.data.layout.items = app.data.layout.items.filter((i) => i.id !== item.id);
     dlg.close();
     saveLayout(app, t("toast.deleted"));
@@ -1161,8 +1161,8 @@ function pathDialog(app, item) {
       saveLayout(app, t("toast.saved"));
     }
   );
-  dlg.querySelector("#path-del").addEventListener("click", () => {
-    if (!confirm(t("editor.item.delete.confirm"))) return;
+  dlg.querySelector("#path-del").addEventListener("click", async () => {
+    if (!await app.confirm(t("editor.item.delete.confirm"))) return;
     app.data.layout.items = app.data.layout.items.filter((i) => i.id !== item.id);
     dlg.close();
     saveLayout(app, t("toast.deleted"));

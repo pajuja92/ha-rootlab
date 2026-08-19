@@ -283,7 +283,7 @@ export function openZoneCard(app, zoneId) {
   });
   dlg.querySelectorAll("[data-zn-del]").forEach((el) =>
     el.addEventListener("click", async () => {
-      if (!confirm(t("hist.delete.confirm"))) return;
+      if (!await app.confirm(t("hist.delete.confirm"))) return;
       if (await saveNotes((zone.notes || []).filter((n) => n.id !== el.dataset.znDel))) {
         app.toast(t("toast.deleted"));
         openZoneCard(app, zone.id);
@@ -641,7 +641,7 @@ export function zoneDialog(app, zone, shapeItem = null) {
   });
   // usunięcie samego rysunku z planu — strefa zostaje
   dlg.querySelector("#zshape-del")?.addEventListener("click", async () => {
-    if (!confirm(t("editor.item.delete.confirm"))) return;
+    if (!await app.confirm(t("editor.item.delete.confirm"))) return;
     const layout = app.data.layout;
     layout.items = layout.items.filter((i) => i.id !== shape.id);
     dlg.close();
@@ -1075,7 +1075,7 @@ function renderCard(app, plant, photos, aiAnswer = null, aiBusy = false, histEdi
   );
   dlg.querySelectorAll("[data-he-del]").forEach((el) =>
     el.addEventListener("click", async () => {
-      if (!confirm(t("hist.delete.confirm"))) return;
+      if (!await app.confirm(t("hist.delete.confirm"))) return;
       const { type, id } = el.dataset;
       let updatedPhotos = null;
       try {
@@ -1224,8 +1224,8 @@ function renderCardEdit(app, plant, photos, draft = null) {
     })
   );
   dlg.querySelector("#pce-back").addEventListener("click", () => renderCard(app, plant, photos));
-  dlg.querySelector("#pce-del").addEventListener("click", () => {
-    if (!confirm(t("plant.delete.confirm", { name: plant.name }))) return;
+  dlg.querySelector("#pce-del").addEventListener("click", async () => {
+    if (!await app.confirm(t("plant.delete.confirm", { name: plant.name }))) return;
     dlg.close();
     app.deleteItem("plants", plant.id);
   });
@@ -1273,7 +1273,7 @@ export const actions = {
   "edit-zone": (app, el) => zoneDialog(app, app.data.zones.find((z) => z.id === el.dataset.id)),
   "delete-zone": async (app, el) => {
     const zone = app.data.zones.find((z) => z.id === el.dataset.id);
-    if (!confirm(t("zone.delete.confirm", { name: zone.name }))) return;
+    if (!await app.confirm(t("zone.delete.confirm", { name: zone.name }))) return;
     try {
       app.data = await app.ws("item/delete", { kind: "zones", item_id: zone.id });
       // strefa = obszar: usuń też jej rysunki z planu
@@ -1290,9 +1290,9 @@ export const actions = {
   },
   "add-plant": (app) => plantDialog(app),
   "edit-plant": (app, el) => openPlantCard(app, el.dataset.id, true),
-  "delete-plant": (app, el) => {
+  "delete-plant": async (app, el) => {
     const plant = app.data.plants.find((p) => p.id === el.dataset.id);
-    if (confirm(t("plant.delete.confirm", { name: plant.name }))) app.deleteItem("plants", plant.id);
+    if (await app.confirm(t("plant.delete.confirm", { name: plant.name }))) app.deleteItem("plants", plant.id);
   },
   "plant-card": (app, el) => openPlantCard(app, el.dataset.id),
   "zone-card": (app, el) => openZoneCard(app, el.dataset.id),

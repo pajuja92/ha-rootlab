@@ -88,8 +88,8 @@ function knDialog(app, item) {
 export const actions = {
   "kn-add": (app) => knDialog(app),
   "kn-edit": (app, el) => knDialog(app, app.data.knowledge.find((k) => k.id === el.dataset.id)),
-  "kn-delete": (app, el) => {
-    if (confirm(t("knowledge.delete.confirm"))) app.deleteItem("knowledge", el.dataset.id);
+  "kn-delete": async (app, el) => {
+    if (await app.confirm(t("knowledge.delete.confirm"))) app.deleteItem("knowledge", el.dataset.id);
   },
   "kn-toggle": (app, el) => {
     app.knowledgeOpen = app.knowledgeOpen === el.dataset.id ? null : el.dataset.id;

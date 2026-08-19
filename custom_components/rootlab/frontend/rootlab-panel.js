@@ -2,7 +2,7 @@
    ponytail: vanilla Web Components + moduły ES, bez bundlera. */
 import { CSS } from "./styles.js";
 import { t, setLang } from "./i18n.js";
-import { wireCombos } from "./util.js";
+import { esc, wireCombos } from "./util.js";
 import * as crisis from "./crisis.js";
 import * as chat from "./views/chat.js";
 import * as dashboard from "./views/dashboard.js";
@@ -212,6 +212,7 @@ class RootlabPanel extends HTMLElement {
       <div class="content">${VIEWS[this.tab].render(this)}</div>
       ${crisis.renderFab(this)}
       <dialog id="form-dialog"></dialog>
+      <dialog id="confirm-dialog" style="max-width:360px"></dialog>
     `;
     if (toastEl) this.shadowRoot.append(toastEl);
     const menu = this.shadowRoot.querySelector("ha-menu-button");
@@ -268,11 +269,37 @@ class RootlabPanel extends HTMLElement {
     this._tickCountdowns();
   }
 
+  /* Potwierdzenie w stylu panelu zamiast natywnego confirm() — webview Companion
+     renderuje natywne alerty obco i nieprzewidywalnie. */
+  confirm(msg) {
+    const dlg = this.shadowRoot.getElementById("confirm-dialog");
+    dlg.innerHTML = `<p style="margin:0 0 16px;font-size:15px">${esc(msg)}</p>
+      <div class="dialog-actions">
+        <button class="btn plain" data-c="0">${t("cancel")}</button>
+        <button class="btn" data-c="1">OK</button>
+      </div>`;
+    dlg.showModal();
+    return new Promise((resolve) => {
+      const finish = (ok) => {
+        if (dlg.open) dlg.close();
+        resolve(ok);
+      };
+      dlg.querySelectorAll("[data-c]").forEach((b) =>
+        b.addEventListener("click", () => finish(b.dataset.c === "1"))
+      );
+      dlg.addEventListener("cancel", () => resolve(false), { once: true });
+    });
+  }
+
   /* Dialog pomocniczy: html + onSubmit; zamykanie: backdrop / Escape / X / Anuluj. */
   dialog(html, onSubmit, { wide = false } = {}) {
     const dlg = this.shadowRoot.getElementById("form-dialog");
     dlg.classList.toggle("wide", wide);
     dlg.innerHTML = `<button class="dialog-x" title="${t("close")}"><ha-icon icon="mdi:close"></ha-icon></button>` + html;
+    // na dotyku autofocus wywołuje klawiaturę zasłaniającą pół dialogu
+    if (matchMedia("(pointer: coarse)").matches) {
+      dlg.querySelectorAll("[autofocus]").forEach((el) => el.removeAttribute("autofocus"));
+    }
     dlg.querySelector(".dialog-x").addEventListener("click", () => dlg.close());
     dlg.querySelector("form")?.addEventListener("submit", (ev) => {
       ev.preventDefault();

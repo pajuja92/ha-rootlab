@@ -338,8 +338,8 @@ export function growDialog(app, editing = null) {
       growDialog(app, app.data.plantings.find((x) => x.id === editing.id));
     })
   );
-  dlg.querySelector("#grow-del")?.addEventListener("click", () => {
-    if (!confirm(t("grow.delete.confirm"))) return;
+  dlg.querySelector("#grow-del")?.addEventListener("click", async () => {
+    if (!await app.confirm(t("grow.delete.confirm"))) return;
     dlg.close();
     app.deleteItem("plantings", editing.id);
   });

@@ -97,6 +97,11 @@ function list(app) {
   const s = st(app);
   const pending = applyFilters(app, pendingTasks(app.data.tasks));
   const done = applyFilters(app, (app.data.tasks || []).filter((task) => task.done)).slice(-10).reverse();
+  // odłożone są ukrywane z grup do dnia przypomnienia — ale muszą mieć widoczny ślad
+  const snoozed = applyFilters(
+    app,
+    (app.data.tasks || []).filter((task) => !task.done && task.snoozed_until > todayISO())
+  ).sort((a, b) => (a.snoozed_until || "").localeCompare(b.snoozed_until || ""));
   if (!pending.length && !done.length) {
     return `<div class="empty">
       <ha-icon icon="mdi:clipboard-check-outline"></ha-icon>
@@ -136,6 +141,10 @@ function list(app) {
       <div class="card">${g.tasks.map((task) => row(app, task)).join("")}</div>`
       )
       .join("") +
+    (snoozed.length
+      ? `<div class="section-title"><ha-icon icon="mdi:alarm-snooze"></ha-icon>${t("tasks.snoozed")} (${snoozed.length})</div>
+         <div class="card" style="opacity:.75">${snoozed.map((task) => row(app, task)).join("")}</div>`
+      : "") +
     (done.length
       ? `<div class="section-title"><ha-icon icon="mdi:check-all"></ha-icon>✓</div>
          <div class="card">${done.map((task) => row(app, task)).join("")}</div>`
@@ -160,7 +169,9 @@ function row(app, task) {
     ${
       task.done
         ? ""
-        : `<button class="icon-btn" data-action="task-snooze" data-id="${task.id}" title="${t("tasks.snooze")}"><ha-icon icon="mdi:alarm-snooze"></ha-icon></button>`
+        : task.snoozed_until > todayISO()
+          ? `<button class="icon-btn" data-action="task-wake" data-id="${task.id}" title="${t("tasks.wake")}"><ha-icon icon="mdi:alarm-off"></ha-icon></button>`
+          : `<button class="icon-btn" data-action="task-snooze" data-id="${task.id}" title="${t("tasks.snooze")}"><ha-icon icon="mdi:alarm-snooze"></ha-icon></button>`
     }
     <button class="icon-btn" data-action="task-delete" data-id="${task.id}" title="${t("delete")}"><ha-icon icon="mdi:trash-can-outline"></ha-icon></button>
   </div>`;
@@ -175,7 +186,8 @@ function calendar(app) {
   const startOffset = (first.getDay() + 6) % 7; // Pn=0
   const daysInMonth = new Date(year, month, 0).getDate();
   const today = todayISO();
-  const tasks = applyFilters(app, pendingTasks(app.data.tasks));
+  // kalendarz to widok planu — pokazuje też odłożone (due jest podbijane przy snoozie)
+  const tasks = applyFilters(app, (app.data.tasks || []).filter((task) => !task.done));
   const byDay = {};
   const noDate = [];
   for (const task of tasks) {
@@ -321,10 +333,14 @@ export const actions = {
     app.shadowRoot.getElementById("form-dialog")?.close();
     app.saveItem("tasks", { ...task, done: true });
   },
-  "task-delete": (app, el) => {
-    if (!confirm(t("task.delete.confirm"))) return;
+  "task-delete": async (app, el) => {
+    if (!await app.confirm(t("task.delete.confirm"))) return;
     app.shadowRoot.getElementById("form-dialog")?.close();
     app.deleteItem("tasks", el.dataset.id);
+  },
+  "task-wake": (app, el) => {
+    const task = app.data.tasks.find((x) => x.id === el.dataset.id);
+    if (task) app.saveItem("tasks", { ...task, snoozed_until: null });
   },
   "task-snooze": (app, el) => {
     app.dialog(

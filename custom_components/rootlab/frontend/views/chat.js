@@ -416,8 +416,8 @@ export const actions = {
     s.att = [];
     app.render();
   },
-  "chat-del": (app, el) => {
-    if (!confirm(t("chat.delete.confirm"))) return;
+  "chat-del": async (app, el) => {
+    if (!await app.confirm(t("chat.delete.confirm"))) return;
     if (st(app).openId === el.dataset.id) st(app).openId = null;
     app.deleteItem("chats", el.dataset.id);
   },
