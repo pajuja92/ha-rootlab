@@ -22,6 +22,18 @@ def _service(entity_id, on):
     return domain, "turn_on" if on else "turn_off"
 
 
+def _entities(section):
+    """Encje zaworów sekcji — nowe entity_ids albo stare pojedyncze entity_id."""
+    ids = section.get("entity_ids") or ([section["entity_id"]] if section.get("entity_id") else [])
+    return [e for e in ids if e]
+
+
+async def _switch(hass, entity_ids, on):
+    for entity_id in entity_ids:
+        domain, service = _service(entity_id, on)
+        await hass.services.async_call(domain, service, {"entity_id": entity_id})
+
+
 def async_setup_scheduler(hass):
     d = hass.data[DOMAIN]
 
@@ -29,12 +41,11 @@ def async_setup_scheduler(hass):
         hass.bus.async_fire("rootlab_updated")
 
     async def start(section, minutes):
-        entity_id = section.get("entity_id")
+        entity_ids = _entities(section)
         sid = section["id"]
-        if not entity_id or sid in d["active"]:
+        if not entity_ids or sid in d["active"]:
             return
-        domain, service = _service(entity_id, True)
-        await hass.services.async_call(domain, service, {"entity_id": entity_id})
+        await _switch(hass, entity_ids, True)
 
         async def _auto_off(_now):
             await stop(sid)
@@ -48,13 +59,15 @@ def async_setup_scheduler(hass):
                 if run:
                     run["cancel"]()
                     run["unwatch"]()
+                    # domknij pozostałe zawory sekcji (idempotentne)
+                    hass.async_create_task(_switch(hass, run["entity_ids"], False))
                     _notify()
 
         d["active"][sid] = {
             "end": (dt_util.utcnow() + timedelta(minutes=minutes)).isoformat(),
-            "entity_id": entity_id,
+            "entity_ids": entity_ids,
             "cancel": async_call_later(hass, minutes * 60, _auto_off),
-            "unwatch": async_track_state_change_event(hass, [entity_id], _external_off),
+            "unwatch": async_track_state_change_event(hass, entity_ids, _external_off),
         }
         _notify()
 
@@ -66,8 +79,7 @@ def async_setup_scheduler(hass):
         run["cancel"]()
         run["unwatch"]()
         if not run.get("paused"):
-            domain, service = _service(run["entity_id"], False)
-            await hass.services.async_call(domain, service, {"entity_id": run["entity_id"]})
+            await _switch(hass, run["entity_ids"], False)
         _notify()
 
     async def pause_run(sid):
@@ -80,9 +92,8 @@ def async_setup_scheduler(hass):
         )
         run["cancel"]()
         run["unwatch"]()
-        domain, service = _service(run["entity_id"], False)
-        await hass.services.async_call(domain, service, {"entity_id": run["entity_id"]})
-        d["active"][sid] = {"paused": True, "remaining_s": int(remaining), "entity_id": run["entity_id"], "end": None, "cancel": lambda: None, "unwatch": lambda: None}
+        await _switch(hass, run["entity_ids"], False)
+        d["active"][sid] = {"paused": True, "remaining_s": int(remaining), "entity_ids": run["entity_ids"], "end": None, "cancel": lambda: None, "unwatch": lambda: None}
         _notify()
 
     async def resume_run(sid):

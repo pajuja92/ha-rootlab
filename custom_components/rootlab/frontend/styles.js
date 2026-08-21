@@ -152,6 +152,15 @@ dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; mar
 }
 .day-picker label:has(input:checked) { background: var(--rl-water-bg); border-color: var(--rl-water); color: var(--rl-water); }
 .day-picker input { display: none; }
+.check-list { display: flex; flex-direction: column; gap: 6px; }
+.check-list label {
+  margin: 0; display: flex; align-items: center; gap: 8px;
+  border: 1px solid var(--divider-color); border-radius: 10px; padding: 8px 12px;
+  cursor: pointer; font-size: 14px; color: var(--primary-text-color); user-select: none;
+}
+.check-list label:has(input:checked) { background: var(--rl-water-bg); border-color: var(--rl-water); }
+.check-list input { width: auto; margin: 0; }
+.check-list .sec { margin-left: auto; font-size: 12px; color: var(--secondary-text-color); overflow: hidden; text-overflow: ellipsis; }
 /* Nawadnianie */
 .timeline { position: relative; height: 26px; margin: 12px 0 4px; background: color-mix(in srgb, var(--divider-color) 40%, transparent); border-radius: 6px; overflow: hidden; }
 .timeline .block { position: absolute; top: 0; bottom: 0; background: var(--rl-water-bg); border-inline: 1px solid var(--rl-water); }

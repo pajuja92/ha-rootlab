@@ -182,7 +182,8 @@ function sectionRow(app, s, run) {
   const sched = days && times ? `${days} · ${times} · ${sch.duration_min || 10} min` : t("water.nosched");
   const zone = app.data.zones.find((z) => z.id === s.zone_id);
   const oneOffs = (app.data.irrigation.one_offs || []).filter((o) => o.section_id === s.id);
-  const entityWarn = s.entity_id ? "" : ` <span class="chip crisis">${t("water.noentity")}</span>`;
+  const hasValves = (s.entity_ids || (s.entity_id ? [s.entity_id] : [])).length > 0;
+  const entityWarn = hasValves ? "" : ` <span class="chip crisis">${t("water.noentity")}</span>`;
   const kindLabel = KINDS.includes(s.kind) ? t(`water.kind.${s.kind}`) : "";
   let controls;
   if (run && run.paused) {
@@ -197,7 +198,7 @@ function sectionRow(app, s, run) {
   } else {
     controls =
       [5, 10, 15]
-        .map((m) => `<button class="btn small ghost" data-action="water-run" data-id="${s.id}" data-min="${m}" ${s.entity_id ? "" : "disabled"}>▶ ${m}′</button>`)
+        .map((m) => `<button class="btn small ghost" data-action="water-run" data-id="${s.id}" data-min="${m}" ${hasValves ? "" : "disabled"}>▶ ${m}′</button>`)
         .join("") +
       `<button class="icon-btn" data-action="water-oneoff" data-id="${s.id}" title="${t("water.oneoff")}"><ha-icon icon="mdi:calendar-plus"></ha-icon></button>`;
   }
@@ -223,22 +224,19 @@ function sectionRow(app, s, run) {
 
 function sectionDialog(app, section, draft = null) {
   const sch = section?.schedule || {};
+  const devs = (app.data.devices || []).filter((d) => d.entities?.valve);
   draft ??= {
     zone_id: section?.zone_id || "",
-    // stare sekcje bez device_id: dopasuj urządzenie po encji zaworu
-    device_id: section?.device_id
-      || (app.data.devices || []).find((d) => section?.entity_id && d.entities?.valve === section.entity_id)?.id
-      || "",
+    // stare sekcje: device_ids, potem pojedyncze device_id, na końcu dopasowanie po encji
+    device_ids: section?.device_ids
+      || (section?.device_id ? [section.device_id] : null)
+      || devs.filter((d) => section?.entity_id && d.entities.valve === section.entity_id).map((d) => d.id),
   };
-  const devs = (app.data.devices || []).filter((d) => d.entities?.valve);
   const inZone = devs.filter((d) => draft.zone_id && d.zone_id === draft.zone_id);
-  // dokładnie jedno urządzenie z zaworem w strefie → prefill; więcej → ⭐ na górze listy
-  if (!draft.device_id && inZone.length === 1) draft.device_id = inZone[0].id;
+  // nowa sekcja, dokładnie jedno urządzenie z zaworem w strefie → prefill
+  if (!section && !draft.device_ids.length && inZone.length === 1) draft.device_ids = [inZone[0].id];
   const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: z.name, icon: z.emoji || "🪴" }));
-  const devOpts = [
-    ...inZone.map((d) => ({ value: d.id, label: `⭐ ${d.name}`, secondary: d.entities.valve })),
-    ...devs.filter((d) => !inZone.includes(d)).map((d) => ({ value: d.id, label: d.name, secondary: d.entities.valve })),
-  ];
+  const devSorted = [...inZone, ...devs.filter((d) => !inZone.includes(d))];
   const dlg = app.dialog(
     `<h2>${section ? t("water.section.edit") : t("water.section.new")}</h2>
     <form>
@@ -246,9 +244,9 @@ function sectionDialog(app, section, draft = null) {
       <input name="name" required maxlength="60" value="${esc(section?.name)}" placeholder="${t("water.section.name.ph")}">
       <label>${t("plant.zone")}</label>
       ${combo({ name: "zone_id", value: draft.zone_id, options: zoneOpts })}
-      <label>${t("water.device")}</label>
+      <label>${t("water.devices")}</label>
       ${devs.length
-        ? combo({ name: "device_id", value: draft.device_id, options: devOpts })
+        ? `<div class="check-list">${devSorted.map((d) => `<label><input type="checkbox" name="dev_${d.id}" ${draft.device_ids.includes(d.id) ? "checked" : ""}>${inZone.includes(d) ? "⭐ " : ""}${esc(d.name)} <span class="sec">${esc(d.entities.valve)}</span></label>`).join("")}</div>`
         : `<div class="warn-hint">${t("water.device.none")}</div>`}
       <label>${t("water.kind")}</label>
       <select name="kind">${KINDS.map((k) => `<option value="${k}" ${section?.kind === k ? "selected" : ""}>${t(`water.kind.${k}`)}</option>`).join("")}</select>
@@ -266,13 +264,14 @@ function sectionDialog(app, section, draft = null) {
       </div>
     </form>`,
     (fd) => {
-      const dev = devs.find((d) => d.id === fd.get("device_id"));
+      const chosen = devs.filter((d) => fd.get(`dev_${d.id}`));
       return app.saveItem("sections", {
         id: section?.id ?? null,
         name: fd.get("name").trim(),
         zone_id: fd.get("zone_id") || null,
-        device_id: dev?.id || null,
-        entity_id: dev?.entities.valve || null,
+        device_ids: chosen.map((d) => d.id),
+        entity_ids: chosen.map((d) => d.entities.valve),
+        entity_id: chosen[0]?.entities.valve || null,
         kind: fd.get("kind"),
         schedule: {
           days: t("days").map((_, i) => i).filter((i) => fd.get(`day${i}`)),
@@ -289,7 +288,7 @@ function sectionDialog(app, section, draft = null) {
   dlg.querySelector('input[name="zone_id"]').addEventListener("change", (ev) => {
     const next = {
       zone_id: ev.target.value,
-      device_id: dlg.querySelector('input[name="device_id"]')?.value || "",
+      device_ids: devs.filter((d) => dlg.querySelector(`input[name="dev_${d.id}"]`)?.checked).map((d) => d.id),
     };
     sectionDialog(app, section, next);
   });
