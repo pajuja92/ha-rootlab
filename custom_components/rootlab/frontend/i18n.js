@@ -1,4 +1,14 @@
 const PL = {
+  "ui.title": "Nawigacja i wygląd (to urządzenie)",
+  "ui.hint": "Zapisywane w tej przeglądarce — telefon i komputer konfigurujesz osobno.",
+  "ui.bottom": "Dolne menu — wybierz zakładki (przewija się, gdy się nie mieszczą)",
+  "ui.bottom.labels": "Podpisy pod ikonami w dolnym menu",
+  "ui.topmode": "Górne menu — wygląd zakładek", "ui.topmode.both": "Ikony + opisy", "ui.topmode.icons": "Same ikony", "ui.topmode.labels": "Same opisy",
+  "ui.hidelogo": "Ukryj logo w górnym menu",
+  "ui.tophide": "Ukryj górne menu (działa tylko z włączonym dolnym menu; Ustawienia dodadzą się do niego same)",
+  "ui.fab": "Róg pływającego przycisku „Diagnoza AI\"",
+  "ui.fab.br": "Prawy dolny", "ui.fab.bl": "Lewy dolny", "ui.fab.tr": "Prawy górny", "ui.fab.tl": "Lewy górny",
+  "ui.swipe": "Zmiana zakładek gestem (przeciągnięcie w lewo/prawo)",
   "tab.inventory": "Inwentarz",
   "inv.list.own": "Inwentarz", "inv.list.shopping": "Lista zakupów", "inv.list.wish": "Wishlista",
   "inv.add": "Produkt", "inv.new": "Nowy produkt", "inv.edit": "Edytuj produkt",
@@ -279,6 +289,16 @@ const PL = {
 };
 
 const EN = {
+  "ui.title": "Navigation & look (this device)",
+  "ui.hint": "Stored in this browser — configure phone and desktop separately.",
+  "ui.bottom": "Bottom menu — pick tabs (scrolls when they do not fit)",
+  "ui.bottom.labels": "Labels under bottom-menu icons",
+  "ui.topmode": "Top menu — tab style", "ui.topmode.both": "Icons + labels", "ui.topmode.icons": "Icons only", "ui.topmode.labels": "Labels only",
+  "ui.hidelogo": "Hide logo in the top menu",
+  "ui.tophide": "Hide the top menu (only with the bottom menu enabled; Settings adds itself there)",
+  "ui.fab": "Corner of the floating \"AI diagnosis\" button",
+  "ui.fab.br": "Bottom right", "ui.fab.bl": "Bottom left", "ui.fab.tr": "Top right", "ui.fab.tl": "Top left",
+  "ui.swipe": "Switch tabs with a swipe (left/right)",
   "tab.inventory": "Inventory",
   "inv.list.own": "Inventory", "inv.list.shopping": "Shopping list", "inv.list.wish": "Wishlist",
   "inv.add": "Product", "inv.new": "New product", "inv.edit": "Edit product",

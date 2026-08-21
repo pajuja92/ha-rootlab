@@ -1,5 +1,5 @@
 import { t } from "./i18n.js";
-import { combo, esc, nowStamp, resizeImage } from "./util.js";
+import { combo, esc, nowStamp, resizeImage, uiPrefs } from "./util.js";
 import { attachMic } from "./stt.js";
 import { startChat } from "./views/chat.js";
 
@@ -7,7 +7,7 @@ let state = null;
 let loadTimer = null;
 
 export function renderFab() {
-  return `<button class="fab" data-action="crisis-open" title="${t("crisis.fab")}"><ha-icon icon="mdi:leaf-off"></ha-icon></button>`;
+  return `<button class="fab fab-${uiPrefs().fabCorner}" data-action="crisis-open" title="${t("crisis.fab")}"><ha-icon icon="mdi:leaf-off"></ha-icon></button>`;
 }
 
 export function openCrisis(app, plantId = null) {

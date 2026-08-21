@@ -305,3 +305,37 @@ export function wateringForDay(app, iso) {
   }
   return out.sort((a, b) => (a.time || "").localeCompare(b.time || ""));
 }
+
+/* --- Nawigacja / wygląd: preferencje zapisywane per urządzenie (localStorage) --- */
+export const TABS = [
+  { id: "dashboard", icon: "mdi:view-dashboard-outline" },
+  { id: "plants", icon: "mdi:sprout" },
+  { id: "chat", icon: "mdi:stethoscope" },
+  { id: "tasks", icon: "mdi:clipboard-check-outline" },
+  { id: "water", icon: "mdi:water" },
+  { id: "stats", icon: "mdi:weather-partly-cloudy" },
+  { id: "knowledge", icon: "mdi:book-open-variant" },
+  { id: "inventory", icon: "mdi:package-variant" },
+  { id: "editor", icon: "mdi:vector-square" },
+  { id: "settings", icon: "mdi:cog-outline" },
+];
+
+const UI_DEFAULTS = {
+  bottomTabs: [],        // id zakładek w dolnym menu ([] = brak dolnego menu)
+  bottomLabels: false,   // podpisy pod ikonami w dolnym menu
+  topHidden: false,      // ukryj górny pasek (tylko gdy jest dolne menu)
+  topMode: "both",       // "both" | "icons" | "labels"
+  hideLogo: false,
+  fabCorner: "br",       // br | bl | tr | tl
+  swipe: false,          // zmiana zakładek gestem
+};
+
+export function uiPrefs() {
+  try {
+    return { ...UI_DEFAULTS, ...JSON.parse(localStorage.getItem("rootlab_ui") || "{}") };
+  } catch (e) {
+    return { ...UI_DEFAULTS };
+  }
+}
+
+export const saveUiPrefs = (prefs) => localStorage.setItem("rootlab_ui", JSON.stringify(prefs));

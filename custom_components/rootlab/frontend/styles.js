@@ -209,6 +209,23 @@ dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; mar
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 .fab ha-icon { --mdc-icon-size: 26px; }
+.fab.fab-bl { left: 24px; right: auto; }
+.fab.fab-tr { top: 72px; bottom: auto; }
+.fab.fab-tl { top: 72px; bottom: auto; left: 24px; right: auto; }
+:host([has-bottom]) .fab.fab-br, :host([has-bottom]) .fab.fab-bl { bottom: calc(78px + env(safe-area-inset-bottom, 0px)); }
+/* Dolne menu (konfigurowalne w Ustawieniach, per urządzenie) */
+.bottombar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
+  display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none;
+  background: var(--app-header-background-color, var(--primary-color));
+  color: var(--app-header-text-color, #fff);
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.2);
+}
+.bottombar .tab { flex: 0 0 auto; flex-direction: column; gap: 2px; padding: 6px 14px; border-radius: 12px; font-size: 11px; }
+.bottombar .tab ha-icon { --mdc-icon-size: 22px; }
+.bottombar:not(.labels) .tab .lbl { display: none; }
+:host([has-bottom]) .content { padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
 /* Kryzys */
 .dropzone {
   border: 2px dashed var(--divider-color); border-radius: var(--rl-radius);

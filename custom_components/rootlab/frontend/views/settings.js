@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { esc } from "../util.js";
+import { TABS, esc, saveUiPrefs, uiPrefs } from "../util.js";
 
 const PROMPT_KEYS = ["system", "tasks", "diagnose", "ask", "season", "inventory_scan"];
 const TA_STYLE =
@@ -23,7 +23,41 @@ export function render(app) {
       <button class="btn" data-action="prompts-save"><ha-icon icon="mdi:content-save-outline"></ha-icon>${t("save")}</button>
     </div>
   </div>
+  ${uiCard(app)}
   ${shopCard(app)}`;
+}
+
+/* Nawigacja i wygląd — preferencje per urządzenie (localStorage, nie storage HA). */
+function uiCard(app) {
+  const ui = uiPrefs();
+  const chk = (id, checked, label) =>
+    `<label style="display:flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="${id}" ${checked ? "checked" : ""} style="width:auto">${label}</label>`;
+  return `<div class="card" style="max-width:780px;margin-top:16px">
+    <div class="section-title" style="margin-top:0"><ha-icon icon="mdi:cellphone-cog"></ha-icon>${t("ui.title")}</div>
+    <p style="font-size:13px;color:var(--secondary-text-color);margin-top:0">${t("ui.hint")}</p>
+    <label>${t("ui.bottom")}</label>
+    <div class="check-list" id="ui-bottom" style="margin-bottom:8px">
+      ${TABS.map(
+        (tb) => `<label><input type="checkbox" value="${tb.id}" ${ui.bottomTabs.includes(tb.id) ? "checked" : ""}>
+          <ha-icon icon="${tb.icon}" style="--mdc-icon-size:18px"></ha-icon>${t("tab." + tb.id)}</label>`
+      ).join("")}
+    </div>
+    ${chk("ui-bottom-labels", ui.bottomLabels, t("ui.bottom.labels"))}
+    <label>${t("ui.topmode")}</label>
+    <select id="ui-topmode">
+      ${["both", "icons", "labels"].map((m) => `<option value="${m}" ${ui.topMode === m ? "selected" : ""}>${t("ui.topmode." + m)}</option>`).join("")}
+    </select>
+    ${chk("ui-hidelogo", ui.hideLogo, t("ui.hidelogo"))}
+    ${chk("ui-tophide", ui.topHidden, t("ui.tophide"))}
+    <label>${t("ui.fab")}</label>
+    <select id="ui-fab">
+      ${["br", "bl", "tr", "tl"].map((c) => `<option value="${c}" ${ui.fabCorner === c ? "selected" : ""}>${t("ui.fab." + c)}</option>`).join("")}
+    </select>
+    ${chk("ui-swipe", ui.swipe, t("ui.swipe"))}
+    <div class="actions" style="justify-content:flex-end">
+      <button class="btn" data-action="ui-save"><ha-icon icon="mdi:content-save-outline"></ha-icon>${t("save")}</button>
+    </div>
+  </div>`;
 }
 
 /* Sklep autora: katalog pobierany automatycznie ze stałego adresu — bez konfiguracji. */
@@ -70,6 +104,21 @@ export function bind(app, root) {
 }
 
 export const actions = {
+  "ui-save": (app) => {
+    const root = app.shadowRoot;
+    const bottomTabs = [...root.querySelectorAll("#ui-bottom input:checked")].map((el) => el.value);
+    saveUiPrefs({
+      bottomTabs,
+      bottomLabels: root.getElementById("ui-bottom-labels").checked,
+      topHidden: root.getElementById("ui-tophide").checked,
+      topMode: root.getElementById("ui-topmode").value,
+      hideLogo: root.getElementById("ui-hidelogo").checked,
+      fabCorner: root.getElementById("ui-fab").value,
+      swipe: root.getElementById("ui-swipe").checked,
+    });
+    app.render();
+    app.toast(t("toast.saved"));
+  },
   "prompts-save": async (app) => {
     const prompts = {};
     app.shadowRoot

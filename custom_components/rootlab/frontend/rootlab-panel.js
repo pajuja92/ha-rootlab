@@ -2,7 +2,7 @@
    ponytail: vanilla Web Components + moduły ES, bez bundlera. */
 import { CSS } from "./styles.js";
 import { t, setLang } from "./i18n.js";
-import { esc, wireCombos } from "./util.js";
+import { TABS, uiPrefs, esc, wireCombos } from "./util.js";
 import * as crisis from "./crisis.js";
 import * as chat from "./views/chat.js";
 import * as dashboard from "./views/dashboard.js";
@@ -32,24 +32,14 @@ const ACTIONS = Object.assign(
   settings.actions,
   crisis.actions
 );
-const TABS = [
-  { id: "dashboard", icon: "mdi:view-dashboard-outline" },
-  { id: "plants", icon: "mdi:sprout" },
-  { id: "chat", icon: "mdi:stethoscope" },
-  { id: "tasks", icon: "mdi:clipboard-check-outline" },
-  { id: "water", icon: "mdi:water" },
-  { id: "stats", icon: "mdi:weather-partly-cloudy" },
-  { id: "knowledge", icon: "mdi:book-open-variant" },
-  { id: "inventory", icon: "mdi:package-variant" },
-  { id: "editor", icon: "mdi:vector-square" },
-  { id: "settings", icon: "mdi:cog-outline" },
-];
+
 
 class RootlabPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this.tab = "dashboard";
+    const savedTab = localStorage.getItem("rootlab_tab");
+    this.tab = TABS.some((tb) => tb.id === savedTab) ? savedTab : "dashboard";
     this.data = null;
     this.weather = null;
     this.forecast = undefined;
@@ -200,33 +190,63 @@ class RootlabPanel extends HTMLElement {
     }
     // toast musi przeżyć podmianę DOM — inaczej błąd pokazany tuż przed renderem znika
     const toastEl = this.shadowRoot.getElementById("toast");
-    this.shadowRoot.innerHTML = `
-      <style>${CSS}</style>
-      <div class="appbar">
+    const ui = uiPrefs();
+    // dolne menu: gdy górne ukryte, Ustawienia muszą być osiągalne
+    let bottomTabs = TABS.filter((tb) => ui.bottomTabs.includes(tb.id));
+    if (ui.topHidden && bottomTabs.length && !bottomTabs.some((tb) => tb.id === "settings")) {
+      bottomTabs = [...bottomTabs, TABS.find((tb) => tb.id === "settings")];
+    }
+    const topHidden = ui.topHidden && bottomTabs.length > 0;
+    this.toggleAttribute("has-bottom", bottomTabs.length > 0);
+    const topTab = (tb) => `<button class="tab" data-tab="${tb.id}" ${tb.id === this.tab ? "data-active" : ""} title="${t(`tab.${tb.id}`)}">
+        ${ui.topMode !== "labels" ? `<ha-icon icon="${tb.icon}"></ha-icon>` : ""}${ui.topMode !== "icons" ? t(`tab.${tb.id}`) : ""}</button>`;
+    const appbar = topHidden
+      ? ""
+      : `<div class="appbar">
         <ha-menu-button></ha-menu-button>
         <nav class="tabs">
-          <h1 class="title">🌱 <b>Gardener's</b><span>&nbsp;Almanac</span></h1>
-          ${TABS.map(
-            (tb) => `<button class="tab" data-tab="${tb.id}" ${tb.id === this.tab ? "data-active" : ""}>
-              <ha-icon icon="${tb.icon}"></ha-icon>${t(`tab.${tb.id}`)}</button>`
-          ).join("")}
+          ${ui.hideLogo ? "" : `<h1 class="title">🌱 <b>Gardener's</b><span>&nbsp;Almanac</span></h1>`}
+          ${TABS.map(topTab).join("")}
         </nav>
-      </div>
+      </div>`;
+    const bottombar = bottomTabs.length
+      ? `<nav class="bottombar ${ui.bottomLabels ? "labels" : ""}">
+          ${bottomTabs.map(
+            (tb) => `<button class="tab" data-tab="${tb.id}" ${tb.id === this.tab ? "data-active" : ""} title="${t(`tab.${tb.id}`)}">
+              <ha-icon icon="${tb.icon}"></ha-icon><span class="lbl">${t(`tab.${tb.id}`)}</span></button>`
+          ).join("")}
+        </nav>`
+      : "";
+    this.shadowRoot.innerHTML = `
+      <style>${CSS}</style>
+      ${appbar}
       <div class="content">${VIEWS[this.tab].render(this)}</div>
+      ${bottombar}
       ${crisis.renderFab(this)}
       <dialog id="form-dialog"></dialog>
       <dialog id="confirm-dialog" style="max-width:360px"></dialog>
     `;
     if (toastEl) this.shadowRoot.append(toastEl);
     const menu = this.shadowRoot.querySelector("ha-menu-button");
-    menu.hass = this._hass;
-    menu.narrow = this._narrow;
+    if (menu) {
+      menu.hass = this._hass;
+      menu.narrow = this._narrow;
+    }
     this.shadowRoot.querySelectorAll(".tab").forEach((el) =>
       el.addEventListener("click", () => {
         this.tab = el.dataset.tab;
+        localStorage.setItem("rootlab_tab", this.tab);
         this.render();
       })
     );
+    // aktywna zakładka zawsze w kadrze przewijanego paska (górnego i dolnego)
+    for (const nav of this.shadowRoot.querySelectorAll(".tabs, .bottombar")) {
+      const el = nav.querySelector("[data-active]");
+      if (el)
+        nav.scrollLeft += el.getBoundingClientRect().left - nav.getBoundingClientRect().left
+          - (nav.clientWidth - el.getBoundingClientRect().width) / 2;
+    }
+    if (ui.swipe) this._wireSwipe();
     this.shadowRoot.querySelectorAll("[data-action]").forEach((el) =>
       el.addEventListener("click", (ev) => {
         const handler = ACTIONS[el.dataset.action];
@@ -316,6 +336,37 @@ class RootlabPanel extends HTMLElement {
     wireCombos(dlg);
     if (!dlg.open) dlg.showModal();
     return dlg;
+  }
+
+  /* Zmiana zakładki gestem w lewo/prawo (opt-in w Ustawieniach). */
+  _wireSwipe() {
+    const content = this.shadowRoot.querySelector(".content");
+    if (!content) return;
+    let sx = 0, sy = 0, ok = false;
+    const hScroll = (el) => {
+      for (let n = el; n && n !== content; n = n.parentElement)
+        if (n.scrollWidth > n.clientWidth + 4) return true;
+      return false;
+    };
+    content.addEventListener("touchstart", (ev) => {
+      sx = ev.touches[0].clientX;
+      sy = ev.touches[0].clientY;
+      // nie łap gestu nad rysowaniem/wykresami ani nad elementami przewijanymi w poziomie
+      ok = !ev.target.closest("svg, canvas, input, textarea") && !hScroll(ev.target);
+    }, { passive: true });
+    content.addEventListener("touchend", (ev) => {
+      if (!ok || this._dialogOpen()) return;
+      const dx = ev.changedTouches[0].clientX - sx;
+      const dy = ev.changedTouches[0].clientY - sy;
+      if (Math.abs(dx) < 70 || Math.abs(dy) > 50) return;
+      const ids = TABS.map((tb) => tb.id);
+      const next = ids[ids.indexOf(this.tab) + (dx < 0 ? 1 : -1)];
+      if (next) {
+        this.tab = next;
+        localStorage.setItem("rootlab_tab", next);
+        this.render();
+      }
+    }, { passive: true });
   }
 
   /* Odświeżanie wartości live bez pełnego re-renderu (hass przychodzi bardzo często). */
