@@ -47,6 +47,8 @@ export const CSS = `
 /* wąskie ekrany: samo 🌱 zamiast pełnego logo (audyt mobilny) */
 @media (max-width: 700px) { .appbar .title b, .appbar .title span { display: none; } }
 .content { max-width: 1400px; margin: 0 auto; padding: var(--rl-gap); padding-bottom: 96px; }
+.content.swipe-on { touch-action: pan-y; }
+.content.swipe-peek { overflow-y: hidden; }
 /* dotyk: FAB kryzysowy nie może zasłaniać ostatniego wiersza list ani checkboxów */
 @media (max-width: 700px) { .content { padding-bottom: 132px; } }
 .section-title {

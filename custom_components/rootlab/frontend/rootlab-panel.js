@@ -239,13 +239,11 @@ class RootlabPanel extends HTMLElement {
         this.render();
       })
     );
-    // aktywna zakładka zawsze w kadrze przewijanego paska (górnego i dolnego)
-    for (const nav of this.shadowRoot.querySelectorAll(".tabs, .bottombar")) {
-      const el = nav.querySelector("[data-active]");
-      if (el)
-        nav.scrollLeft += el.getBoundingClientRect().left - nav.getBoundingClientRect().left
-          - (nav.clientWidth - el.getBoundingClientRect().width) / 2;
-    }
+    // aktywna zakładka zawsze w kadrze przewijanego paska (górnego i dolnego);
+    // szerokości zmieniają się po asynchronicznym upgrade ha-icon, więc powtarzamy
+    this._centerTabs();
+    requestAnimationFrame(() => this._centerTabs());
+    setTimeout(() => this._centerTabs(), 300);
     if (ui.swipe) this._wireSwipe();
     this.shadowRoot.querySelectorAll("[data-action]").forEach((el) =>
       el.addEventListener("click", (ev) => {
@@ -338,15 +336,32 @@ class RootlabPanel extends HTMLElement {
     return dlg;
   }
 
+  _centerTabs() {
+    for (const nav of this.shadowRoot.querySelectorAll(".tabs, .bottombar")) {
+      const el = nav.querySelector("[data-active]");
+      if (el)
+        nav.scrollLeft += el.getBoundingClientRect().left - nav.getBoundingClientRect().left
+          - (nav.clientWidth - el.getBoundingClientRect().width) / 2;
+    }
+  }
+
   /* Zmiana zakładki gestem w lewo/prawo (opt-in w Ustawieniach). */
   _wireSwipe() {
     const content = this.shadowRoot.querySelector(".content");
     if (!content) return;
-    let sx = 0, sy = 0, ok = false;
+    content.classList.add("swipe-on");
+    let sx = 0, sy = 0, ok = false, dragging = false, nextEl = null, nextId = null, off = 0, w = 0;
     const hScroll = (el) => {
       for (let n = el; n && n !== content; n = n.parentElement)
         if (n.scrollWidth > n.clientWidth + 4) return true;
       return false;
+    };
+    const cleanup = () => {
+      dragging = false;
+      nextEl?.remove();
+      nextEl = null;
+      content.style.transition = "";
+      content.style.transform = "";
     };
     content.addEventListener("touchstart", (ev) => {
       sx = ev.touches[0].clientX;
@@ -354,19 +369,54 @@ class RootlabPanel extends HTMLElement {
       // nie łap gestu nad rysowaniem/wykresami ani nad elementami przewijanymi w poziomie
       ok = !ev.target.closest("svg, canvas, input, textarea") && !hScroll(ev.target);
     }, { passive: true });
-    content.addEventListener("touchend", (ev) => {
+    content.addEventListener("touchmove", (ev) => {
       if (!ok || this._dialogOpen()) return;
+      const dx = ev.touches[0].clientX - sx;
+      const dy = ev.touches[0].clientY - sy;
+      if (!dragging) {
+        if (Math.abs(dx) < 14 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+        const ids = TABS.map((tb) => tb.id);
+        nextId = ids[ids.indexOf(this.tab) + (dx < 0 ? 1 : -1)];
+        if (!nextId) { ok = false; return; }
+        w = window.innerWidth;
+        off = dx < 0 ? w : -w;
+        // podgląd następnej strony wsuwany razem z palcem
+        nextEl = document.createElement("div");
+        nextEl.className = "content swipe-peek";
+        const top = Math.max(content.getBoundingClientRect().top, 0);
+        nextEl.style.cssText = `position:fixed;left:0;right:0;bottom:0;top:${top}px;overflow:hidden;z-index:5;background:var(--primary-background-color);will-change:transform`;
+        try { nextEl.innerHTML = VIEWS[nextId].render(this); } catch (e) { nextEl.innerHTML = ""; }
+        this.shadowRoot.append(nextEl);
+        content.style.willChange = "transform";
+        dragging = true;
+      }
+      content.style.transform = `translateX(${dx}px)`;
+      nextEl.style.transform = `translateX(${off + dx}px)`;
+    }, { passive: true });
+    content.addEventListener("touchend", (ev) => {
+      if (!dragging) return;
       const dx = ev.changedTouches[0].clientX - sx;
-      const dy = ev.changedTouches[0].clientY - sy;
-      if (Math.abs(dx) < 70 || Math.abs(dy) > 50) return;
-      const ids = TABS.map((tb) => tb.id);
-      const next = ids[ids.indexOf(this.tab) + (dx < 0 ? 1 : -1)];
-      if (next) {
-        this.tab = next;
-        localStorage.setItem("rootlab_tab", next);
-        this.render();
+      const commit = Math.abs(dx) > w * 0.28;
+      const anim = "transform 0.18s ease-out";
+      content.style.transition = anim;
+      nextEl.style.transition = anim;
+      if (commit) {
+        content.style.transform = `translateX(${-off}px)`;
+        nextEl.style.transform = "translateX(0)";
+        const id = nextId;
+        setTimeout(() => {
+          this.tab = id;
+          localStorage.setItem("rootlab_tab", id);
+          cleanup();
+          this.render();
+        }, 190);
+      } else {
+        content.style.transform = "translateX(0)";
+        nextEl.style.transform = `translateX(${off}px)`;
+        setTimeout(cleanup, 190);
       }
     }, { passive: true });
+    content.addEventListener("touchcancel", cleanup, { passive: true });
   }
 
   /* Odświeżanie wartości live bez pełnego re-renderu (hass przychodzi bardzo często). */
