@@ -13,7 +13,7 @@ from .const import DOMAIN, SHOP_CATALOG_URL, SHOP_FEEDBACK_URL, VERSION
 from .store import async_save
 from .verification import OPEN_METEO_MODELS, fetch_openmeteo_forecast, stats_payload
 
-KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices", "chats", "plantings", "inventory"]
+KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices", "chats", "plantings", "inventory", "inventory_lists"]
 # pola pomijane w liście (duże base64) — dostępne przez dedykowane komendy
 HEAVY_PLANT_FIELDS = ("photos",)
 
@@ -106,6 +106,7 @@ def async_register(hass):
         ws_photo_archive,
         ws_photo_delete,
         ws_inventory_scan,
+        ws_inventory_categories,
     ):
         websocket_api.async_register_command(hass, cmd)
 
@@ -167,6 +168,9 @@ async def ws_delete_item(hass, connection, msg):
         ]
     else:
         data[kind] = [i for i in data[kind] if i["id"] != item_id]
+    if kind == "inventory_lists":
+        for item in data["inventory"]:
+            (item.get("memberships") or {}).pop(item_id, None)
     if kind == "zones":
         for plant in data["plants"]:
             if plant.get("zone_id") == item_id:
@@ -983,3 +987,17 @@ async def ws_inventory_scan(hass, connection, msg):
         _ai_error(connection, msg["id"], err)
         return
     connection.send_result(msg["id"], parsed)
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rootlab/inventory/categories",
+        vol.Required("categories"): [str],
+    }
+)
+@websocket_api.async_response
+async def ws_inventory_categories(hass, connection, msg):
+    cats = [c.strip() for c in msg["categories"] if c.strip()]
+    hass.data[DOMAIN]["data"]["inventory_categories"] = cats
+    await async_save(hass)
+    connection.send_result(msg["id"], _public(hass))

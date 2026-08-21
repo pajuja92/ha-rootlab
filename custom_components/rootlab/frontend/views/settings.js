@@ -23,8 +23,30 @@ export function render(app) {
       <button class="btn" data-action="prompts-save"><ha-icon icon="mdi:content-save-outline"></ha-icon>${t("save")}</button>
     </div>
   </div>
+  ${catsCard(app)}
   ${uiCard(app)}
   ${shopCard(app)}`;
+}
+
+/* Kategorie inwentarza — lista zarządzana przez użytkownika (storage HA). */
+function catsCard(app) {
+  const cats = app.data.inventory_categories || [];
+  return `<div class="card" style="max-width:780px;margin-top:16px">
+    <div class="section-title" style="margin-top:0"><ha-icon icon="mdi:shape-outline"></ha-icon>${t("settings.cats.title")}</div>
+    <p style="font-size:13px;color:var(--secondary-text-color);margin-top:0">${t("settings.cats.hint")}</p>
+    <div class="chips" style="display:flex;flex-wrap:wrap;gap:6px">
+      ${cats
+        .map(
+          (c, i) => `<span class="chip" style="display:inline-flex;align-items:center;gap:4px">${esc(c)}
+            <button class="icon-btn" data-action="inv-cat-del" data-idx="${i}" title="${t("delete")}" style="padding:0"><ha-icon icon="mdi:close" style="--mdc-icon-size:14px"></ha-icon></button></span>`
+        )
+        .join("")}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <input id="inv-cat-new" maxlength="60" placeholder="${t("settings.cats.add")}…" style="flex:1">
+      <button class="btn small" data-action="inv-cat-add"><ha-icon icon="mdi:plus"></ha-icon>${t("settings.cats.add")}</button>
+    </div>
+  </div>`;
 }
 
 /* Nawigacja i wygląd — preferencje per urządzenie (localStorage, nie storage HA). */
@@ -103,7 +125,37 @@ export function bind(app, root) {
   );
 }
 
+async function saveCats(app, cats) {
+  try {
+    app.data = await app.ws("inventory/categories", { categories: cats });
+  } catch (e) {
+    app.toast(`⚠ ${e.message || e}`, true);
+    return;
+  }
+  app.render();
+  app.toast(t("toast.saved"));
+}
+
 export const actions = {
+  "inv-cat-add": (app) => {
+    const el = app.shadowRoot.getElementById("inv-cat-new");
+    const val = (el?.value || "").trim();
+    if (!val) return;
+    const cats = app.data.inventory_categories || [];
+    if (cats.includes(val)) {
+      app.toast("⚠ " + val, true);
+      return;
+    }
+    saveCats(app, [...cats, val]);
+  },
+  "inv-cat-del": async (app, el) => {
+    const cats = [...(app.data.inventory_categories || [])];
+    const name = cats[parseInt(el.dataset.idx, 10)];
+    if (await app.confirm(t("settings.cats.del.confirm", { name }))) {
+      cats.splice(parseInt(el.dataset.idx, 10), 1);
+      saveCats(app, cats);
+    }
+  },
   "ui-save": (app) => {
     const root = app.shadowRoot;
     const bottomTabs = [...root.querySelectorAll("#ui-bottom input:checked")].map((el) => el.value);

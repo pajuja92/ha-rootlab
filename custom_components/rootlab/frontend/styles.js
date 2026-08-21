@@ -158,6 +158,11 @@ dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; mar
 .inv-usage { height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--divider-color) 50%, transparent); margin: 8px 0 4px; overflow: hidden; }
 .inv-usage .fill { height: 100%; border-radius: 3px; }
 .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+.inv-note { display: flex; align-items: flex-start; gap: 6px; font-size: 13px; cursor: pointer;
+  border-top: 1px dashed var(--divider-color); padding-top: 6px; margin-top: 2px; }
+.inv-mrow { display: flex; align-items: center; gap: 8px; }
+.inv-mrow label { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; margin: 0; min-width: 160px; }
+.inv-mrow input[type="text"], .inv-mrow input:not([type]) { flex: 1; min-width: 0; }
 .check-list { display: flex; flex-direction: column; gap: 6px; }
 .check-list label {
   margin: 0; display: flex; align-items: center; gap: 8px;

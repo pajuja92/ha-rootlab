@@ -122,8 +122,6 @@ DIAGNOSIS_SCHEMA = {
 }
 
 
-INVENTORY_CATEGORIES = ["seeds", "fertilizer", "protection", "tools", "irrigation", "substrate", "other"]
-
 INVENTORY_SCAN_SCHEMA = {
     "type": "object",
     "properties": {
@@ -135,7 +133,7 @@ INVENTORY_SCAN_SCHEMA = {
                     "name": {"type": "string"},
                     "desc": {"type": "string", "description": "krótki opis / zastosowanie"},
                     "ean": {"type": "string", "description": "kod kreskowy/EAN, pusty jeśli nieczytelny"},
-                    "category": {"type": "string", "enum": INVENTORY_CATEGORIES},
+                    "category": {"type": "string", "description": "jedna z kategorii użytkownika (lista w promptcie)"},
                     "expiry": {"type": "string", "description": "data ważności YYYY-MM-DD, pusty jeśli brak"},
                     "qty": {"type": "string", "description": "ilość/pojemność z opakowania, np. 500 ml"},
                 },
@@ -453,19 +451,30 @@ _PLANTING_PL = {"soil": "w gruncie", "pot": "w donicy", "raised": "na podwyższo
 
 
 def _owned_supplies(data):
-    """Posiadane zasoby z inwentarza — skrót do kontekstu AI."""
-    return [
-        {k: v for k, v in {
-            "name": i.get("name"),
-            "category": i.get("category"),
-            "qty": i.get("qty"),
-            "usage_pct": i.get("usage_pct"),
-            "expiry": i.get("expiry"),
-            "desc": i.get("desc"),
-        }.items() if v}
-        for i in data.get("inventory", [])
-        if (i.get("list") or "own") == "own"
-    ][:80]  # ponytail: twardy limit rozmiaru kontekstu
+    """Posiadane zasoby: produkty z list typu „inwentarz", z wyliczoną pozostałą ilością."""
+    inv_lists = {l["id"] for l in data.get("inventory_lists", []) if l.get("kind") == "inventory"}
+    out = []
+    for i in data.get("inventory", []):
+        if not (set(i.get("memberships") or {}) & inv_lists):
+            continue
+        amount = None
+        if i.get("qty_val") is not None:
+            unit = i.get("qty_unit") or ""
+            if i.get("usage_pct") is not None:
+                left = round(i["qty_val"] * i["usage_pct"] / 100, 1)
+                amount = f"zostało ok. {left} {unit} z {i['qty_val']} {unit}".strip()
+            else:
+                amount = f"{i['qty_val']} {unit}".strip()
+        out.append(
+            {k: v for k, v in {
+                "name": i.get("name"),
+                "category": i.get("category"),
+                "amount": amount,
+                "expiry": i.get("expiry"),
+                "desc": i.get("desc"),
+            }.items() if v}
+        )
+    return out[:80]  # ponytail: twardy limit rozmiaru kontekstu
 
 
 def _garden_context(hass, plant_ids=None):
@@ -778,18 +787,22 @@ async def async_ask(hass, question, plant=None):
 
 async def async_scan_inventory(hass, images, media_type):
     """Zdjęcia produktów → lista rozpoznanych pozycji inwentarza."""
+    cats = hass.data[DOMAIN]["data"].get("inventory_categories") or ["Inne"]
     parsed = await _complete(
         hass,
-        _prompt(hass, "inventory_scan"),
+        _prompt(hass, "inventory_scan")
+        + "\nDostępne kategorie (wybierz dokładnie jedną z listy): "
+        + "; ".join(cats),
         schema=INVENTORY_SCAN_SCHEMA,
         images=images,
         media_type=media_type,
     )
+    fallback = "Inne" if "Inne" in cats else cats[-1]
     items = []
     for it in parsed.get("items", []):
         if not (it.get("name") or "").strip():
             continue
-        if it.get("category") not in INVENTORY_CATEGORIES:
-            it["category"] = "other"
+        if it.get("category") not in cats:
+            it["category"] = fallback
         items.append(it)
     return {"items": items}
