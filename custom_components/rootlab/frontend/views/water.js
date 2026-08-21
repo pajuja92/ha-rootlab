@@ -7,10 +7,8 @@ import {
   esc,
   haDeviceEntityIds,
   haDeviceOptions,
-  optionsWithSuggestions,
   sensorState,
   todayISO,
-  zoneSuggestions,
 } from "../util.js";
 
 const KINDS = ["drip", "sprinkler", "other"];
@@ -225,16 +223,22 @@ function sectionRow(app, s, run) {
 
 function sectionDialog(app, section, draft = null) {
   const sch = section?.schedule || {};
-  draft ??= { zone_id: section?.zone_id || "", entity_id: section?.entity_id || "" };
+  draft ??= {
+    zone_id: section?.zone_id || "",
+    // stare sekcje bez device_id: dopasuj urządzenie po encji zaworu
+    device_id: section?.device_id
+      || (app.data.devices || []).find((d) => section?.entity_id && d.entities?.valve === section.entity_id)?.id
+      || "",
+  };
+  const devs = (app.data.devices || []).filter((d) => d.entities?.valve);
+  const inZone = devs.filter((d) => draft.zone_id && d.zone_id === draft.zone_id);
   // dokładnie jedno urządzenie z zaworem w strefie → prefill; więcej → ⭐ na górze listy
-  const sugg = zoneSuggestions(app, draft.zone_id, "valve");
-  if (!draft.entity_id && sugg.length === 1) draft.entity_id = sugg[0].entity;
+  if (!draft.device_id && inZone.length === 1) draft.device_id = inZone[0].id;
   const zoneOpts = app.data.zones.map((z) => ({ value: z.id, label: z.name, icon: z.emoji || "🪴" }));
-  const valveOpts = optionsWithSuggestions(
-    app.hass,
-    entityOptions(app.hass, ["switch", "valve", "input_boolean"]),
-    sugg
-  );
+  const devOpts = [
+    ...inZone.map((d) => ({ value: d.id, label: `⭐ ${d.name}`, secondary: d.entities.valve })),
+    ...devs.filter((d) => !inZone.includes(d)).map((d) => ({ value: d.id, label: d.name, secondary: d.entities.valve })),
+  ];
   const dlg = app.dialog(
     `<h2>${section ? t("water.section.edit") : t("water.section.new")}</h2>
     <form>
@@ -242,8 +246,10 @@ function sectionDialog(app, section, draft = null) {
       <input name="name" required maxlength="60" value="${esc(section?.name)}" placeholder="${t("water.section.name.ph")}">
       <label>${t("plant.zone")}</label>
       ${combo({ name: "zone_id", value: draft.zone_id, options: zoneOpts })}
-      <label>${t("water.entity")}</label>
-      ${combo({ name: "entity_id", value: draft.entity_id, options: valveOpts })}
+      <label>${t("water.device")}</label>
+      ${devs.length
+        ? combo({ name: "device_id", value: draft.device_id, options: devOpts })
+        : `<div class="warn-hint">${t("water.device.none")}</div>`}
       <label>${t("water.kind")}</label>
       <select name="kind">${KINDS.map((k) => `<option value="${k}" ${section?.kind === k ? "selected" : ""}>${t(`water.kind.${k}`)}</option>`).join("")}</select>
       <label>${t("water.days")}</label>
@@ -259,12 +265,14 @@ function sectionDialog(app, section, draft = null) {
         <button type="submit" class="btn">${t("save")}</button>
       </div>
     </form>`,
-    (fd) =>
-      app.saveItem("sections", {
+    (fd) => {
+      const dev = devs.find((d) => d.id === fd.get("device_id"));
+      return app.saveItem("sections", {
         id: section?.id ?? null,
         name: fd.get("name").trim(),
         zone_id: fd.get("zone_id") || null,
-        entity_id: fd.get("entity_id") || null,
+        device_id: dev?.id || null,
+        entity_id: dev?.entities.valve || null,
         kind: fd.get("kind"),
         schedule: {
           days: t("days").map((_, i) => i).filter((i) => fd.get(`day${i}`)),
@@ -275,12 +283,13 @@ function sectionDialog(app, section, draft = null) {
             .map((x) => x.padStart(5, "0")),
           duration_min: parseInt(fd.get("duration"), 10) || 10,
         },
-      })
+      });
+    }
   );
   dlg.querySelector('input[name="zone_id"]').addEventListener("change", (ev) => {
     const next = {
       zone_id: ev.target.value,
-      entity_id: dlg.querySelector('input[name="entity_id"]').value,
+      device_id: dlg.querySelector('input[name="device_id"]')?.value || "",
     };
     sectionDialog(app, section, next);
   });
