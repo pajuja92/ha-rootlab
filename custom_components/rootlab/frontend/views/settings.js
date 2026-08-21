@@ -1,7 +1,7 @@
 import { t } from "../i18n.js";
 import { esc } from "../util.js";
 
-const PROMPT_KEYS = ["system", "tasks", "diagnose", "ask", "season"];
+const PROMPT_KEYS = ["system", "tasks", "diagnose", "ask", "season", "inventory_scan"];
 const TA_STYLE =
   "width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--divider-color);border-radius:8px;background:var(--primary-background-color);color:var(--primary-text-color);font:inherit;min-height:96px;margin-bottom:8px";
 

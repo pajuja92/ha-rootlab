@@ -81,6 +81,13 @@ Ustawienia → Urządzenia i usługi → Gardener's Almanac → **Konfiguruj**. 
 - Baza wiedzy z wyszukiwarką: zatwierdzone odpowiedzi AI i własne wpisy.
 - W rozmowach diagnostycznych AI może polecić pasujący produkt z katalogu sklepu (zawsze wiedza najpierw — produkt tylko jako krótkie wtrącenie z linkiem). Opcjonalnie: wyszukiwanie produktów w internecie (Anthropic / Gemini) oraz anonimowe zgłaszanie zapotrzebowania na produkty spoza katalogu — oba domyślnie wyłączone, włączane świadomie w Ustawieniach.
 
+### 📦 Inwentarz
+
+- Ewidencja zasobów ogrodowych: nasiona, nawozy, środki ochrony i repelenty, narzędzia, złączki, podłoża — z opisem, zdjęciem, kodem EAN, ilością, miejscem przechowywania, poziomem zapasu i datą ważności (ostrzeżenia o przeterminowaniu).
+- **Skan AI**: zdjęcie jednego lub wielu produktów → AI odczytuje etykiety i proponuje listę pozycji do dodania (z możliwością wyboru).
+- **Lista zakupów i wishlista**: pozycje można przenosić między listami, a po zakupie jednym tapnięciem wcielić do inwentarza; z inwentarza „Dokup" dodaje kopię na listę zakupów.
+- AI zna posiadane zasoby podczas diagnoz, rozmów, generowania zadań i planowania sezonu — najpierw wykorzysta to, co już masz, zanim zaproponuje zakupy.
+
 ### 🖥️ Pulpit
 
 - Konfigurowalny (kolejność i widoczność sekcji): strefy z czujnikami, aktywne podlewanie, najbliższe zadania, prognoza, ranking trafności, pogoda teraz, ostrzeżenia.

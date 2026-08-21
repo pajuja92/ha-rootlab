@@ -152,6 +152,12 @@ dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; mar
 }
 .day-picker label:has(input:checked) { background: var(--rl-water-bg); border-color: var(--rl-water); color: var(--rl-water); }
 .day-picker input { display: none; }
+.inv-photo { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; flex-shrink: 0; cursor: pointer; }
+.inv-photo.ph { display: inline-flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--divider-color) 40%, transparent); color: var(--secondary-text-color); cursor: default; }
+.inv-item .header { align-items: flex-start; gap: 12px; }
+.inv-usage { height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--divider-color) 50%, transparent); margin: 8px 0 4px; overflow: hidden; }
+.inv-usage .fill { height: 100%; border-radius: 3px; }
+.seg { display: flex; gap: 6px; flex-wrap: wrap; }
 .check-list { display: flex; flex-direction: column; gap: 6px; }
 .check-list label {
   margin: 0; display: flex; align-items: center; gap: 8px;

@@ -19,6 +19,7 @@ DEFAULTS = {
     "ai_prompts": {},
     "chats": [],
     "plantings": [],
+    "inventory": [],
     "shop": {"websearch": False, "feedback": False},
     "verify": {"snapshot": None, "actuals": None, "stats": {}},
     "layout": {"width_m": 20.0, "height_m": 12.0, "north_deg": 0, "location": None, "items": []},

@@ -13,7 +13,7 @@ from .const import DOMAIN, SHOP_CATALOG_URL, SHOP_FEEDBACK_URL, VERSION
 from .store import async_save
 from .verification import OPEN_METEO_MODELS, fetch_openmeteo_forecast, stats_payload
 
-KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices", "chats", "plantings"]
+KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices", "chats", "plantings", "inventory"]
 # pola pomijane w liście (duże base64) — dostępne przez dedykowane komendy
 HEAVY_PLANT_FIELDS = ("photos",)
 
@@ -105,6 +105,7 @@ def async_register(hass):
         ws_photo_add,
         ws_photo_archive,
         ws_photo_delete,
+        ws_inventory_scan,
     ):
         websocket_api.async_register_command(hass, cmd)
 
@@ -965,3 +966,20 @@ async def ws_photo_delete(hass, connection, msg):
     plant["photos"] = [f for f in plant.get("photos", []) if f["id"] != msg["photo_id"]]
     await async_save(hass)
     connection.send_result(msg["id"], plant["photos"])
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rootlab/inventory/scan",
+        vol.Required("images"): [str],
+        vol.Optional("media_type", default="image/jpeg"): str,
+    }
+)
+@websocket_api.async_response
+async def ws_inventory_scan(hass, connection, msg):
+    try:
+        parsed = await ai.async_scan_inventory(hass, msg["images"][:5], msg["media_type"])
+    except Exception as err:  # noqa: BLE001
+        _ai_error(connection, msg["id"], err)
+        return
+    connection.send_result(msg["id"], parsed)

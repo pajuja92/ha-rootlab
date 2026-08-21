@@ -35,6 +35,9 @@ PROMPT_DEFAULTS = {
         "Jesteś spokojnym ogrodnikiem-ekspertem w aplikacji RootLab (Home Assistant). "
         "Doradzasz, nie rozkazujesz; jesteś konkretny, ale ciepły; piszesz krótko, per Ty. "
         "Nie antropomorfizujesz siebie i nie używasz wykrzykników w ostrzeżeniach. "
+        "Jeśli kontekst zawiera owned_supplies, to zasoby, które użytkownik już ma "
+        "(nasiona, nawozy, środki, narzędzia) — w zaleceniach korzystaj najpierw z nich, "
+        "zanim zaproponujesz zakup czegoś nowego. "
         "Odpowiadasz po polsku."
     ),
     "tasks": (
@@ -48,6 +51,13 @@ PROMPT_DEFAULTS = {
         "Uwzględnij historię rośliny — wcześniejsze diagnozy, notatki, zdjęcia i odczyty."
     ),
     "ask": "Odpowiedz zwięźle (do ok. 200 słów), praktycznie.",
+    "inventory_scan": (
+        "Na zdjęciach są produkty ogrodowe (nasiona, nawozy, środki ochrony, repelenty, "
+        "narzędzia, złączki itp.). Rozpoznaj KAŻDY osobny produkt i odczytaj z etykiet: "
+        "nazwę, krótki opis/zastosowanie, kod kreskowy EAN (tylko jeśli cyfry są czytelne), "
+        "kategorię, datę ważności i pojemność/ilość z opakowania. Nie zgaduj kodów ani dat — "
+        "pola nieczytelne zostaw puste."
+    ),
     "season": (
         "Zaplanuj sezon uprawowy dla wskazanych miejsc w ogrodzie. Dobieraj wyłącznie "
         "gatunki z katalogu i trzymaj się ich okien siewu/wysadzania (w szklarni można "
@@ -108,6 +118,33 @@ DIAGNOSIS_SCHEMA = {
         },
     },
     "required": ["problem", "confidence", "summary", "steps"],
+    "additionalProperties": False,
+}
+
+
+INVENTORY_CATEGORIES = ["seeds", "fertilizer", "protection", "tools", "irrigation", "substrate", "other"]
+
+INVENTORY_SCAN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "desc": {"type": "string", "description": "krótki opis / zastosowanie"},
+                    "ean": {"type": "string", "description": "kod kreskowy/EAN, pusty jeśli nieczytelny"},
+                    "category": {"type": "string", "enum": INVENTORY_CATEGORIES},
+                    "expiry": {"type": "string", "description": "data ważności YYYY-MM-DD, pusty jeśli brak"},
+                    "qty": {"type": "string", "description": "ilość/pojemność z opakowania, np. 500 ml"},
+                },
+                "required": ["name", "category"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["items"],
     "additionalProperties": False,
 }
 
@@ -415,6 +452,22 @@ async def _ha_ai_task(hass, prompt, schema):
 _PLANTING_PL = {"soil": "w gruncie", "pot": "w donicy", "raised": "na podwyższonej grządce"}
 
 
+def _owned_supplies(data):
+    """Posiadane zasoby z inwentarza — skrót do kontekstu AI."""
+    return [
+        {k: v for k, v in {
+            "name": i.get("name"),
+            "category": i.get("category"),
+            "qty": i.get("qty"),
+            "usage_pct": i.get("usage_pct"),
+            "expiry": i.get("expiry"),
+            "desc": i.get("desc"),
+        }.items() if v}
+        for i in data.get("inventory", [])
+        if (i.get("list") or "own") == "own"
+    ][:80]  # ponytail: twardy limit rozmiaru kontekstu
+
+
 def _garden_context(hass, plant_ids=None):
     data = hass.data[DOMAIN]["data"]
     zones = {z["id"]: z["name"] for z in data["zones"]}
@@ -468,11 +521,15 @@ def _garden_context(hass, plant_ids=None):
             )
         plants.append(info)
     location = data["layout"].get("location") or {}
-    return {
+    ctx = {
         "date": date.today().isoformat(),
         "latitude": round(location.get("latitude") or hass.config.latitude, 2),
         "plants": plants,
     }
+    owned = _owned_supplies(data)
+    if owned:
+        ctx["owned_supplies"] = owned
+    return ctx
 
 
 async def async_generate_tasks(hass, categories=None, plant_ids=None, include_general=True, extra_prompt=None):
@@ -690,6 +747,9 @@ async def async_plan_season(hass, areas, catalog, wishes=None):
         "existing_plantings": existing,
         "catalog": catalog,
     }
+    owned = _owned_supplies(data)
+    if owned:
+        context["owned_supplies"] = owned
     parsed = await _complete(
         hass,
         _prompt(hass, "season") + "\n"
@@ -714,3 +774,22 @@ async def async_ask(hass, question, plant=None):
         )
     prompt += f"Pytanie: {question}\n" + _prompt(hass, "ask")
     return await _complete(hass, prompt)
+
+
+async def async_scan_inventory(hass, images, media_type):
+    """Zdjęcia produktów → lista rozpoznanych pozycji inwentarza."""
+    parsed = await _complete(
+        hass,
+        _prompt(hass, "inventory_scan"),
+        schema=INVENTORY_SCAN_SCHEMA,
+        images=images,
+        media_type=media_type,
+    )
+    items = []
+    for it in parsed.get("items", []):
+        if not (it.get("name") or "").strip():
+            continue
+        if it.get("category") not in INVENTORY_CATEGORIES:
+            it["category"] = "other"
+        items.append(it)
+    return {"items": items}

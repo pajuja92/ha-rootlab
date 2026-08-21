@@ -14,8 +14,9 @@ import * as settings from "./views/settings.js";
 import * as stats from "./views/stats.js";
 import * as tasks from "./views/tasks.js";
 import * as water from "./views/water.js";
+import * as inventory from "./views/inventory.js";
 
-const VIEWS = { dashboard, plants, chat, tasks, water, stats, knowledge, editor, settings };
+const VIEWS = { dashboard, plants, chat, tasks, water, stats, knowledge, inventory, editor, settings };
 const ACTIONS = Object.assign(
   {},
   dashboard.actions,
@@ -26,6 +27,7 @@ const ACTIONS = Object.assign(
   water.actions,
   stats.actions,
   knowledge.actions,
+  inventory.actions,
   editor.actions,
   settings.actions,
   crisis.actions
@@ -38,6 +40,7 @@ const TABS = [
   { id: "water", icon: "mdi:water" },
   { id: "stats", icon: "mdi:weather-partly-cloudy" },
   { id: "knowledge", icon: "mdi:book-open-variant" },
+  { id: "inventory", icon: "mdi:package-variant" },
   { id: "editor", icon: "mdi:vector-square" },
   { id: "settings", icon: "mdi:cog-outline" },
 ];
