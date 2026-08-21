@@ -667,6 +667,37 @@ async def async_diagnose(hass, plant, description, images, media_type):
     return parsed
 
 
+async def async_diagnose_zone(hass, zone, description, images, media_type):
+    """Diagnoza całej strefy: zdjęcia + opis + rośliny strefy z odczytami + notatki."""
+    data = hass.data[DOMAIN]["data"]
+    plant_ids = [p["id"] for p in data["plants"] if p.get("zone_id") == zone["id"]]
+    context = _garden_context(hass, plant_ids)
+    zinfo = {"name": zone.get("name"), "kind": zone.get("kind"), "planting": zone.get("planting")}
+    if zone.get("kind") == "greenhouse":
+        zinfo["greenhouse"] = (
+            f"+{zone.get('gh_temp_delta') or 5}°C, ~{zone.get('gh_light_pct') or 80}% światła"
+            + (", ogrzewana" if zone.get("gh_heated") else "")
+        )
+    notes = [n.get("text") for n in (zone.get("notes") or []) if not n.get("archived")][-5:]
+    if notes:
+        zinfo["recent_notes"] = notes
+    parsed = await _complete(
+        hass,
+        _prompt(hass, "diagnose") + "\n"
+        f"Diagnoza dotyczy CAŁEJ strefy „{zone.get('name')}\" (nie pojedynczej rośliny).\n"
+        f"Opis objawów od użytkownika: {description or 'brak opisu'}\n"
+        "Dane strefy:\n" + json.dumps(zinfo, ensure_ascii=False) + "\n"
+        "Rośliny w strefie i aktualne odczyty:\n" + json.dumps(context, ensure_ascii=False),
+        schema=DIAGNOSIS_SCHEMA,
+        images=images,
+        media_type=media_type,
+    )
+    if parsed.get("confidence") not in ("high", "medium", "low"):
+        parsed["confidence"] = "medium"
+    parsed.setdefault("steps", [])
+    return parsed
+
+
 def _transcript(chat):
     return "\n".join(
         f"{'Użytkownik' if m.get('role') == 'user' else 'Asystent'}: {m.get('content')}"

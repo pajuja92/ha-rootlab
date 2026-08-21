@@ -393,7 +393,8 @@ async def ws_tasks_apply(hass, connection, msg):
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "rootlab/crisis/diagnose",
-        vol.Required("plant_id"): str,
+        vol.Optional("plant_id", default=None): vol.Any(None, str),
+        vol.Optional("zone_id", default=None): vol.Any(None, str),
         vol.Required("description"): str,
         vol.Optional("image", default=None): vol.Any(None, str),
         vol.Optional("images", default=None): vol.Any(None, [str]),
@@ -404,20 +405,27 @@ async def ws_tasks_apply(hass, connection, msg):
 async def ws_crisis_diagnose(hass, connection, msg):
     data = hass.data[DOMAIN]["data"]
     plant = next((p for p in data["plants"] if p["id"] == msg["plant_id"]), None)
-    if not plant:
-        connection.send_error(msg["id"], "not_found", "Nie ma takiej rośliny")
+    zone = next((z for z in data["zones"] if z["id"] == msg["zone_id"]), None)
+    if not plant and not zone:
+        connection.send_error(msg["id"], "not_found", "Nie ma takiej rośliny ani strefy")
         return
     images = (msg["images"] or ([msg["image"]] if msg["image"] else []))[:5]
     try:
-        diagnosis = await ai.async_diagnose(
-            hass, plant, msg["description"], images, msg["media_type"]
-        )
+        if plant:
+            diagnosis = await ai.async_diagnose(
+                hass, plant, msg["description"], images, msg["media_type"]
+            )
+        else:
+            diagnosis = await ai.async_diagnose_zone(
+                hass, zone, msg["description"], images, msg["media_type"]
+            )
     except Exception as err:  # noqa: BLE001
         _ai_error(connection, msg["id"], err)
         return
     entry = {
         "id": uuid.uuid4().hex,
-        "plant_id": plant["id"],
+        "plant_id": plant["id"] if plant else None,
+        "zone_id": zone["id"] if zone else None,
         "description": msg["description"],
         "images": images,
         "diagnosis": diagnosis,

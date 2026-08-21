@@ -114,18 +114,31 @@ export function wireCombos(root) {
               .join("")
           : `<div class="combo-empty">${t("combo.noresults")}</div>`);
       list.hidden = false;
-      // dialog przycina swój overflow — lista w position:fixed wystaje poza okno
-      // dialogu (na backdrop); gdy brak miejsca u dołu, otwiera się nad polem
+      place();
+    };
+
+    // dialog przycina swój overflow — lista w position:fixed wystaje poza okno dialogu.
+    // Na telefonie klawiatura zjada pół ekranu (visualViewport) — lista dostosowuje
+    // wysokość do wolnego miejsca i otwiera się nad polem, gdy pod nim go brakuje.
+    const place = () => {
       const r = input.getBoundingClientRect();
+      const vv = window.visualViewport;
+      const vTop = vv ? vv.offsetTop : 0;
+      const vBottom = vv ? vv.offsetTop + vv.height : window.innerHeight;
+      const below = vBottom - r.bottom - 8;
+      const above = r.top - vTop - 8;
+      const useAbove = below < 180 && above > below;
+      const maxH = Math.max(110, Math.min(320, useAbove ? above : below));
+      list.style.maxHeight = `${maxH}px`;
       list.style.position = "fixed";
       list.style.left = `${r.left}px`;
       list.style.width = `${r.width}px`;
       list.style.right = "auto";
-      const h = Math.min(list.scrollHeight, 260);
-      list.style.top =
-        r.bottom + h + 4 > window.innerHeight && r.top - h - 4 > 0
-          ? `${r.top - h - 4}px`
-          : `${r.bottom + 2}px`;
+      const h = Math.min(list.scrollHeight, maxH);
+      list.style.top = useAbove ? `${r.top - h - 4}px` : `${r.bottom + 2}px`;
+    };
+    const onViewport = () => {
+      if (!list.hidden) place();
     };
 
     // combo z ikonami: podgląd wybranej ikony po lewej stronie pola
@@ -144,8 +157,12 @@ export function wireCombos(root) {
     }
 
     input.addEventListener("focus", () => {
-      input.select();
+      // na dotyku select() wywołuje systemowe uchwyty zaznaczania i menu
+      // „Wytnij/Przetłumacz" zasłaniające dialog — tylko desktop
+      if (!matchMedia("(pointer: coarse)").matches) input.select();
       renderList("");
+      window.visualViewport?.addEventListener("resize", onViewport);
+      window.visualViewport?.addEventListener("scroll", onViewport);
     });
     input.addEventListener("input", () => renderList(input.value));
     input.addEventListener("keydown", (ev) => {
@@ -160,6 +177,8 @@ export function wireCombos(root) {
       }
     });
     input.addEventListener("blur", () => {
+      window.visualViewport?.removeEventListener("resize", onViewport);
+      window.visualViewport?.removeEventListener("scroll", onViewport);
       setTimeout(() => {
         list.hidden = true;
         const selected = options.find((o) => o.value === hidden.value);

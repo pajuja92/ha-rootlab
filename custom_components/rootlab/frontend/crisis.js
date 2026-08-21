@@ -39,10 +39,20 @@ export const actions = {
 
 const CONF_COLOR = { high: "var(--rl-green)", medium: "var(--rl-harvest)", low: "var(--rl-crisis)" };
 
+const isZone = (v) => String(v || "").startsWith("zone:");
+const zoneIdOf = (v) => (isZone(v) ? String(v).slice(5) : null);
+
 function render(app) {
   const plants = app.data.plants;
-  const history = (app.data.crisis_history || []).filter((h) => h.plant_id === state.plantId && !h.archived).slice(-3).reverse();
-  const plantOpts = plants.map((p) => ({ value: p.id, label: p.name, secondary: p.species, icon: p.emoji || "🌱" }));
+  const zid = zoneIdOf(state.plantId);
+  const history = (app.data.crisis_history || [])
+    .filter((h) => (zid ? h.zone_id === zid : h.plant_id === state.plantId) && !h.archived)
+    .slice(-3)
+    .reverse();
+  const plantOpts = [
+    ...plants.map((p) => ({ value: p.id, label: p.name, secondary: p.species, icon: p.emoji || "🌱" })),
+    ...app.data.zones.map((z) => ({ value: `zone:${z.id}`, label: z.name, secondary: t("chat.zone.opt"), icon: z.emoji || "🪴" })),
+  ];
   const el = app.dialog(
     `<h2>🍂 ${t("crisis.title")}</h2>
     <div class="dropzone ${state.imgs.length ? "hasimg" : ""}" id="cz-drop">
@@ -64,7 +74,7 @@ function render(app) {
       }
     </div>
     <input type="file" id="cz-file" accept="image/*" multiple hidden>
-    <label>${t("crisis.plant")}</label>
+    <label>${t("chat.subject")}</label>
     ${combo({ name: "cz_plant", value: state.plantId, options: plantOpts, allowEmpty: false })}
     <label>${t("crisis.desc")}</label>
     <div class="mic-wrap">
@@ -189,7 +199,8 @@ function wire(app, el) {
     try {
       await startChat(app, {
         id: null,
-        plant_id: state.plantId,
+        plant_id: isZone(state.plantId) ? null : state.plantId,
+        zone_id: zoneIdOf(state.plantId),
         title: (d.problem || "").slice(0, 60),
         created: stamp,
         updated: stamp,
@@ -216,14 +227,15 @@ function wire(app, el) {
   q("#cz-kn")?.addEventListener("click", async () => {
     const d = state.result.diagnosis;
     const plant = app.data.plants.find((p) => p.id === state.plantId);
+    const zone = app.data.zones.find((z) => z.id === zoneIdOf(state.plantId));
     await app.ws("item/save", {
       kind: "knowledge",
       item: {
         id: null,
-        title: `${d.problem}${plant ? ` (${plant.name})` : ""}`,
+        title: `${d.problem}${plant ? ` (${plant.name})` : zone ? ` (${zone.name})` : ""}`,
         content: `${d.summary}\n\n${d.steps.map((s, i) => `${i + 1}. ${s.title}`).join("\n")}`,
         source: "ai",
-        plant_id: state.plantId,
+        plant_id: isZone(state.plantId) ? null : state.plantId,
         created: new Date().toISOString().slice(0, 10),
       },
     });
@@ -249,7 +261,8 @@ async function submit(app, snapshot) {
   }, 4000);
   try {
     state.result = await app.ws("crisis/diagnose", {
-      plant_id: state.plantId,
+      plant_id: isZone(state.plantId) ? null : state.plantId,
+      zone_id: zoneIdOf(state.plantId),
       description: state.desc,
       images: state.imgs.map((im) => im.data),
       media_type: state.imgs[0]?.media ?? null,
