@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { combo, emo, emojiChar, esc, todayISO } from "../util.js";
+import { combo, emo, emojiChar, esc, sectionColor, todayISO, wateringForDay } from "../util.js";
 import { plantIcon } from "./plants.js";
 
 const CATEGORIES = ["maintenance", "protection", "crisis", "manual"];
@@ -209,7 +209,14 @@ function calendar(app) {
       dayTasks = [...overdue, ...dayTasks];
     }
     const shown = dayTasks.slice(0, 3);
-    cells.push(`<div class="cal-cell ${iso === today ? "today" : ""} ${dayTasks.length ? "has-tasks" : ""}" ${dayTasks.length ? `data-cal-day="${iso}"` : ""}>
+    const water = wateringForDay(app, iso);
+    const wChips = water.slice(0, 2).map(
+      (w) => `<span class="cal-chip cal-water" style="border-left:3px solid ${sectionColor(app, w.s)}"
+        title="${esc(w.s.name)} ${esc(w.time || "")} · ${w.dur} min">💧 ${esc(w.s.name)} ${esc(w.time || "")}</span>`
+    );
+    if (water.length > 2) wChips.push(`<span class="cal-more">💧 +${water.length - 2}</span>`);
+    const clickable = dayTasks.length || water.length;
+    cells.push(`<div class="cal-cell ${iso === today ? "today" : ""} ${clickable ? "has-tasks" : ""}" ${clickable ? `data-cal-day="${iso}"` : ""}>
       <div class="d">${d}</div>
       ${shown
         .map(
@@ -218,6 +225,7 @@ function calendar(app) {
         )
         .join("")}
       ${dayTasks.length > 3 ? `<span class="cal-more">+${dayTasks.length - 3}</span>` : ""}
+      ${wChips.join("")}
     </div>`);
   }
   return `
@@ -248,9 +256,21 @@ function dayDialog(app, iso) {
       ...tasks,
     ];
   }
+  const water = wateringForDay(app, iso);
+  const waterBlock = water.length
+    ? `<div class="section-title" style="margin-top:12px"><ha-icon icon="mdi:water"></ha-icon>${t("cal.watering")}</div>
+       <div class="card">${water
+         .map(
+           (w) => `<div class="sched" style="display:flex;align-items:center;gap:8px;padding:4px 0">
+             <span class="dot" style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:${sectionColor(app, w.s)}"></span>
+             ${esc(w.s.name)} · ${esc(w.time || "")} · ${w.dur} min${w.oneoff ? ` <span class="chip harvest">${t("water.oneoff.badge")}</span>` : ""}</div>`
+         )
+         .join("")}</div>`
+    : "";
   app.dialog(
     `<h2>${esc(iso)}</h2>
     ${tasks.length ? `<div class="card">${tasks.map((task) => row(app, task)).join("")}</div>` : `<p style="font-size:14px;color:var(--secondary-text-color)">${t("tasks.day.empty")}</p>`}
+    ${waterBlock}
     <div class="dialog-actions"><button type="button" class="btn plain" data-cancel>${t("close")}</button></div>`,
     () => {},
     { wide: true }

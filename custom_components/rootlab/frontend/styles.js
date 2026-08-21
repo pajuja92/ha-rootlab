@@ -163,8 +163,13 @@ dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; mar
 .check-list .sec { margin-left: auto; font-size: 12px; color: var(--secondary-text-color); overflow: hidden; text-overflow: ellipsis; }
 /* Nawadnianie */
 .timeline { position: relative; height: 26px; margin: 12px 0 4px; background: color-mix(in srgb, var(--divider-color) 40%, transparent); border-radius: 6px; overflow: hidden; }
-.timeline .block { position: absolute; top: 0; bottom: 0; background: var(--rl-water-bg); border-inline: 1px solid var(--rl-water); }
-.timeline .block.active { background: var(--rl-water); animation: rl-pulse 2s ease-in-out infinite; }
+.timeline .block { position: absolute; top: 0; bottom: 0; }
+.timeline .block.plan { background: color-mix(in srgb, var(--rl-water) 15%, transparent); border-inline: 1px solid var(--rl-water); }
+.timeline .block.real { top: 4px; bottom: 4px; border-radius: 3px; }
+.tl-head { display: flex; align-items: center; gap: 4px; font-size: 14px; margin-top: 4px; }
+.tl-head .icon-btn.on { color: var(--rl-water); background: var(--rl-water-bg); border-radius: 8px; }
+.tl-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--secondary-text-color); margin-top: 8px; }
+.tl-label .dot { width: 8px; height: 8px; border-radius: 50%; }
 .timeline .now { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--rl-crisis); }
 .timeline-scale { display: flex; justify-content: space-between; font-size: 11px; color: var(--secondary-text-color); margin-bottom: 12px; }
 @keyframes rl-pulse { 50% { opacity: 0.6; } }
@@ -405,6 +410,7 @@ dialog input[type=checkbox], dialog input[type=radio] { width: auto; accent-colo
 .cal-chip.protection { background: var(--rl-harvest-bg); }
 .cal-chip.crisis { background: var(--rl-crisis-bg); }
 .cal-chip.manual { background: color-mix(in srgb, var(--secondary-text-color) 15%, transparent); }
+.cal-chip.cal-water { background: var(--rl-water-bg); cursor: default; }
 .cal-chip.overdue { outline: 1px solid var(--rl-crisis); }
 .cal-more { font-size: 10px; color: var(--secondary-text-color); }
 .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: var(--rl-gap); align-items: center; }

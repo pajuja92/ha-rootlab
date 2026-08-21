@@ -25,6 +25,9 @@ def test_paused_and_skipped():
     assert due_sections([SECTION], MONDAY_6, skip_date="2026-07-20") == []
     assert due_sections([SECTION], MONDAY_6, skip_date="2026-07-19") == [SECTION]
     assert due_sections([{**SECTION, "paused": True}], MONDAY_6) == []
+    assert due_sections([{**SECTION, "paused_until": "indef"}], MONDAY_6) == []
+    assert due_sections([{**SECTION, "paused_until": "2026-07-25"}], MONDAY_6) == []
+    assert due_sections([{**SECTION, "paused_until": "2026-07-19"}], MONDAY_6) == [{**SECTION, "paused_until": "2026-07-19"}]
     assert due_sections([SECTION], MONDAY_6, paused_until="zepsuta-data") == [SECTION]
 
 

@@ -275,3 +275,33 @@ export const sensorState = (hass, entityId) => {
     text: unavailable ? "—" : `${st.state}${st.attributes.unit_of_measurement ? " " + st.attributes.unit_of_measurement : ""}`,
   };
 };
+
+/* --- Nawadnianie: wspólne helpery (Woda + kalendarz zadań) --- */
+export const SECTION_PALETTE = ["#42a5f5", "#66bb6a", "#ab47bc", "#ffa726", "#26c6da", "#ec407a", "#8d6e63", "#d4e157"];
+
+export const sectionColor = (app, s) =>
+  s.color || SECTION_PALETTE[Math.max(0, (app.data.irrigation?.sections || []).findIndex((x) => x.id === s.id)) % SECTION_PALETTE.length];
+
+export const sectionEntities = (s) => (s.entity_ids || (s.entity_id ? [s.entity_id] : [])).filter(Boolean);
+
+/* Czy sekcja jest wstrzymana w dniu iso (paused_until = "indef" albo data graniczna włącznie). */
+export const sectionPaused = (s, iso) => s.paused_until === "indef" || (Boolean(s.paused_until) && iso <= s.paused_until);
+
+/* Zaplanowane podlewania danego dnia: harmonogramy sekcji + jednorazowe. */
+export function wateringForDay(app, iso) {
+  const irr = app.data.irrigation || {};
+  const dow = (new Date(iso + "T12:00:00").getDay() + 6) % 7;
+  const out = [];
+  for (const s of irr.sections || []) {
+    const sch = s.schedule || {};
+    if (sectionPaused(s, iso)) continue;
+    if ((sch.days || []).includes(dow))
+      for (const time of sch.times || []) out.push({ s, time, dur: sch.duration_min || 10 });
+  }
+  for (const o of irr.one_offs || []) {
+    if (o.date !== iso) continue;
+    const s = (irr.sections || []).find((x) => x.id === o.section_id);
+    if (s) out.push({ s, time: o.time, dur: o.duration_min || 10, oneoff: true });
+  }
+  return out.sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+}

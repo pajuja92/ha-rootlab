@@ -317,6 +317,7 @@ class RootlabPanel extends HTMLElement {
 
   /* Odświeżanie wartości live bez pełnego re-renderu (hass przychodzi bardzo często). */
   _live() {
+    VIEWS[this.tab]?.live?.(this);
     this.shadowRoot.querySelectorAll(".sensor-chip[data-entity]").forEach((el) => {
       const st = this._hass.states[el.dataset.entity];
       const unavailable = !st || st.state === "unavailable" || st.state === "unknown";

@@ -2,6 +2,19 @@
 from datetime import date
 
 
+def _section_paused(section, today):
+    until = section.get("paused_until")
+    if until == "indef":
+        return True
+    if until:
+        try:
+            if today <= date.fromisoformat(until):
+                return True
+        except ValueError:
+            pass
+    return bool(section.get("paused"))
+
+
 def due_sections(sections, now, paused_until=None, skip_date=None):
     """Sekcje, które powinny wystartować w tej minucie (now = lokalny datetime)."""
     if paused_until == "indef":
@@ -18,7 +31,7 @@ def due_sections(sections, now, paused_until=None, skip_date=None):
     out = []
     for section in sections:
         schedule = section.get("schedule") or {}
-        if section.get("paused"):
+        if _section_paused(section, now.date()):
             continue
         if now.weekday() not in (schedule.get("days") or []):
             continue
