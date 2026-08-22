@@ -66,6 +66,9 @@ def _public(hass):
             "ai_provider": options.get("ai_provider", "anthropic"),
             "has_weather_entity": bool(options.get("weather_entity")),
             "weather_entity": options.get("weather_entity"),
+            "truth_temp_entity": options.get("truth_temp_entity"),
+            "truth_rain_entity": options.get("truth_rain_entity"),
+            "imgw_station": options.get("imgw_station", "warszawa"),
         },
     }
 
@@ -107,6 +110,7 @@ def async_register(hass):
         ws_photo_delete,
         ws_inventory_scan,
         ws_inventory_categories,
+        ws_weather_config,
     ):
         websocket_api.async_register_command(hass, cmd)
 
@@ -1007,5 +1011,38 @@ async def ws_inventory_scan(hass, connection, msg):
 async def ws_inventory_categories(hass, connection, msg):
     cats = [c.strip() for c in msg["categories"] if c.strip()]
     hass.data[DOMAIN]["data"]["inventory_categories"] = cats
+    await async_save(hass)
+    connection.send_result(msg["id"], _public(hass))
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "rootlab/weather/config",
+        vol.Optional("sources", default=None): vol.Any(None, [str]),
+        vol.Optional("rain_model", default=None): vol.Any(None, str),
+        vol.Optional("truth", default=None): vol.Any(None, dict),
+    }
+)
+@websocket_api.async_response
+async def ws_weather_config(hass, connection, msg):
+    data = hass.data[DOMAIN]["data"]
+    if msg["sources"] is not None:
+        data["weather_sources"] = [
+            s for s in msg["sources"] if s == "ha" or s in OPEN_METEO_MODELS
+        ]
+    if msg["rain_model"] in OPEN_METEO_MODELS:
+        data["rain_model"] = msg["rain_model"]
+    if msg["truth"] is not None:
+        # źródła „prawdy gruntowej" mieszkają w opcjach wpisu integracji
+        entry = hass.data[DOMAIN]["entry"]
+        options = dict(entry.options)
+        for key in ("truth_temp_entity", "truth_rain_entity", "imgw_station"):
+            if key in msg["truth"]:
+                value = (msg["truth"][key] or "").strip()
+                if value:
+                    options[key] = value
+                else:
+                    options.pop(key, None)
+        hass.config_entries.async_update_entry(entry, options=options)
     await async_save(hass)
     connection.send_result(msg["id"], _public(hass))

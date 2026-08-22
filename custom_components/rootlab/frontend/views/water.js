@@ -290,7 +290,9 @@ function sectionRow(app, s, run) {
   const pausedChip = secPaused
     ? ` <span class="chip harvest">${s.paused_until === "indef" ? t("water.sec.paused") : t("water.sec.paused.until", { date: s.paused_until })}</span>`
     : "";
-  const rainChip = s.rain_skip_mm != null ? ` <span class="chip water" title="${t("water.rain.skip")}">☂ ≥ ${s.rain_skip_mm} mm</span>` : "";
+  const rainChip =
+    (s.rain_skip_mm != null ? ` <span class="chip water" title="${t("water.rain.skip")}">☂ ≥ ${s.rain_skip_mm} mm</span>` : "") +
+    (s.rain_forecast_mm != null ? ` <span class="chip water" title="${t("water.rain.fc")}">☔ ≥ ${s.rain_forecast_mm} mm</span>` : "");
   const kindLabel = KINDS.includes(s.kind) ? t(`water.kind.${s.kind}`) : "";
   let controls;
   if (run && run.paused) {
@@ -386,6 +388,7 @@ function sectionDialog(app, section, draft = null) {
         entity_id: chosen[0]?.entities.valve || null,
         paused_until: section?.paused_until || null,
         rain_skip_mm: section?.rain_skip_mm ?? null,
+        rain_forecast_mm: section?.rain_forecast_mm ?? null,
         kind: fd.get("kind"),
         schedule: {
           days: t("days").map((_, i) => i).filter((i) => fd.get(`day${i}`)),
@@ -465,7 +468,7 @@ function pauseDialog(app) {
 const RAIN_PRESETS = [1, 2, 5, 10, 15, 20];
 
 function sectionPauseDialog(app, s) {
-  const hasRain = s.rain_skip_mm != null;
+  const hasRain = s.rain_skip_mm != null || s.rain_forecast_mm != null;
   app.dialog(
     `<h2>${t("water.sec.pause")} — ${esc(s.name)}</h2>
     <form>
@@ -481,6 +484,11 @@ function sectionPauseDialog(app, s) {
         <input type="checkbox" name="rain" ${hasRain ? "checked" : ""} style="width:auto">${t("water.rain.skip")}
         <select name="rain_mm" style="width:110px">
           ${RAIN_PRESETS.map((mm) => `<option value="${mm}" ${(s.rain_skip_mm ?? 5) === mm ? "selected" : ""}>≥ ${mm} mm</option>`).join("")}
+        </select></label>
+      <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <input type="checkbox" name="rainfc" ${s.rain_forecast_mm != null ? "checked" : ""} style="width:auto">${t("water.rain.fc")}
+        <select name="rainfc_mm" style="width:110px">
+          ${RAIN_PRESETS.map((mm) => `<option value="${mm}" ${(s.rain_forecast_mm ?? 5) === mm ? "selected" : ""}>≥ ${mm} mm</option>`).join("")}
         </select></label>
       <p style="font-size:13px;color:var(--secondary-text-color);margin:6px 0 0">${t("water.rain.hint")}</p>
       <div class="dialog-actions">
@@ -500,6 +508,7 @@ function sectionPauseDialog(app, s) {
         ...s,
         paused_until: until,
         rain_skip_mm: fd.get("rain") ? parseInt(fd.get("rain_mm"), 10) : null,
+        rain_forecast_mm: fd.get("rainfc") ? parseInt(fd.get("rainfc_mm"), 10) : null,
       });
     }
   );

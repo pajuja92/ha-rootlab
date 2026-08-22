@@ -214,6 +214,16 @@ def _source_label(hass, source):
     return OPEN_METEO_MODELS.get(source, source)
 
 
+def _truth_desc(hass, entity_key):
+    options = hass.data[DOMAIN]["entry"].options
+    entity_id = options.get(entity_key)
+    if entity_id:
+        state = hass.states.get(entity_id)
+        label = (state and state.attributes.get("friendly_name")) or entity_id
+        return {"kind": "sensor", "label": label, "entity_id": entity_id}
+    return {"kind": "imgw", "label": f"IMGW · {options.get('imgw_station', 'warszawa')}"}
+
+
 def stats_payload(hass):
     """Ranking + dzisiejsze prognozy vs pomiary (dla zakładki Statystyki)."""
     verify = _verify(hass)
@@ -241,24 +251,46 @@ def stats_payload(hass):
         today = {
             "date": snapshot.get("date"),
             "sources": [
-                {"source": key, "label": _source_label(hass, key), "temps": val.get("temps")}
+                {
+                    "source": key,
+                    "label": _source_label(hass, key),
+                    "temps": val.get("temps"),
+                    "rain": val.get("rain"),
+                }
                 for key, val in snapshot["sources"].items()
             ],
             "actual_temps": actuals.get("temps", {})
             if actuals.get("date") == snapshot.get("date")
             else {},
+            "actual_rain_mm": actuals.get("rain_mm")
+            if actuals.get("date") == snapshot.get("date")
+            else None,
         }
-    return {"since": verify.get("stats", {}).get("_since"), "sources": out, "today": today}
+    return {
+        "since": verify.get("stats", {}).get("_since"),
+        "sources": out,
+        "today": today,
+        "truth": {
+            "temp": _truth_desc(hass, "truth_temp_entity"),
+            "rain": _truth_desc(hass, "truth_rain_entity"),
+            "imgw_station": hass.data[DOMAIN]["entry"].options.get("imgw_station", "warszawa"),
+        },
+    }
 
 
-async def fetch_rain_last24(hass):
-    """Suma opadu [mm] z ostatnich 24 h (Open-Meteo, lokalizacja ogrodu). None gdy błąd."""
+async def fetch_rain24(hass):
+    """Opad [mm] wokół teraz: suma z ostatnich 24 h i prognoza na następne 24 h.
+
+    Model Open-Meteo z ustawień (data["rain_model"]). None gdy błąd sieci."""
+    model = hass.data[DOMAIN]["data"].get("rain_model") or "best_match"
+    if model not in OPEN_METEO_MODELS:
+        model = "best_match"
     lat, lon = _location(hass)
     session = async_get_clientsession(hass)
     url = (
         "https://api.open-meteo.com/v1/forecast"
         f"?latitude={lat}&longitude={lon}"
-        "&hourly=precipitation&past_days=1&forecast_days=1&timezone=auto"
+        f"&hourly=precipitation&past_days=1&forecast_days=2&timezone=auto&models={model}"
     )
     try:
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
@@ -267,23 +299,25 @@ async def fetch_rain_last24(hass):
     except Exception:  # noqa: BLE001
         return None
     hourly = payload.get("hourly", {})
+    suffix = "" if model == "best_match" else f"_{model}"
     times = hourly.get("time", [])
-    rain = hourly.get("precipitation", [])
+    rain = hourly.get(f"precipitation{suffix}") or hourly.get("precipitation") or []
     now = dt_util.now()
-    start = now - timedelta(hours=24)
-    total = 0.0
+    past_start = now - timedelta(hours=24)
+    next_end = now + timedelta(hours=24)
+    past = 0.0
+    nxt = 0.0
     for i, iso in enumerate(times):
-        try:
-            ts = dt_util.parse_datetime(iso)
-        except (ValueError, TypeError):
-            continue
-        if ts is None:
+        ts = dt_util.parse_datetime(iso)
+        if ts is None or i >= len(rain) or rain[i] is None:
             continue
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=now.tzinfo)
-        if start <= ts <= now and i < len(rain) and rain[i] is not None:
-            total += float(rain[i])
-    return round(total, 1)
+        if past_start <= ts <= now:
+            past += float(rain[i])
+        elif now < ts <= next_end:
+            nxt += float(rain[i])
+    return {"past": round(past, 1), "next": round(nxt, 1), "model": model}
 
 
 async def fetch_openmeteo_forecast(hass, model):

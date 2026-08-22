@@ -11,7 +11,7 @@ import homeassistant.util.dt as dt_util
 
 from .const import DOMAIN
 from .logic import due_sections
-from .verification import fetch_rain_last24
+from .verification import fetch_rain24
 
 OFF_STATES = ("off", "closed", "unavailable", "unknown")
 
@@ -46,7 +46,7 @@ def async_setup_scheduler(hass):
         cache = d.get("rain24")
         if cache and (dt_util.utcnow() - cache["at"]).total_seconds() < 1800:
             return cache["mm"]
-        mm = await fetch_rain_last24(hass)
+        mm = await fetch_rain24(hass)
         d["rain24"] = {"at": dt_util.utcnow(), "mm": mm}
         return mm
 
@@ -57,11 +57,15 @@ def async_setup_scheduler(hass):
             return
         # reguła deszczowa: harmonogram pomija sekcję po opadach; ręczne starty
         # i jednorazowe działają zawsze
-        threshold = section.get("rain_skip_mm")
-        if scheduled and threshold is not None:
-            mm = await _rain24()
-            if mm is not None and mm >= float(threshold):
-                return
+        past_thr = section.get("rain_skip_mm")
+        next_thr = section.get("rain_forecast_mm")
+        if scheduled and (past_thr is not None or next_thr is not None):
+            rain = await _rain24()
+            if rain is not None:
+                if past_thr is not None and rain.get("past", 0) >= float(past_thr):
+                    return
+                if next_thr is not None and rain.get("next", 0) >= float(next_thr):
+                    return
         await _switch(hass, entity_ids, True)
 
         async def _auto_off(_now):

@@ -1,5 +1,7 @@
 import { t } from "../i18n.js";
-import { TABS, esc, saveUiPrefs, uiPrefs } from "../util.js";
+import { TABS, combo, entityOptions, esc, saveUiPrefs, uiPrefs } from "../util.js";
+import { OM_MODELS } from "./dashboard.js";
+import { ALL_SOURCES, srcLabel } from "./stats.js";
 
 const PROMPT_KEYS = ["system", "tasks", "diagnose", "ask", "season", "inventory_scan"];
 const TA_STYLE =
@@ -23,9 +25,48 @@ export function render(app) {
       <button class="btn" data-action="prompts-save"><ha-icon icon="mdi:content-save-outline"></ha-icon>${t("save")}</button>
     </div>
   </div>
+  ${weatherCard(app)}
   ${catsCard(app)}
   ${uiCard(app)}
   ${shopCard(app)}`;
+}
+
+/* Pogoda: które źródła prognoz widać w zakładce Pogoda + model reguły deszczowej. */
+function weatherCard(app) {
+  const active = app.data.weather_sources || ALL_SOURCES();
+  const ordered = [...active.filter((x) => ALL_SOURCES().includes(x)), ...ALL_SOURCES().filter((x) => !active.includes(x))];
+  const rain = app.data.rain_model || "best_match";
+  return `<div class="card" style="max-width:780px;margin-top:16px">
+    <div class="section-title" style="margin-top:0"><ha-icon icon="mdi:weather-partly-cloudy"></ha-icon>${t("settings.wx.title")}</div>
+    <label>${t("settings.wx.sources")}</label>
+    <div class="check-list" id="wx-sources">
+      ${ordered
+        .map(
+          (src) => `<label><input type="checkbox" value="${src}" ${active.includes(src) ? "checked" : ""}>
+            ${esc(srcLabel(app, src))} <span class="sec">${src === "ha" ? "Home Assistant" : "Open-Meteo"}</span></label>`
+        )
+        .join("")}
+    </div>
+    <p style="font-size:13px;color:var(--secondary-text-color)">${t("settings.wx.sources.hint")}</p>
+    <label>${t("settings.wx.rain")}</label>
+    <select id="wx-rain-model">
+      ${Object.entries(OM_MODELS).map(([k, v]) => `<option value="${k}" ${rain === k ? "selected" : ""}>${esc(v)}</option>`).join("")}
+    </select>
+    <p style="font-size:13px;color:var(--secondary-text-color)">${t("settings.wx.rain.hint")}</p>
+    <label>${t("settings.wx.truth")}</label>
+    <p style="font-size:13px;color:var(--secondary-text-color);margin-top:0">${t("settings.wx.truth.hint")}</p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <div style="flex:1;min-width:220px"><label style="font-size:13px">${t("settings.wx.truth.temp")}</label>
+        ${combo({ name: "wx_truth_temp", value: app.data.settings?.truth_temp_entity || "", options: entityOptions(app.hass, ["sensor"]) })}</div>
+      <div style="flex:1;min-width:220px"><label style="font-size:13px">${t("settings.wx.truth.rain")}</label>
+        ${combo({ name: "wx_truth_rain", value: app.data.settings?.truth_rain_entity || "", options: entityOptions(app.hass, ["sensor"]) })}</div>
+    </div>
+    <label style="font-size:13px">${t("settings.wx.truth.imgw")}</label>
+    <input id="wx-imgw" maxlength="40" value="${esc(app.data.settings?.imgw_station || "warszawa")}" style="max-width:240px">
+    <div class="actions" style="justify-content:flex-end">
+      <button class="btn" data-action="wx-save"><ha-icon icon="mdi:content-save-outline"></ha-icon>${t("save")}</button>
+    </div>
+  </div>`;
 }
 
 /* Kategorie inwentarza — lista zarządzana przez użytkownika (storage HA). */
@@ -137,6 +178,29 @@ async function saveCats(app, cats) {
 }
 
 export const actions = {
+  "wx-save": async (app) => {
+    const root = app.shadowRoot;
+    const checked = [...root.querySelectorAll("#wx-sources input:checked")].map((el) => el.value);
+    // kolejność: dotychczasowa lista + nowo dodane na końcu
+    const prev = app.data.weather_sources || [];
+    const sources = [...prev.filter((x) => checked.includes(x)), ...checked.filter((x) => !prev.includes(x))];
+    try {
+      app.data = await app.ws("weather/config", {
+        sources,
+        rain_model: root.getElementById("wx-rain-model").value,
+        truth: {
+          truth_temp_entity: root.querySelector('input[name="wx_truth_temp"]')?.value || "",
+          truth_rain_entity: root.querySelector('input[name="wx_truth_rain"]')?.value || "",
+          imgw_station: root.getElementById("wx-imgw").value,
+        },
+      });
+    } catch (e) {
+      app.toast(`⚠ ${e.message || e}`, true);
+      return;
+    }
+    app.render();
+    app.toast(t("toast.saved"));
+  },
   "inv-cat-add": (app) => {
     const el = app.shadowRoot.getElementById("inv-cat-new");
     const val = (el?.value || "").trim();

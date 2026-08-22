@@ -21,6 +21,8 @@ DEFAULTS = {
     "plantings": [],
     "inventory": [],
     "inventory_lists": [],
+    "weather_sources": ["ha", "best_match", "icon_seamless", "ecmwf_ifs025", "gfs_seamless", "ukmo_seamless"],
+    "rain_model": "best_match",
     "inventory_categories": [
         "Nasiona", "Cebule i sadzonki", "Nawozy", "Środki ochrony roślin", "Repelenty",
         "Narzędzia", "Nawadnianie i złączki", "Podłoża i ziemia", "Doniczki i pojemniki",

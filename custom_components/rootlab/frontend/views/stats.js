@@ -17,16 +17,20 @@ const COLORS = [
 
 /* ---------------- karty prognozy ---------------- */
 
-const ALL_SOURCES = () => ["ha", ...Object.keys(OM_MODELS)];
+export const ALL_SOURCES = () => ["ha", ...Object.keys(OM_MODELS)];
 
-function cardList() {
-  try {
-    const c = JSON.parse(localStorage.getItem("rootlab_weather_cards"));
-    if (Array.isArray(c)) return c.filter((s) => ALL_SOURCES().includes(s));
-  } catch (e) { /* pierwszy raz / uszkodzony zapis */ }
-  return ALL_SOURCES(); // domyślnie wszystkie modele
+export function cardList(app) {
+  const c = app.data.weather_sources;
+  return Array.isArray(c) ? c.filter((s) => ALL_SOURCES().includes(s)) : ALL_SOURCES();
 }
-const saveCards = (c) => localStorage.setItem("rootlab_weather_cards", JSON.stringify(c));
+async function saveCards(app, c) {
+  try {
+    app.data = await app.ws("weather/config", { sources: c });
+  } catch (e) {
+    app.toast(`⚠ ${e.message || e}`, true);
+  }
+  app.render();
+}
 
 function cardState() {
   try {
@@ -37,11 +41,11 @@ function cardState() {
 }
 const saveCardState = (s) => localStorage.setItem("rootlab_wcard_state", JSON.stringify(s));
 
-const srcLabel = (app, src) => (src === "ha" ? haEntityName(app) : OM_MODELS[src] || src);
+export const srcLabel = (app, src) => (src === "ha" ? haEntityName(app) : OM_MODELS[src] || src);
 
 function ensureForecasts(app) {
   app.forecasts = app.forecasts || {};
-  for (const src of cardList()) {
+  for (const src of cardList(app)) {
     if (src in app.forecasts) continue;
     app.forecasts[src] = "loading";
     app
@@ -101,7 +105,7 @@ function weatherCard(app, src, idx, total) {
 
 export function render(app) {
   ensureForecasts(app);
-  const list = cardList();
+  const list = cardList(app);
   const editBar = `<div class="toolbar"><div class="spacer"></div>
     <button class="btn small ${app._wxEdit ? "" : "plain"}" data-action="wcard-edit">
       <ha-icon icon="mdi:pencil" style="--mdc-icon-size:16px"></ha-icon>${t("edit")}</button></div>`;
@@ -119,6 +123,10 @@ export function render(app) {
 }
 
 export const actions = {
+  "vf-mode": (app, el) => {
+    app._vfMode = el.dataset.mode;
+    app.render();
+  },
   "wcard-edit": (app) => {
     app._wxEdit = !app._wxEdit;
     app.render();
@@ -138,20 +146,18 @@ export const actions = {
     app.render();
   },
   "wcard-move": (app, el) => {
-    const c = cardList();
+    const c = cardList(app);
     const i = c.indexOf(el.dataset.src);
     const j = i + parseInt(el.dataset.dir, 10);
     if (i < 0 || j < 0 || j >= c.length) return;
     [c[i], c[j]] = [c[j], c[i]];
-    saveCards(c);
-    app.render();
+    saveCards(app, c);
   },
   "wcard-del": (app, el) => {
-    saveCards(cardList().filter((s) => s !== el.dataset.src));
-    app.render();
+    saveCards(app, cardList(app).filter((s) => s !== el.dataset.src));
   },
   "wcard-add": (app) => {
-    const addable = ALL_SOURCES().filter((s) => !cardList().includes(s));
+    const addable = ALL_SOURCES().filter((s) => !cardList(app).includes(s));
     if (!addable.length) return;
     app.dialog(
       `<h2>${t("weather.add")}</h2>
@@ -165,10 +171,7 @@ export const actions = {
           <button type="submit" class="btn">${t("save")}</button>
         </div>
       </form>`,
-      (fd) => {
-        saveCards([...cardList(), fd.get("src")]);
-        app.render();
-      }
+      (fd) => saveCards(app, [...cardList(app), fd.get("src")])
     );
   },
 };
@@ -185,7 +188,7 @@ function verificationSection(app) {
     }).catch(() => {});
     return `<div class="empty"><ha-icon icon="mdi:timer-sand"></ha-icon></div>`;
   }
-  return rankingCard(app, v) + todayCard(app, v) + infoCard();
+  return rankingCard(app, v) + todayCard(app, v) + infoCard(app, v);
 }
 
 function rankingCard(app, v) {
@@ -219,29 +222,42 @@ function rankingCard(app, v) {
 
 function todayCard(app, v) {
   const today = v?.today;
+  const mode = app._vfMode || "temp";
+  const head = (extra = "") => `
+      <div class="section-title"><ha-icon icon="mdi:chart-timeline-variant"></ha-icon>${t("stats.today")}${extra}
+        <span class="spacer"></span>
+        <button class="btn small ${mode === "temp" ? "" : "plain"}" data-action="vf-mode" data-mode="temp">${t("stats.mode.temp")}</button>
+        <button class="btn small ${mode === "rain" ? "" : "plain"}" data-action="vf-mode" data-mode="rain">${t("stats.mode.rain")}</button>
+      </div>`;
   if (!today?.sources?.length) {
-    return `
-      <div class="section-title"><ha-icon icon="mdi:chart-timeline-variant"></ha-icon>${t("stats.today")}</div>
-      <div class="card"><div class="ai-hint"><ha-icon icon="mdi:weather-night"></ha-icon>${t("stats.nodata")}</div></div>`;
+    return `${head()}<div class="card"><div class="ai-hint"><ha-icon icon="mdi:weather-night"></ha-icon>${t("stats.nodata")}</div></div>`;
   }
-  const W = chartW(), H = 240, padL = 32, padR = 10, padT = 14, padB = 24;
+  const W = chartW(), H = 240, padL = 34, padR = 10, padT = 14, padB = 24;
   const iw = W - padL - padR, ih = H - padT - padB;
-  const all = today.sources
-    .flatMap((src) => src.temps || [])
-    .concat(Object.values(today.actual_temps || {}))
+  // opad: sumy narastające per model (metryka rankingu = błąd sumy dobowej)
+  const cum = (arr) => {
+    let acc = 0;
+    return (arr || []).map((val) => (acc += val || 0));
+  };
+  const series = today.sources.map((src) => (mode === "rain" ? cum(src.rain) : src.temps || []));
+  const actualRain = mode === "rain" ? today.actual_rain_mm : null;
+  const all = series
+    .flat()
+    .concat(mode === "temp" ? Object.values(today.actual_temps || {}) : actualRain != null ? [actualRain] : [])
     .filter((val) => val != null && isFinite(val));
   if (!all.length) {
-    return `
-      <div class="section-title"><ha-icon icon="mdi:chart-timeline-variant"></ha-icon>${t("stats.today")}</div>
-      <div class="card"><div class="ai-hint">${t("stats.nodata")}</div></div>`;
+    return `${head()}<div class="card"><div class="ai-hint">${t("stats.nodata")}</div></div>`;
   }
-  let vMin = Math.min(...all), vMax = Math.max(...all);
-  if (vMax - vMin < 4) { vMax += 2; vMin -= 2; }
+  let vMin = mode === "rain" ? 0 : Math.min(...all);
+  let vMax = Math.max(...all);
+  if (mode === "rain" && vMax < 1) vMax = 1;
+  if (mode === "temp" && vMax - vMin < 4) { vMax += 2; vMin -= 2; }
   const x = (h) => padL + ((h + 0.5) / 24) * iw;
   const y = (val) => padT + (1 - (val - vMin) / (vMax - vMin)) * ih;
-  const lines = today.sources
-    .map((src, i) => {
-      const pts = (src.temps || [])
+  const fmt = (val) => (mode === "rain" ? `${Math.round(val * 10) / 10}` : `${Math.round(val)}°`);
+  const lines = series
+    .map((vals, i) => {
+      const pts = vals
         .map((val, h) => (val != null ? `${x(h).toFixed(1)},${y(val).toFixed(1)}` : null))
         .filter(Boolean);
       return pts.length > 1
@@ -249,16 +265,22 @@ function todayCard(app, v) {
         : "";
     })
     .join("");
-  const actual = Object.entries(today.actual_temps || {})
-    .map(
-      ([h, val]) =>
-        `<circle cx="${x(parseInt(h, 10))}" cy="${y(val)}" r="3.4" fill="var(--primary-text-color)" stroke="var(--card-background-color)" stroke-width="1"/>`
-    )
-    .join("");
+  const actual =
+    mode === "temp"
+      ? Object.entries(today.actual_temps || {})
+          .map(
+            ([h, val]) =>
+              `<circle cx="${x(parseInt(h, 10))}" cy="${y(val)}" r="3.4" fill="var(--primary-text-color)" stroke="var(--card-background-color)" stroke-width="1"/>`
+          )
+          .join("")
+      : actualRain != null
+        ? `<line x1="${padL}" x2="${W - padR}" y1="${y(actualRain)}" y2="${y(actualRain)}" stroke="var(--primary-text-color)" stroke-dasharray="5 4" stroke-width="1.6"/>
+           <text x="${W - padR}" y="${y(actualRain) - 4}" text-anchor="end" style="font-size:10px;fill:var(--primary-text-color)">${t("stats.actual")}: ${actualRain} mm</text>`
+        : "";
   const grid = [vMin, (vMin + vMax) / 2, vMax]
     .map(
       (val) => `<line class="gridline" x1="${padL}" x2="${W - padR}" y1="${y(val)}" y2="${y(val)}"/>
-      <text x="2" y="${y(val) + 3}">${Math.round(val)}°</text>`
+      <text x="2" y="${y(val) + 3}">${fmt(val)}</text>`
     )
     .join("");
   const labels = (W < 500 ? [0, 6, 12, 18] : [0, 4, 8, 12, 16, 20])
@@ -271,17 +293,25 @@ function todayCard(app, v) {
       )
       .join("") +
     `<span><i style="background:var(--primary-text-color);width:8px;height:8px;border-radius:50%"></i>${t("stats.actual")}</span>`;
-  return `
-    <div class="section-title"><ha-icon icon="mdi:chart-timeline-variant"></ha-icon>${t("stats.today")} (${esc(today.date || "")})</div>
+  const rainNote = mode === "rain" ? `<div class="ai-hint" style="margin-top:8px">${t("stats.rain.note")}</div>` : "";
+  return `${head(` — ${mode === "rain" ? t("stats.mode.rain") : t("stats.mode.temp")} (${esc(today.date || "")})`)}
     <div class="card">
       <svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">${grid}${lines}${actual}${labels}</svg>
       <div class="chart-legend">${legend}</div>
+      ${rainNote}
     </div>`;
 }
 
-function infoCard() {
+function infoCard(app, v) {
+  const truth = v?.truth;
+  const truthLine = truth
+    ? `<div class="ai-hint" style="margin-top:8px"><ha-icon icon="mdi:crosshairs-gps"></ha-icon>
+        ${t("verify.truth.now")}: ${t("stats.mode.temp").toLowerCase()} — <b>${esc(truth.temp?.label || "?")}</b>,
+        ${t("stats.mode.rain").toLowerCase()} — <b>${esc(truth.rain?.label || "?")}</b>. ${t("verify.truth.change")}</div>`
+    : "";
   return `<div class="card" style="margin-top:var(--rl-gap)">
     <div class="ai-hint" style="margin-top:0"><ha-icon icon="mdi:information-outline"></ha-icon>${t("verify.note")}</div>
+    ${truthLine}
   </div>`;
 }
 
