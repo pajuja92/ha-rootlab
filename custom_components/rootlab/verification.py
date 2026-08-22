@@ -2,6 +2,8 @@
 per-model, bez klucza) + encji weather z HA, a następnego dnia porównuje je
 z prawdą gruntową (czujniki użytkownika albo pomiary stacji IMGW) i aktualizuje
 ranking trafności (MAE temperatury, błąd sumy opadów)."""
+from datetime import timedelta
+
 import aiohttp
 
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -247,6 +249,41 @@ def stats_payload(hass):
             else {},
         }
     return {"since": verify.get("stats", {}).get("_since"), "sources": out, "today": today}
+
+
+async def fetch_rain_last24(hass):
+    """Suma opadu [mm] z ostatnich 24 h (Open-Meteo, lokalizacja ogrodu). None gdy błąd."""
+    lat, lon = _location(hass)
+    session = async_get_clientsession(hass)
+    url = (
+        "https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}"
+        "&hourly=precipitation&past_days=1&forecast_days=1&timezone=auto"
+    )
+    try:
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            resp.raise_for_status()
+            payload = await resp.json()
+    except Exception:  # noqa: BLE001
+        return None
+    hourly = payload.get("hourly", {})
+    times = hourly.get("time", [])
+    rain = hourly.get("precipitation", [])
+    now = dt_util.now()
+    start = now - timedelta(hours=24)
+    total = 0.0
+    for i, iso in enumerate(times):
+        try:
+            ts = dt_util.parse_datetime(iso)
+        except (ValueError, TypeError):
+            continue
+        if ts is None:
+            continue
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=now.tzinfo)
+        if start <= ts <= now and i < len(rain) and rain[i] is not None:
+            total += float(rain[i])
+    return round(total, 1)
 
 
 async def fetch_openmeteo_forecast(hass, model):

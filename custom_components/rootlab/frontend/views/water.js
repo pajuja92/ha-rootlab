@@ -290,6 +290,7 @@ function sectionRow(app, s, run) {
   const pausedChip = secPaused
     ? ` <span class="chip harvest">${s.paused_until === "indef" ? t("water.sec.paused") : t("water.sec.paused.until", { date: s.paused_until })}</span>`
     : "";
+  const rainChip = s.rain_skip_mm != null ? ` <span class="chip water" title="${t("water.rain.skip")}">☂ ≥ ${s.rain_skip_mm} mm</span>` : "";
   const kindLabel = KINDS.includes(s.kind) ? t(`water.kind.${s.kind}`) : "";
   let controls;
   if (run && run.paused) {
@@ -315,7 +316,7 @@ function sectionRow(app, s, run) {
     <div class="info">
       <span class="name">${esc(s.name)}</span>
       ${zone ? `<span class="chip">${esc(zone.emoji || "")} ${esc(zone.name)}</span>` : ""}
-      ${kindLabel ? `<span class="chip water">${kindLabel}</span>` : ""}${entityWarn}${pausedChip}
+      ${kindLabel ? `<span class="chip water">${kindLabel}</span>` : ""}${entityWarn}${pausedChip}${rainChip}
       <div class="sched">▷ ${sched}</div>
       ${oneOffs
         .map(
@@ -384,6 +385,7 @@ function sectionDialog(app, section, draft = null) {
         entity_ids: chosen.map((d) => d.entities.valve),
         entity_id: chosen[0]?.entities.valve || null,
         paused_until: section?.paused_until || null,
+        rain_skip_mm: section?.rain_skip_mm ?? null,
         kind: fd.get("kind"),
         schedule: {
           days: t("days").map((_, i) => i).filter((i) => fd.get(`day${i}`)),
@@ -460,28 +462,45 @@ function pauseDialog(app) {
   );
 }
 
+const RAIN_PRESETS = [1, 2, 5, 10, 15, 20];
+
 function sectionPauseDialog(app, s) {
+  const hasRain = s.rain_skip_mm != null;
   app.dialog(
     `<h2>${t("water.sec.pause")} — ${esc(s.name)}</h2>
     <form>
       <label style="display:flex;align-items:center;gap:8px;margin-top:16px">
-        <input type="radio" name="mode" value="indef" checked style="width:auto">${t("water.pause.indef")}</label>
+        <input type="radio" name="mode" value="indef" ${hasRain ? "" : "checked"} style="width:auto">${t("water.pause.indef")}</label>
       <label style="display:flex;align-items:center;gap:8px">
         <input type="radio" name="mode" value="days" style="width:auto">${t("water.pause.days")}
         <input name="ndays" type="number" min="1" max="60" value="3" style="width:80px"></label>
+      <label style="display:flex;align-items:center;gap:8px">
+        <input type="radio" name="mode" value="none" ${hasRain ? "checked" : ""} style="width:auto">${t("water.pause.none")}</label>
+      <div class="section-title" style="margin-top:16px"><ha-icon icon="mdi:weather-pouring"></ha-icon>${t("water.rain.title")}</div>
+      <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <input type="checkbox" name="rain" ${hasRain ? "checked" : ""} style="width:auto">${t("water.rain.skip")}
+        <select name="rain_mm" style="width:110px">
+          ${RAIN_PRESETS.map((mm) => `<option value="${mm}" ${(s.rain_skip_mm ?? 5) === mm ? "selected" : ""}>≥ ${mm} mm</option>`).join("")}
+        </select></label>
+      <p style="font-size:13px;color:var(--secondary-text-color);margin:6px 0 0">${t("water.rain.hint")}</p>
       <div class="dialog-actions">
         <button type="button" class="btn plain" data-cancel>${t("cancel")}</button>
-        <button type="submit" class="btn">${t("water.pause")}</button>
+        <button type="submit" class="btn">${t("save")}</button>
       </div>
     </form>`,
     (fd) => {
-      let until = "indef";
+      let until = null;
+      if (fd.get("mode") === "indef") until = "indef";
       if (fd.get("mode") === "days") {
         const d = new Date();
         d.setDate(d.getDate() + (parseInt(fd.get("ndays"), 10) || 1));
         until = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       }
-      return app.saveItem("sections", { ...s, paused_until: until });
+      return app.saveItem("sections", {
+        ...s,
+        paused_until: until,
+        rain_skip_mm: fd.get("rain") ? parseInt(fd.get("rain_mm"), 10) : null,
+      });
     }
   );
 }

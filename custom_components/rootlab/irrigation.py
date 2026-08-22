@@ -11,6 +11,7 @@ import homeassistant.util.dt as dt_util
 
 from .const import DOMAIN
 from .logic import due_sections
+from .verification import fetch_rain_last24
 
 OFF_STATES = ("off", "closed", "unavailable", "unknown")
 
@@ -40,11 +41,27 @@ def async_setup_scheduler(hass):
     def _notify():
         hass.bus.async_fire("rootlab_updated")
 
-    async def start(section, minutes):
+    async def _rain24():
+        """Suma opadu 24 h z cache (30 min) — jedno zapytanie na fale startów."""
+        cache = d.get("rain24")
+        if cache and (dt_util.utcnow() - cache["at"]).total_seconds() < 1800:
+            return cache["mm"]
+        mm = await fetch_rain_last24(hass)
+        d["rain24"] = {"at": dt_util.utcnow(), "mm": mm}
+        return mm
+
+    async def start(section, minutes, scheduled=False):
         entity_ids = _entities(section)
         sid = section["id"]
         if not entity_ids or sid in d["active"]:
             return
+        # reguła deszczowa: harmonogram pomija sekcję po opadach; ręczne starty
+        # i jednorazowe działają zawsze
+        threshold = section.get("rain_skip_mm")
+        if scheduled and threshold is not None:
+            mm = await _rain24()
+            if mm is not None and mm >= float(threshold):
+                return
         await _switch(hass, entity_ids, True)
 
         async def _auto_off(_now):
@@ -114,7 +131,7 @@ def async_setup_scheduler(hass):
             irr["sections"], local, irr.get("paused_until"), irr.get("skip_date")
         ):
             minutes = (section.get("schedule") or {}).get("duration_min") or 10
-            hass.async_create_task(start(section, minutes))
+            hass.async_create_task(start(section, minutes, scheduled=True))
         # zadania jednorazowe
         hhmm = local.strftime("%H:%M")
         today = local.date().isoformat()
