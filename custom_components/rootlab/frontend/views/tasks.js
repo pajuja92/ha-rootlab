@@ -423,7 +423,8 @@ function generateDialog(app) {
 
   const scopeHtml = zones
     .map((z) => {
-      const plants = app.data.plants.filter((p) => (p.zone_id || null) === z.id);
+      // rośliny w archiwum (uprawa zakończona) nie potrzebują nowych zadań
+      const plants = app.data.plants.filter((p) => !p.archived && (p.zone_id || null) === z.id);
       if (!plants.length) return "";
       return `<div class="gen-zone">
         <label class="gen-zone-head"><input type="checkbox" data-zone="${z.id ?? ""}" checked>

@@ -445,6 +445,7 @@ dialog input[type=checkbox], dialog input[type=radio] { width: auto; accent-colo
 .cal-more { font-size: 10px; color: var(--secondary-text-color); }
 .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: var(--rl-gap); align-items: center; }
 .filter-bar .combo { min-width: 170px; flex: 1; max-width: 240px; }
+.filter-bar .kn-search { flex: 2; min-width: 180px; width: auto; margin: 0; }
 .filter-bar select { padding: 8px 12px; border-radius: 999px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font: inherit; font-size: 13px; }
 .combo-input {
   width: 100%; box-sizing: border-box; padding: 8px 30px 8px 12px;
@@ -483,6 +484,11 @@ dialog input[type=checkbox], dialog input[type=radio] { width: auto; accent-colo
 }
 .subtab[data-active] { opacity: 1; border-color: var(--rl-green); background: var(--rl-green-bg); font-weight: 500; }
 .subtab ha-icon { --mdc-icon-size: 17px; }
+/* strefy na osi upraw — delikatny separator, nie nagłówek karty */
+.grow-sep { display: flex; align-items: center; gap: 6px; padding: 14px 0 4px;
+  font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase;
+  color: var(--secondary-text-color); border-bottom: 1px solid var(--divider-color); }
+.grow-sep:first-child { padding-top: 4px; }
 .grow-row { display: grid; grid-template-columns: 200px 1fr; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--divider-color); cursor: pointer; }
 .grow-row:hover:not(.done) { background: color-mix(in srgb, var(--rl-green) 6%, transparent); }
 .grow-row.done { opacity: 0.55; }

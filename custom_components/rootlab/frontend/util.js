@@ -68,6 +68,33 @@ export const entityOptions = (hass, domains) =>
     }))
     .sort((a, b) => a.label.localeCompare(b.label));
 
+/* Porównanie bez diakrytyków: „ogo" znajduje „Ogórek" (ł nie rozkłada się w NFD — mapa ręczna). */
+export const norm = (s) =>
+  String(s)
+    .toLowerCase()
+    .replace(/ł/g, "l")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "");
+
+/* Pole wyszukiwania listy (Wiedza, Inwentarz, Rośliny, Uprawy): filtr trzymany w stanie
+   panelu, render po każdym znaku, kursor wracamy do pola po podmianie DOM. */
+export const searchInput = (id, value, placeholder) =>
+  `<input class="kn-search" id="${esc(id)}" type="search" autocomplete="off" placeholder="${esc(placeholder)}" value="${esc(value || "")}">`;
+
+export function wireSearch(app, root, id, set) {
+  const el = root.getElementById(id);
+  el?.addEventListener("input", () => {
+    const pos = el.selectionStart;
+    set(el.value);
+    app.render();
+    const again = app.shadowRoot.getElementById(id);
+    if (again) {
+      again.focus();
+      again.setSelectionRange(pos, pos);
+    }
+  });
+}
+
 /* Combobox z wyszukiwaniem — zamiennik <select>, opcje z drugą linią jak natywnie w HA.
    Użycie: combo({name, value, options, allowEmpty}) w html dialogu + wireCombos(dialogEl). */
 export function combo({ name, value = "", options, allowEmpty = true, placeholder }) {
@@ -90,13 +117,6 @@ export function wireCombos(root) {
     const options = JSON.parse(el.querySelector(".combo-data").textContent);
     const allowEmpty = !!el.dataset.allowEmpty;
 
-    // wyszukiwanie bez diakrytyków: „ogo" znajduje „Ogórek" (ł nie rozkłada się w NFD — mapa ręczna)
-    const norm = (s) =>
-      String(s)
-        .toLowerCase()
-        .replace(/ł/g, "l")
-        .normalize("NFD")
-        .replace(/\p{Diacritic}/gu, "");
     const renderList = (filter) => {
       const f = norm(filter || "");
       const matched = options.filter(

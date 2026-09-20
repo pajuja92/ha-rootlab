@@ -1,12 +1,12 @@
 import { t } from "../i18n.js";
-import { combo, emo, emojiChar, esc, todayISO, wireCombos } from "../util.js";
+import { combo, emo, emojiChar, esc, norm, searchInput, todayISO, wireCombos, wireSearch } from "../util.js";
 import { PLANT_PRESETS } from "../presets.js";
 import { openPlantCard, plantIcon } from "./plants.js"; // cykl plants↔grow bezpieczny: użycie dopiero w handlerze
 
 /* Zakładka „Uprawy" — kalendarz upraw per miejsce z planu ogrodu, dziennik obsadzeń,
    siewy sukcesywne, ostrzeżenia płodozmianowe i plan sezonu z AI. */
 
-const st = (app) => (app._grow ??= { year: new Date().getFullYear(), area: "" });
+const st = (app) => (app._grow ??= { year: new Date().getFullYear(), area: "", q: "", sort: "zone" });
 
 const PHENO = PLANT_PRESETS.filter((p) => p.harvest);
 
@@ -101,6 +101,53 @@ function plantRowHtml(app, p, year) {
 }
 
 
+const SORTS = ["zone", "name", "sow", "transplant", "harvest"];
+const byName = (a, b) => a.name.localeCompare(b.name);
+/* brak terminu („~" > cyfry w kodach znaków — localeCompare ignoruje interpunkcję)
+   ląduje na końcu listy, remisy rozstrzyga alfabet */
+const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const byDate = (key) => (a, b) => cmp(a.plan[key] || "~", b.plan[key] || "~") || byName(a, b);
+const SORT_FN = { zone: byName, name: byName, sow: byDate("sow"), transplant: byDate("transplant"), harvest: byDate("harvest_from") };
+
+/* Wiersze osi: uprawy roku + rośliny bez uprawy (archiwalne pomijamy). */
+function growRows(app) {
+  const s = st(app);
+  const q = norm(s.q || "");
+  const match = (name, species) => !q || norm(`${name} ${species || ""}`).includes(q);
+  const inArea = (zoneId) => !s.area || zoneId === s.area;
+  const plantings = (app.data.plantings || [])
+    .filter((p) => p.year === s.year && inArea(p.zone_id) && match(p.name, p.species))
+    .map((p) => ({ zone_id: p.zone_id, name: p.name, plan: p.plan || {}, html: rowHtml(app, p) }));
+  const linked = new Set(
+    (app.data.plantings || []).filter((p) => p.year === s.year).map((p) => p.plant_id).filter(Boolean)
+  );
+  const undated = (app.data.plants || [])
+    .filter((p) => !p.archived && !linked.has(p.id) && inArea(p.zone_id) && match(p.name, p.species))
+    .map((p) => ({ zone_id: p.zone_id, name: p.name, plan: {}, html: plantRowHtml(app, p, s.year) }));
+  return [...plantings, ...undated];
+}
+
+/* Sortowanie „Strefami": wiersze w kolejności stref, każda pod swoim separatorem. */
+function groupedByZone(app, rows) {
+  const bucket = new Map();
+  const known = new Set((app.data.zones || []).map((z) => z.id));
+  for (const r of rows) {
+    const key = known.has(r.zone_id) ? r.zone_id : null;
+    if (!bucket.has(key)) bucket.set(key, []);
+    bucket.get(key).push(r);
+  }
+  return [...(app.data.zones || []).map((z) => z.id), null]
+    .filter((id) => bucket.has(id))
+    .map((id) => {
+      const z = (app.data.zones || []).find((x) => x.id === id);
+      return `<div class="grow-sep">${z ? `${emo(z.emoji || "🪴", 16)}${esc(z.name)}` : t("zone.none")}</div>${bucket
+        .get(id)
+        .map((r) => r.html)
+        .join("")}`;
+    })
+    .join("");
+}
+
 export function render(app) {
   const s = st(app);
   const opts = areaOptions(app);
@@ -116,34 +163,43 @@ export function render(app) {
   if (!opts.length) {
     return `${toolbar}<div class="empty"><ha-icon icon="mdi:calendar-month"></ha-icon><p>${t("grow.noareas")}</p></div>`;
   }
-  const list = (app.data.plantings || [])
-    .filter((p) => p.year === s.year && (!s.area || p.zone_id === s.area))
-    .sort((a, b) => (a.plan?.sow || a.plan?.transplant || "").localeCompare(b.plan?.sow || b.plan?.transplant || ""));
-  // rośliny bez uprawy w tym roku — na liście, bez pasków na osi
-  const linkedIds = new Set((app.data.plantings || []).filter((p) => p.year === s.year).map((p) => p.plant_id).filter(Boolean));
-  const undated = (app.data.plants || [])
-    .filter((p) => !linkedIds.has(p.id) && (!s.area || p.zone_id === s.area))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const filters = `<div class="filter-bar">
+    ${searchInput("grow-search", s.q, t("grow.search.ph"))}
+    <span style="width:200px">${combo({
+      name: "grow_sort",
+      value: s.sort,
+      options: SORTS.map((v) => ({ value: v, label: t("grow.sort." + v) })),
+      allowEmpty: false,
+      placeholder: t("grow.sort"),
+    })}</span>
+  </div>`;
+  const rows = growRows(app).sort(SORT_FN[s.sort] || SORT_FN.zone);
   const months = `<div class="grow-row" style="border-bottom:none;cursor:default">
     <div class="grow-name"></div>
     <div class="grow-months">${t("months").map((m) => `<span>${m}</span>`).join("")}</div>
   </div>`;
+  const body = rows.length
+    ? s.sort === "zone"
+      ? groupedByZone(app, rows)
+      : rows.map((r) => r.html).join("")
+    : `<p style="color:var(--secondary-text-color);font-size:14px">${t(s.q ? "grow.nomatch" : "grow.empty")}</p>`;
   return (
     toolbar +
-    `<div class="card">${months}${
-      list.length || undated.length
-        ? list.map((p) => rowHtml(app, p)).join("") + undated.map((p) => plantRowHtml(app, p, s.year)).join("")
-        : `<p style="color:var(--secondary-text-color);font-size:14px">${t("grow.empty")}</p>`
-    }</div>
+    filters +
+    `<div class="card">${months}${body}</div>
     <div class="editor-hint">${t("grow.legend")}</div>`
   );
 }
 
 export function bind(app, root) {
-  const bar = root.querySelector(".toolbar");
-  if (bar) wireCombos(bar);
+  root.querySelectorAll(".toolbar, .filter-bar").forEach((bar) => wireCombos(bar));
+  wireSearch(app, root, "grow-search", (v) => (st(app).q = v));
   root.querySelector('input[name="grow_area"]')?.addEventListener("change", (ev) => {
     st(app).area = ev.target.value;
+    app.render();
+  });
+  root.querySelector('input[name="grow_sort"]')?.addEventListener("change", (ev) => {
+    st(app).sort = ev.target.value || "zone";
     app.render();
   });
   root.querySelectorAll("[data-grow-edit]").forEach((el) =>
