@@ -461,4 +461,6 @@ class RootlabPanel extends HTMLElement {
   }
 }
 
-customElements.define("rootlab-panel", RootlabPanel);
+// po wgraniu nowej wersji otwarta karta HA wczytuje moduł spod nowego URL obok starego —
+// drugi define rzuciłby błędem; nowa wersja wejdzie po odświeżeniu strony
+if (!customElements.get("rootlab-panel")) customElements.define("rootlab-panel", RootlabPanel);

@@ -1,4 +1,6 @@
 """RootLab — planer ogrodowy wspierany przez AI."""
+from pathlib import Path
+
 from homeassistant.components import frontend
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
@@ -10,9 +12,13 @@ from .irrigation import async_setup_scheduler, async_stop_all
 from .store import async_load_data
 from .weather import ImgwClient
 
-# Wersja w ścieżce (nie w query): importy względne modułów (./i18n.js itd.)
-# dziedziczą bazowy URL, więc każde wydanie unieważnia cache WSZYSTKICH plików.
-FRONTEND_URL = f"/{DOMAIN}_files/{VERSION}"
+# Wersja + znacznik plików w ścieżce (nie w query): importy względne modułów (./i18n.js itd.)
+# dziedziczą bazowy URL, więc każda podmiana plików — wydanie albo ręczne wgranie bez zmiany
+# wersji — unieważnia cache WSZYSTKICH plików (HA nie wysyła tu nagłówków cache).
+def _frontend_url():
+    root = Path(__file__).parent / "frontend"
+    stamp = int(max(p.stat().st_mtime for p in root.rglob("*.js")))
+    return f"/{DOMAIN}_files/{VERSION}-{stamp}"
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -25,6 +31,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "unsub": [],
         "weather": ImgwClient(hass),
     }
+    frontend_url = await hass.async_add_executor_job(_frontend_url)
     api.async_register(hass)
     async_setup_scheduler(hass)
     _async_setup_weekly_tasks(hass)
@@ -40,7 +47,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.http.async_register_static_paths(
         [
             StaticPathConfig(
-                FRONTEND_URL,
+                frontend_url,
                 hass.config.path("custom_components", DOMAIN, "frontend"),
                 cache_headers=False,
             )
@@ -55,7 +62,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config={
             "_panel_custom": {
                 "name": "rootlab-panel",
-                "module_url": f"{FRONTEND_URL}/rootlab-panel.js",
+                "module_url": f"{frontend_url}/rootlab-panel.js",
                 "embed_iframe": False,
             }
         },
