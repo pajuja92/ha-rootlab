@@ -156,15 +156,19 @@ function tasksSection(app) {
     </div>`;
 }
 
-/* --- Prognoza (encja weather HA): wykres łączony lub osobne, legenda, tooltipy --- */
+/* --- Prognoza (encja weather HA, Open-Meteo, IMGW): wykres łączony lub osobne, legenda, tooltipy --- */
 
-const OM_MODELS = {
+const FC_MODELS = {
   best_match: "Open-Meteo (auto)",
   icon_seamless: "ICON (DWD)",
   ecmwf_ifs025: "ECMWF IFS",
   gfs_seamless: "GFS (NOAA)",
   ukmo_seamless: "UKMO (Met Office)",
+  imgw: "IMGW ALARO/AROME (2,5 doby)",
+  imgw_gfs: "IMGW GFS",
 };
+// dopisek do źródła: IMGW wymaga wskazania źródła danych (IMGW-PIB)
+const fcProvider = (src) => (src.startsWith("imgw") ? "meteo.imgw.pl · IMGW-PIB" : "open-meteo.com");
 const fcSource = () => localStorage.getItem("rootlab_fc_source") || "ha";
 const haEntityName = (app) => {
   const entityId = app.data.settings?.weather_entity;
@@ -179,6 +183,18 @@ const avg = (vals) => {
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 };
 
+/* Komórki wiersza rankingu (błąd temp., błąd opadów, dni); nowe źródło — data pierwszych wyników. */
+function rankCells(row) {
+  if (row.first_result) {
+    const date = new Date(row.first_result).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "numeric" });
+    return `<td colspan="2" style="padding:6px 8px;color:var(--secondary-text-color)">${t("verify.first")} ${esc(date)}</td>
+      <td style="padding:6px 8px">0</td>`;
+  }
+  return `<td style="padding:6px 8px">${row.mae_temp != null ? row.mae_temp.toFixed(2) + " °C" : "—"}</td>
+    <td style="padding:6px 8px">${row.rain_err != null ? row.rain_err.toFixed(1) + " mm" : "—"}</td>
+    <td style="padding:6px 8px">${row.days}</td>`;
+}
+
 function forecastSection(app) {
   const mode = app.forecastMode || "hourly";
   const split = !!app.forecastSplit;
@@ -191,11 +207,11 @@ function forecastSection(app) {
   } else if (app.forecast === null) {
     body = `<div class="ai-hint"><ha-icon icon="mdi:weather-cloudy-alert"></ha-icon>${t("forecast.unavailable")}</div>`;
   } else {
-    const rows = app.forecast[mode];
+    const { rows, mode: view } = fcRows(app.forecast, mode);
     if (!rows?.length) {
       body = `<div class="ai-hint"><ha-icon icon="mdi:weather-cloudy-alert"></ha-icon>${t("forecast.unavailable")}</div>`;
     } else {
-      body = forecastBody(app, rows, mode, split, "dash") + sourceLine(app);
+      body = forecastBody(app, rows, view, split, "dash") + sourceLine(app);
     }
   }
   return `
@@ -207,7 +223,7 @@ function forecastSection(app) {
         <div class="spacer" style="flex:1"></div>
         <select class="inline" data-bind="fc-source" title="${t("forecast.source")}" style="font-size:13px;padding:6px 10px">
           <option value="ha" ${src === "ha" ? "selected" : ""}>${esc(haEntityName(app))}</option>
-          ${Object.entries(OM_MODELS)
+          ${Object.entries(FC_MODELS)
             .map(([key, label]) => `<option value="${key}" ${src === key ? "selected" : ""}>${label}</option>`)
             .join("")}
         </select>
@@ -220,8 +236,8 @@ function forecastSection(app) {
 
 function sourceLine(app) {
   const src = fcSource();
-  const name = src === "ha" ? haEntityName(app) : `${OM_MODELS[src] || src} · open-meteo.com`;
-  const station = app.weather?.stacja ? `IMGW ${app.weather.stacja}` : "";
+  const name = src === "ha" ? haEntityName(app) : `${FC_MODELS[src] || src} · ${fcProvider(src)}`;
+  const station = app.weather?.punkt ? t("weather.point") : app.weather?.stacja ? `IMGW ${app.weather.stacja}` : "";
   return `<div style="font-size:12px;color:var(--secondary-text-color);margin-top:8px">
     ${t("forecast.source")}: ${esc(name)}${station ? ` · ${t("dash.weather")}: ${esc(station)}` : ""}</div>`;
 }
@@ -246,7 +262,7 @@ function summaryChips(app, rows) {
 function legendHtml(rows, mode, split) {
   const has = (key) => S(rows, key).some((v) => v != null);
   const items = [];
-  items.push(`<span><i style="background:var(--rl-harvest)"></i>${t("forecast.legend.temp")}</span>`);
+  items.push(`<span><i style="background:var(--rl-harvest)"></i>${t(mode === "week" ? "forecast.legend.temp3h" : mode === "daily" ? "forecast.legend.tmax" : "forecast.legend.temp")}</span>`);
   if (mode === "daily" && has("templow"))
     items.push(`<span><i style="background:var(--rl-water)"></i>${t("forecast.legend.tmin")}</span>`);
   if (has("precipitation"))
@@ -264,6 +280,64 @@ const xLabel = (r, mode) => {
   const d = new Date(r.datetime);
   return mode === "hourly" ? `${d.getHours()}:00` : t("days")[(d.getDay() + 6) % 7];
 };
+
+/* „7 dni": seria co 3 h (mode "week"), gdy źródło ją ma i sięga ostatniej doby prognozy;
+   inaczej jeden punkt na dobę (max/min) jak dotąd. */
+export function fcRows(fc, mode) {
+  if (mode !== "daily") return { rows: fc?.hourly, mode };
+  // week ma stałą siatkę 7 dni (puste kroki bez danych); dobowy, gdy dane co 3 h kończą się przed dobowymi
+  const week = fc?.week || [];
+  const data = week.filter((r) => num(r.temperature) != null);
+  const last = (fc?.daily || []).slice(-1)[0];
+  return data.length && (!last || new Date(data[data.length - 1].datetime) >= new Date(last.datetime))
+    ? { rows: week, mode: "week" }
+    : { rows: fc?.daily, mode };
+}
+
+/* Wiersze jednej doby w serii co 3 h: indeks początku, końca i środka (podpis dnia). */
+function dayGroups(rows) {
+  const out = [];
+  rows.forEach((r, i) => {
+    const day = new Date(r.datetime).toDateString();
+    const last = out[out.length - 1];
+    if (last?.day === day) last.end = i;
+    else out.push({ day, start: i, end: i });
+  });
+  return out.map((g) => ({ ...g, mid: (g.start + g.end) / 2 }));
+}
+
+/* Podsumowanie doby z wierszy co 3 h — do dymka (jak wiersz dobowy). */
+function daySummary(rows) {
+  const temps = S(rows, "temperature").filter((v) => v != null);
+  const probs = S(rows, "precipitation_probability").filter((v) => v != null);
+  return {
+    datetime: rows[0].datetime,
+    temperature: temps.length ? Math.max(...temps) : null,
+    templow: temps.length ? Math.min(...temps) : null,
+    precipitation: temps.length ? Math.round(S(rows, "precipitation").reduce((a, b) => a + (b ?? 0), 0) * 10) / 10 : null,
+    precipitation_probability: probs.length ? Math.max(...probs) : null,
+    humidity: avg(S(rows, "humidity")),
+    pressure: avg(S(rows, "pressure")),
+  };
+}
+
+/* Oś X wspólna dla wykresów: godziny / dni; w „week" dzień podpisany pośrodku doby
+   i pionowa linia o północy. */
+function xAxis(rows, mode, x, slot, W, yText, y1, y2) {
+  if (mode === "week") {
+    return dayGroups(rows)
+      .map(
+        (g, k) =>
+          (k ? `<line class="gridline" x1="${x(g.start) - slot / 2}" x2="${x(g.start) - slot / 2}" y1="${y1}" y2="${y2}"/>` : "") +
+          `<text x="${x(g.mid)}" y="${yText}" text-anchor="middle">${xLabel(rows[g.start], "daily")}</text>`
+      )
+      .join("");
+  }
+  const step = (mode === "hourly" ? 4 : 1) * (W < 500 ? 2 : 1);
+  return rows
+    .map((r, i) => (i % step ? "" : `<text x="${x(i)}" y="${yText}" text-anchor="middle">${xLabel(r, mode)}</text>`))
+    .join("");
+}
 
 /* Ostatni wiersz z przeszłości = „teraz" (hourly) albo „dziś" (daily). */
 const nowIdxOf = (rows) => {
@@ -293,7 +367,7 @@ function pointChips(app, rows, mode, idx, key) {
   const d = new Date(r.datetime);
   const lang = app.hass?.language || "pl";
   const when =
-    mode === "hourly"
+    mode !== "daily"
       ? d.toLocaleString(lang, { weekday: "short", hour: "2-digit", minute: "2-digit" })
       : d.toLocaleDateString(lang, { weekday: "long", day: "numeric", month: "numeric" });
   const chip = (icon, label, val) =>
@@ -359,17 +433,27 @@ function chartCombined(rows, mode, key = null, sel = null) {
       .filter(Boolean);
     return pts.length > 1 ? `<polyline class="${cls}" points="${pts.join(" ")}"/>` : "";
   };
+  const labels = xAxis(rows, mode, x, slot, W, H - 8, padT, padT + ih);
   const step = (mode === "hourly" ? 4 : 1) * (W < 500 ? 2 : 1);
-  const labels = rows
-    .map((r, i) => (i % step ? "" : `<text x="${x(i)}" y="${H - 8}" text-anchor="middle">${xLabel(r, mode)}</text>`))
-    .join("");
-  const tempLabels = rows
-    .map((r, i) => {
-      const v = num(r.temperature);
-      if (i % step || v == null) return "";
-      return `<text x="${x(i)}" y="${yT(v) - 6}" text-anchor="middle" style="fill:var(--rl-harvest)">${Math.round(v)}°</text>`;
-    })
-    .join("");
+  // „week": max i min każdej doby w miejscu, gdzie wypadają; inaczej co `step` punktów
+  const extremes = (g) => {
+    const idx = [...Array(g.end - g.start + 1)].map((_, k) => g.start + k).filter((i) => num(rows[i].temperature) != null);
+    if (!idx.length) return "";
+    const by = (cmp) => idx.reduce((a, b) => (cmp(num(rows[b].temperature), num(rows[a].temperature)) ? b : a));
+    const hi = by((a, b) => a > b), lo = by((a, b) => a < b);
+    return `<text x="${x(hi)}" y="${yT(num(rows[hi].temperature)) - 6}" text-anchor="middle" style="fill:var(--rl-harvest)">${Math.round(num(rows[hi].temperature))}°</text>
+      <text x="${x(lo)}" y="${Math.min(yT(num(rows[lo].temperature)) + 14, padT + ih - 2)}" text-anchor="middle" style="fill:var(--rl-water)">${Math.round(num(rows[lo].temperature))}°</text>`;
+  };
+  const tempLabels =
+    mode === "week"
+      ? dayGroups(rows).map(extremes).join("")
+      : rows
+          .map((r, i) => {
+            const v = num(r.temperature);
+            if (i % step || v == null) return "";
+            return `<text x="${x(i)}" y="${yT(v) - 6}" text-anchor="middle" style="fill:var(--rl-harvest)">${Math.round(v)}°</text>`;
+          })
+          .join("");
   const grid = [tMin, (tMin + tMax) / 2, tMax]
     .map(
       (v) => `<line class="gridline" x1="${padL}" x2="${W - padR}" y1="${yT(v)}" y2="${yT(v)}"/>
@@ -380,30 +464,39 @@ function chartCombined(rows, mode, key = null, sel = null) {
     .map((v) => `<text x="${W - padR + 4}" y="${yP(v) + 3}" style="fill:var(--rl-water)">${v}%</text>`)
     .join("");
   // tygodniowy: szczegóły dnia w dymku po najechaniu (nie zaśmiecamy widoku)
-  const tips =
+  const days =
     mode === "daily"
-      ? rows
-          .map((r, i) => {
+      ? rows.map((r, i) => ({ r, start: i, end: i }))
+      : mode === "week"
+        ? dayGroups(rows).map((g) => ({ ...g, r: daySummary(rows.slice(g.start, g.end + 1)) }))
+        : [];
+  const tips = days
+          .map(({ r: day, start, end }) => {
+            // „week" po kliknięciu: dymek dnia z zaznaczonym punktem pokazuje ten krok (z godziną)
+            const point = mode === "week" && sel != null && sel >= start && sel <= end;
+            const r = point ? rows[sel] : day;
+            const i = point ? sel : (start + end) / 2;
+            const date = new Date(r.datetime).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "numeric" });
+            const temp = num(r.temperature);
             const linesTip = [
-              new Date(r.datetime).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "numeric" }),
-              num(r.temperature) != null ? `↑ ${Math.round(num(r.temperature))}°  ${num(r.templow) != null ? "↓ " + Math.round(num(r.templow)) + "°" : ""}` : null,
+              point ? `${date}, ${xLabel(r, "hourly")}` : date,
+              temp == null ? null : point ? `🌡 ${Math.round(temp)}°` : `↑ ${Math.round(temp)}°  ${num(r.templow) != null ? "↓ " + Math.round(num(r.templow)) + "°" : ""}`,
               num(r.precipitation_probability) != null ? `☔ ${Math.round(num(r.precipitation_probability))} %` : null,
-              num(r.precipitation) != null ? `🌧 ${num(r.precipitation)} mm` : null,
+              num(r.precipitation) != null ? `🌧 ${num(r.precipitation)} mm${point ? " / 3 h" : ""}` : null,
               num(r.humidity) != null ? `💧 ${Math.round(num(r.humidity))} %` : null,
               num(r.pressure) != null ? `◎ ${Math.round(num(r.pressure))} hPa` : null,
             ].filter(Boolean);
             const tw = 132;
             const tx = Math.min(Math.max(x(i) - tw / 2, padL), W - padR - tw);
             return `<g class="fc-day">
-              <rect class="hit" x="${padL + i * slot}" y="0" width="${slot}" height="${H}" fill="transparent"/>
+              <rect class="hit" x="${padL + start * slot}" y="0" width="${(end - start + 1) * slot}" height="${H}" fill="transparent"/>
               <g class="fc-tip">
                 <rect x="${tx}" y="6" width="${tw}" height="${linesTip.length * 13 + 10}" rx="6"/>
                 ${linesTip.map((ln, j) => `<text x="${tx + 8}" y="${21 + j * 13}">${esc(ln)}</text>`).join("")}
               </g>
             </g>`;
           })
-          .join("")
-      : "";
+          .join("");
   const mi = sel != null ? sel : nowIdxOf(rows);
   const marker =
     mi >= 0 && mi < rows.length
@@ -475,10 +568,7 @@ function chartMini(rows, metric, mode, key = null, sel = null) {
       if (pts.length > 1) out += `<polyline class="temp-line ${cls}" points="${pts.join(" ")}"/>`;
     }
   }
-  const step = (mode === "hourly" ? 4 : 1) * (W < 500 ? 2 : 1);
-  out += rows
-    .map((r, i) => (i % step ? "" : `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${xLabel(r, mode)}</text>`))
-    .join("");
+  out += xAxis(rows, mode, x, slot, W, H - 6, padT, padT + ih);
   const mi = sel != null ? sel : nowIdxOf(rows);
   if (mi >= 0 && mi < rows.length)
     out += `<line class="fc-now ${sel != null ? "sel" : ""}" x1="${x(mi)}" x2="${x(mi)}" y1="${padT - 4}" y2="${padT + ih}"/>`;
@@ -518,9 +608,7 @@ function verifySection(app) {
           .map(
             (row) => `<tr style="border-top:1px solid var(--divider-color)">
             <td style="padding:6px 8px">${row === best ? "🏆 " : ""}${esc(row.label)}</td>
-            <td style="padding:6px 8px">${row.mae_temp != null ? row.mae_temp.toFixed(2) + " °C" : "—"}</td>
-            <td style="padding:6px 8px">${row.rain_err != null ? row.rain_err.toFixed(1) + " mm" : "—"}</td>
-            <td style="padding:6px 8px">${row.days}</td>
+            ${rankCells(row)}
           </tr>`
           )
           .join("")}
@@ -547,7 +635,9 @@ function weatherSection(app) {
         ${rows.map(([icon, label, val]) => `<span class="sensor-chip" title="${esc(label)}"><ha-icon icon="${icon}"></ha-icon>${esc(val)}</span>`).join("")}
       </div>
       <div class="meta" style="font-size:12px;color:var(--secondary-text-color);margin-top:10px">
-        ${t("weather.station")}: ${esc(w.stacja)} · ${t("weather.measured")} ${esc(w.data_pomiaru)} ${esc(w.godzina_pomiaru)}:00 (IMGW)</div>`;
+        ${w.punkt
+          ? `${t("weather.point")} · ${t("weather.measured")} ${esc(new Date(w.czas).toLocaleString([], { dateStyle: "short", timeStyle: "short" }))} (IMGW-PIB)`
+          : `${t("weather.station")}: ${esc(w.stacja)} · ${t("weather.measured")} ${esc(w.data_pomiaru)} ${esc(w.godzina_pomiaru)}:00 (IMGW)`}</div>`;
   }
   return `<div class="section-title"><ha-icon icon="mdi:weather-partly-cloudy"></ha-icon>${t("dash.weather")}</div><div class="card">${body}</div>`;
 }
@@ -596,7 +686,7 @@ export const actions = {
 };
 
 /* Współdzielone z zakładką Pogoda — te same karty prognozy co na pulpicie. */
-export { OM_MODELS, haEntityName };
+export { FC_MODELS, haEntityName, rankCells };
 export function forecastBody(app, rows, mode, split, key = "wx") {
   let sel = (app._fcSel || {})[key];
   if (sel != null && (sel < 0 || sel >= rows.length)) sel = null;

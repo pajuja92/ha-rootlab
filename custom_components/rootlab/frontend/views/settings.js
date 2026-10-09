@@ -1,6 +1,6 @@
 import { t } from "../i18n.js";
-import { TABS, combo, entityOptions, esc, saveUiPrefs, uiPrefs } from "../util.js";
-import { OM_MODELS } from "./dashboard.js";
+import { TABS, combo, entityOptions, esc, saveUiPrefs, uiPrefs, wireCombos } from "../util.js";
+import { FC_MODELS } from "./dashboard.js";
 import { ALL_SOURCES, srcLabel } from "./stats.js";
 
 const PROMPT_KEYS = ["system", "tasks", "diagnose", "ask", "season", "inventory_scan"];
@@ -31,38 +31,51 @@ export function render(app) {
   ${shopCard(app)}`;
 }
 
-/* Pogoda: które źródła prognoz widać w zakładce Pogoda + model reguły deszczowej. */
+/* Pogoda: źródła prognoz (zakładka Pogoda), model reguły deszczowej, punkt pomiaru IMGW
+   (pogoda teraz + prawda gruntowa), opcjonalne własne czujniki i token IMGW. */
 function weatherCard(app) {
+  const st = app.data.settings || {};
   const active = app.data.weather_sources || ALL_SOURCES();
   const ordered = [...active.filter((x) => ALL_SOURCES().includes(x)), ...ALL_SOURCES().filter((x) => !active.includes(x))];
   const rain = app.data.rain_model || "best_match";
-  return `<div class="card" style="max-width:780px;margin-top:16px">
+  const provider = (src) => (src === "ha" ? "Home Assistant" : src.startsWith("imgw") ? "IMGW" : "Open-Meteo");
+  const points = [
+    { value: "garden", label: t("settings.wx.point.garden"), secondary: t("settings.wx.point.garden.sec") },
+    ...(st.imgw_stations || []).map((s) => ({ value: s.value, label: s.label, secondary: `~${s.km} km` })),
+  ];
+  const hasSensors = !!(st.truth_temp_entity || st.truth_rain_entity);
+  const hint = (key) => `<p class="field-hint">${t(key)}</p>`;
+  return `<div class="card fields" style="max-width:780px;margin-top:16px">
     <div class="section-title" style="margin-top:0"><ha-icon icon="mdi:weather-partly-cloudy"></ha-icon>${t("settings.wx.title")}</div>
     <label>${t("settings.wx.sources")}</label>
     <div class="check-list" id="wx-sources">
       ${ordered
         .map(
           (src) => `<label><input type="checkbox" value="${src}" ${active.includes(src) ? "checked" : ""}>
-            ${esc(srcLabel(app, src))} <span class="sec">${src === "ha" ? "Home Assistant" : "Open-Meteo"}</span></label>`
+            ${esc(srcLabel(app, src))} <span class="sec">${provider(src)}</span></label>`
         )
         .join("")}
     </div>
-    <p style="font-size:13px;color:var(--secondary-text-color)">${t("settings.wx.sources.hint")}</p>
-    <label>${t("settings.wx.rain")}</label>
+    ${hint("settings.wx.sources.hint")}
+    <label for="wx-rain-model">${t("settings.wx.rain")}</label>
     <select id="wx-rain-model">
-      ${Object.entries(OM_MODELS).map(([k, v]) => `<option value="${k}" ${rain === k ? "selected" : ""}>${esc(v)}</option>`).join("")}
+      ${Object.entries(FC_MODELS).map(([k, v]) => `<option value="${k}" ${rain === k ? "selected" : ""}>${esc(v)}</option>`).join("")}
     </select>
-    <p style="font-size:13px;color:var(--secondary-text-color)">${t("settings.wx.rain.hint")}</p>
-    <label>${t("settings.wx.truth")}</label>
-    <p style="font-size:13px;color:var(--secondary-text-color);margin-top:0">${t("settings.wx.truth.hint")}</p>
-    <div style="display:flex;gap:12px;flex-wrap:wrap">
-      <div style="flex:1;min-width:220px"><label style="font-size:13px">${t("settings.wx.truth.temp")}</label>
-        ${combo({ name: "wx_truth_temp", value: app.data.settings?.truth_temp_entity || "", options: entityOptions(app.hass, ["sensor"]) })}</div>
-      <div style="flex:1;min-width:220px"><label style="font-size:13px">${t("settings.wx.truth.rain")}</label>
-        ${combo({ name: "wx_truth_rain", value: app.data.settings?.truth_rain_entity || "", options: entityOptions(app.hass, ["sensor"]) })}</div>
-    </div>
-    <label style="font-size:13px">${t("settings.wx.truth.imgw")}</label>
-    <input id="wx-imgw" maxlength="40" value="${esc(app.data.settings?.imgw_station || "warszawa")}" style="max-width:240px">
+    ${hint("settings.wx.rain.hint")}
+    <label>${t("settings.wx.point")}</label>
+    ${combo({ name: "wx_point", value: st.imgw_station || "garden", options: points, allowEmpty: false })}
+    ${hint("settings.wx.point.hint")}
+    <details ${hasSensors ? "open" : ""} style="margin-top:12px">
+      <summary>${t("settings.wx.sensors")}</summary>
+      ${hint("settings.wx.sensors.hint")}
+      <label>${t("settings.wx.truth.temp")}</label>
+      ${combo({ name: "wx_truth_temp", value: st.truth_temp_entity || "", options: entityOptions(app.hass, ["sensor"]) })}
+      <label>${t("settings.wx.truth.rain")}</label>
+      ${combo({ name: "wx_truth_rain", value: st.truth_rain_entity || "", options: entityOptions(app.hass, ["sensor"]) })}
+    </details>
+    <label for="wx-imgw-token">${t("settings.wx.imgw.token")}</label>
+    <input id="wx-imgw-token" maxlength="80" autocomplete="off" value="${esc(st.imgw_token || "")}" placeholder="${t("settings.wx.imgw.token.ph")}">
+    ${hint("settings.wx.imgw.token.hint")}
     <div class="actions" style="justify-content:flex-end">
       <button class="btn" data-action="wx-save"><ha-icon icon="mdi:content-save-outline"></ha-icon>${t("save")}</button>
     </div>
@@ -157,6 +170,8 @@ function shopCard(app) {
 }
 
 export function bind(app, root) {
+  const wx = root.querySelector(".fields");
+  if (wx) wireCombos(wx);
   root.querySelectorAll("[data-prompt-reset]").forEach((el) =>
     el.addEventListener("click", () => {
       const key = el.dataset.promptReset;
@@ -191,7 +206,8 @@ export const actions = {
         truth: {
           truth_temp_entity: root.querySelector('input[name="wx_truth_temp"]')?.value || "",
           truth_rain_entity: root.querySelector('input[name="wx_truth_rain"]')?.value || "",
-          imgw_station: root.getElementById("wx-imgw").value,
+          imgw_station: root.querySelector('input[name="wx_point"]')?.value || "garden",
+          imgw_token: root.getElementById("wx-imgw-token").value,
         },
       });
     } catch (e) {

@@ -1,5 +1,5 @@
 """Czysta logika RootLab — bez zależności od HA, testowalna zwykłym Pythonem."""
-from datetime import date
+from datetime import date, datetime, timedelta
 
 
 def _section_paused(section, today):
@@ -44,3 +44,142 @@ def merge_ai_tasks(tasks, fresh):
     """Nowe zadania AI zastępują niezrobione zadania AI; ręczne, kryzysowe i zrobione zostają."""
     kept = [t for t in tasks if t.get("done") or t.get("source") != "ai"]
     return kept + fresh
+
+
+def _num(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _local(iso, tz):
+    """ISO → czas lokalny tz; czas bez strefy (Open-Meteo z timezone=auto) już jest lokalny."""
+    ts = datetime.fromisoformat(iso)
+    return ts.replace(tzinfo=tz) if ts.tzinfo is None else ts.astimezone(tz)
+
+
+def imgw_hourly(payload):
+    """Godzinowa prognoza meteo.imgw.pl → wiersze w formacie encji weather HA.
+
+    IMGW podaje liczby jako tekst, temperaturę w K, ciśnienie w Pa; brak prawdopodobieństwa opadu."""
+    rows = []
+    for r in (payload.get("data") or {}).get("Data") or []:
+        if r.get("Type") != "Type_Hour":
+            continue  # pomijamy nowcast co 10 min — wykresy i reguły są godzinowe
+        temp, press = _num(r.get("Temperature")), _num(r.get("PressureMSL"))
+        rows.append(
+            {
+                "datetime": r["Date"],
+                "temperature": round(temp - 273.15, 1) if temp is not None else None,
+                "precipitation": _num(r.get("Precipitation")),
+                "precipitation_probability": None,
+                "humidity": _num(r.get("Humidity")),
+                "pressure": round(press / 100, 1) if press is not None else None,
+            }
+        )
+    return rows
+
+
+def daily_from_hourly(rows, tz):
+    """Doby (czas lokalny tz) z wierszy godzinowych: max/min temperatury, suma opadu, średnie.
+
+    Ostatnia doba z < 12 godzinami (ogon prognozy) odpada — jej max/min/suma by kłamały."""
+    days = {}
+    for row in rows:
+        day = _local(row["datetime"], tz).date().isoformat()
+        days.setdefault(day, []).append(row)
+    if len(days) > 1 and len(days[list(days)[-1]]) < 12:
+        days.pop(list(days)[-1])
+    mean = lambda xs: round(sum(xs) / len(xs), 1) if xs else None
+    out = []
+    for day, items in days.items():
+        col = lambda key: [r[key] for r in items if r[key] is not None]
+        temps = col("temperature")
+        out.append(
+            {
+                "datetime": day,
+                "temperature": max(temps) if temps else None,
+                "templow": min(temps) if temps else None,
+                "precipitation": round(sum(col("precipitation")), 1),
+                "precipitation_probability": None,
+                "humidity": mean(col("humidity")),
+                "pressure": mean(col("pressure")),
+            }
+        )
+    return out
+
+
+def rain_sum(rows, start, end):
+    """Suma opadu [mm] z wierszy godzinowych, których czas mieści się w (start, end]."""
+    total = 0.0
+    for row in rows:
+        ts = datetime.fromisoformat(row["datetime"])
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=start.tzinfo)
+        if start < ts <= end and row.get("precipitation") is not None:
+            total += row["precipitation"]
+    return round(total, 1)
+
+
+def imgw_now(payload):
+    """Analiza INCA dla punktu (najświeższy wiersz 10-min „ANALIZA…”) → pola jak w pomiarze stacji
+    synop IMGW (temperatura, wilgotnosc_wzgledna, predkosc_wiatru, cisnienie) + opad_10min i czas."""
+    for r in (payload.get("data") or {}).get("Data") or []:
+        if r.get("Type") == "Type_Ten_Minutes" and str(r.get("MODEL", "")).startswith("ANALIZA"):
+            temp, press = _num(r.get("Temperature")), _num(r.get("PressureMSL"))
+            return {
+                "temperatura": round(temp - 273.15, 1) if temp is not None else None,
+                "wilgotnosc_wzgledna": _num(r.get("Humidity")),
+                "predkosc_wiatru": _num(r.get("Wind_Speed")),
+                "cisnienie": round(press / 100, 1) if press is not None else None,
+                "opad_10min": _num(r.get("Precipitation10m")),
+                "czas": r["Date"],
+            }
+    return None
+
+
+def three_hourly(rows, tz):
+    """Wiersze godzinowe (albo już 3-godzinne) → równe kroki co 3 h czasu lokalnego (0:00, 3:00…).
+
+    Temperatura z początku kroku (chwilowa, jak na wykresie godzinowym), opad = suma kroku,
+    szansa opadu = max, wilgotność/ciśnienie = średnia. Równy krok = oś X liczona po indeksie."""
+    buckets = {}
+    for row in rows:
+        ts = _local(row["datetime"], tz)
+        start = ts.replace(hour=ts.hour - ts.hour % 3, minute=0, second=0, microsecond=0)
+        buckets.setdefault(start, []).append((ts == start, row))
+    mean = lambda xs: round(sum(xs) / len(xs), 1) if xs else None
+    out = []
+    for start, items in sorted(buckets.items()):
+        col = lambda key: [r[key] for _, r in items if r.get(key) is not None]
+        first = next((r for exact, r in items if exact), None)
+        temps = col("temperature")
+        probs = col("precipitation_probability")
+        out.append(
+            {
+                "datetime": start.isoformat(),
+                "temperature": first["temperature"] if first and first.get("temperature") is not None else mean(temps),
+                "precipitation": round(sum(col("precipitation")), 1),
+                "precipitation_probability": max(probs) if probs else None,
+                "humidity": mean(col("humidity")),
+                "pressure": mean(col("pressure")),
+            }
+        )
+    return out
+
+
+def week_grid(week, now):
+    """Seria co 3 h (z three_hourly) na stałej siatce: od bieżącego kroku do końca 7. doby
+    kalendarzowej (now — aware, czas lokalny). Brak danych = wiersz bez wartości (pusta część
+    wykresu), więc wykresy różnych źródeł mają tę samą oś X — dzień pod dniem w pionie."""
+    if not week:
+        return []
+    by_time = {datetime.fromisoformat(r["datetime"]): r for r in week}
+    slot = now.replace(hour=now.hour - now.hour % 3, minute=0, second=0, microsecond=0)
+    end = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=7)
+    out = []
+    while slot < end:
+        out.append(by_time.get(slot) or {"datetime": slot.isoformat()})
+        slot += timedelta(hours=3)  # czas ścienny (ZoneInfo), jak kroki w three_hourly
+    return out

@@ -3,7 +3,7 @@
    i wykresy rozdzielone. Poniżej: weryfikacja modeli (ranking, dziś). */
 import { t } from "../i18n.js";
 import { chartW, esc } from "../util.js";
-import { OM_MODELS, haEntityName, forecastBody, bindForecastCharts } from "./dashboard.js";
+import { FC_MODELS, haEntityName, fcRows, forecastBody, bindForecastCharts, rankCells } from "./dashboard.js";
 
 const COLORS = [
   "var(--rl-harvest)",
@@ -17,7 +17,7 @@ const COLORS = [
 
 /* ---------------- karty prognozy ---------------- */
 
-export const ALL_SOURCES = () => ["ha", ...Object.keys(OM_MODELS)];
+export const ALL_SOURCES = () => ["ha", ...Object.keys(FC_MODELS)];
 
 export function cardList(app) {
   const c = app.data.weather_sources;
@@ -41,7 +41,7 @@ function cardState() {
 }
 const saveCardState = (s) => localStorage.setItem("rootlab_wcard_state", JSON.stringify(s));
 
-export const srcLabel = (app, src) => (src === "ha" ? haEntityName(app) : OM_MODELS[src] || src);
+export const srcLabel = (app, src) => (src === "ha" ? haEntityName(app) : FC_MODELS[src] || src);
 
 function ensureForecasts(app) {
   app.forecasts = app.forecasts || {};
@@ -72,9 +72,9 @@ function weatherCard(app, src, idx, total) {
   } else if (fc === null) {
     body = `<div class="ai-hint"><ha-icon icon="mdi:weather-cloudy-alert"></ha-icon>${t("forecast.unavailable")}</div>`;
   } else {
-    const rows = fc[mode];
+    const { rows, mode: view } = fcRows(fc, mode);
     body = rows?.length
-      ? forecastBody(app, rows, mode, split, src)
+      ? forecastBody(app, rows, view, split, src)
       : `<div class="ai-hint"><ha-icon icon="mdi:weather-cloudy-alert"></ha-icon>${t("forecast.unavailable")}</div>`;
   }
   const ib = (action, icon, title, extra = "", disabled = false) =>
@@ -204,11 +204,9 @@ function rankingCard(app, v) {
         ${v.sources
           .map(
             (row, i) => `<tr style="border-top:1px solid var(--divider-color)">
-            <td style="padding:6px 8px">${i === 0 && row.mae_temp != null ? "🏆" : i + 1}</td>
+            <td style="padding:6px 8px">${row.first_result ? "" : i === 0 && row.mae_temp != null ? "🏆" : i + 1}</td>
             <td style="padding:6px 8px">${esc(row.label)}</td>
-            <td style="padding:6px 8px">${row.mae_temp != null ? row.mae_temp.toFixed(2) + " °C" : "—"}</td>
-            <td style="padding:6px 8px">${row.rain_err != null ? row.rain_err.toFixed(1) + " mm" : "—"}</td>
-            <td style="padding:6px 8px">${row.days}</td>
+            ${rankCells(row)}
           </tr>`
           )
           .join("")}
@@ -304,10 +302,15 @@ function todayCard(app, v) {
 
 function infoCard(app, v) {
   const truth = v?.truth;
+  const [tl, rl] = [truth?.temp?.label || "?", truth?.rain?.label || "?"];
+  // jeden <span>: .ai-hint to flex, gołe kawałki tekstu rozjechałyby się na kolumny
   const truthLine = truth
-    ? `<div class="ai-hint" style="margin-top:8px"><ha-icon icon="mdi:crosshairs-gps"></ha-icon>
-        ${t("verify.truth.now")}: ${t("stats.mode.temp").toLowerCase()} — <b>${esc(truth.temp?.label || "?")}</b>,
-        ${t("stats.mode.rain").toLowerCase()} — <b>${esc(truth.rain?.label || "?")}</b>. ${t("verify.truth.change")}</div>`
+    ? `<div class="ai-hint" style="margin-top:8px"><ha-icon icon="mdi:crosshairs-gps"></ha-icon><span>
+        ${t("verify.truth.now")}: ${
+          tl === rl
+            ? `<b>${esc(tl)}</b>`
+            : `${t("stats.mode.temp").toLowerCase()} — <b>${esc(tl)}</b>, ${t("stats.mode.rain").toLowerCase()} — <b>${esc(rl)}</b>`
+        }. ${t("verify.truth.change")}</span></div>`
     : "";
   return `<div class="card" style="margin-top:var(--rl-gap)">
     <div class="ai-hint" style="margin-top:0"><ha-icon icon="mdi:information-outline"></ha-icon>${t("verify.note")}</div>

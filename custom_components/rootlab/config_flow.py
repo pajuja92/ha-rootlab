@@ -6,7 +6,14 @@ from homeassistant.helpers import selector
 
 from .ai import async_list_models
 from .const import DOMAIN
-from .weather import nearest_station
+from .verification import GARDEN
+from .weather import STATIONS
+
+# pola formularza opcji — tylko je formularz nadpisuje, reszta opcji (Ustawienia → Pogoda) zostaje
+_FORM_KEYS = (
+    "imgw_station", "weather_entity", "truth_temp_entity", "truth_rain_entity",
+    "ai_provider", "api_key", "ai_model", "ai_base_url", "ai_task_entity",
+)
 
 # dostawcy, dla ktorych klucz da sie zweryfikowac lista modeli
 _KEY_PROVIDERS = {
@@ -75,13 +82,13 @@ class RootlabOptionsFlow(OptionsFlow):
                     errors["api_key"] = "invalid_auth"
                     placeholders["error_detail"] = str(err)[:200]
             if not errors:
-                # mapa → najbliższa stacja IMGW
-                loc = user_input.get("station_location")
-                if loc and loc.get("latitude"):
-                    user_input["imgw_station"] = nearest_station(
-                        loc["latitude"], loc["longitude"]
-                    )
-                return self.async_create_entry(title="", data=user_input)
+                # klucze spoza formularza (np. imgw_token z Ustawień → Pogoda) zostają;
+                # wyczyszczone pole formularza znika z user_input, więc znika też z opcji
+                kept = {
+                    k: v for k, v in self.config_entry.options.items() if k not in _FORM_KEYS
+                }
+                kept.pop("station_location", None)  # dawne pole mapy → stacja, zastąpione wyborem punktu
+                return self.async_create_entry(title="", data={**kept, **user_input})
 
         options = dict(self.config_entry.options)
         if user_input is not None:
@@ -89,17 +96,13 @@ class RootlabOptionsFlow(OptionsFlow):
         stations = []
         if DOMAIN in self.hass.data and "weather" in self.hass.data[DOMAIN]:
             stations = await self.hass.data[DOMAIN]["weather"].stations()
-        station_selector = (
-            selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=stations,
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                    custom_value=True,
-                    sort=True,
-                )
+        station_selector = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[{"value": GARDEN, "label": "Lokalizacja ogrodu (IMGW INCA)"}]
+                + [{"value": st, "label": STATIONS.get(st, (st,))[0]} for st in stations],
+                mode=selector.SelectSelectorMode.DROPDOWN,
+                custom_value=True,
             )
-            if stations
-            else str
         )
         # zapisany (lub wlasnie wpisany) klucz -> ai_model jako lista modeli
         models = await self._models_for(
@@ -121,7 +124,6 @@ class RootlabOptionsFlow(OptionsFlow):
         schema = vol.Schema(
             {
                 vol.Optional("imgw_station"): station_selector,
-                vol.Optional("station_location"): selector.LocationSelector(),
                 vol.Optional("weather_entity"): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="weather")
                 ),
@@ -149,14 +151,7 @@ class RootlabOptionsFlow(OptionsFlow):
             }
         )
         defaults = {
-            "imgw_station": options.get("imgw_station", "warszawa"),
-            "station_location": options.get(
-                "station_location",
-                {
-                    "latitude": self.hass.config.latitude,
-                    "longitude": self.hass.config.longitude,
-                },
-            ),
+            "imgw_station": options.get("imgw_station") or GARDEN,
             "ai_provider": options.get("ai_provider", "anthropic"),
         }
         for key in ("weather_entity", "api_key", "ai_model", "ai_base_url", "ai_task_entity",

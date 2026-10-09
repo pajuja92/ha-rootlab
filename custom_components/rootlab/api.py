@@ -11,7 +11,19 @@ import homeassistant.util.dt as dt_util
 from . import ai
 from .const import DOMAIN, SHOP_CATALOG_URL, SHOP_FEEDBACK_URL, VERSION
 from .store import async_save
-from .verification import OPEN_METEO_MODELS, fetch_openmeteo_forecast, stats_payload
+from .weather import STATIONS, station_km
+from .verification import (
+    FORECAST_SOURCES,
+    IMGW,
+    IMGW_GFS,
+    current_weather,
+    fetch_imgw_forecast,
+    fetch_openmeteo_forecast,
+    garden_location,
+    imgw_choice,
+    stats_payload,
+    week_payload,
+)
 
 KINDS = ["zones", "plants", "sections", "tasks", "knowledge", "one_offs", "devices", "chats", "plantings", "inventory", "inventory_lists"]
 # pola pomijane w liście (duże base64) — dostępne przez dedykowane komendy
@@ -32,6 +44,7 @@ def _public(hass):
     options = d["entry"].options
     # lokalizacja ogrodu jest definiowana w Edytorze (layout), nie w opcjach
     location = data["layout"].get("location") or {}
+    lat, lon = garden_location(hass)
     return {
         **{k: v for k, v in data.items() if k != "verify"},
         "plants": [
@@ -68,7 +81,16 @@ def _public(hass):
             "weather_entity": options.get("weather_entity"),
             "truth_temp_entity": options.get("truth_temp_entity"),
             "truth_rain_entity": options.get("truth_rain_entity"),
-            "imgw_station": options.get("imgw_station", "warszawa"),
+            "imgw_station": imgw_choice(hass),
+            # stacje synop od najbliższej pinezce — do wyboru punktu pomiaru w Ustawieniach
+            "imgw_stations": sorted(
+                (
+                    {"value": key, "label": name, "km": round(station_km(key, lat, lon))}
+                    for key, (name, _, _) in STATIONS.items()
+                ),
+                key=lambda s: s["km"],
+            ),
+            "imgw_token": options.get("imgw_token", ""),
         },
     }
 
@@ -283,9 +305,7 @@ async def ws_layout_save(hass, connection, msg):
 @websocket_api.websocket_command({vol.Required("type"): "rootlab/weather"})
 @websocket_api.async_response
 async def ws_weather(hass, connection, msg):
-    d = hass.data[DOMAIN]
-    station = d["entry"].options.get("imgw_station", "warszawa")
-    connection.send_result(msg["id"], await d["weather"].fetch(station))
+    connection.send_result(msg["id"], await current_weather(hass))
 
 
 @websocket_api.websocket_command(
@@ -296,9 +316,13 @@ async def ws_weather(hass, connection, msg):
 )
 @websocket_api.async_response
 async def ws_forecast(hass, connection, msg):
-    if msg["source"] in OPEN_METEO_MODELS:
+    if msg["source"] in FORECAST_SOURCES:
         try:
-            connection.send_result(msg["id"], await fetch_openmeteo_forecast(hass, msg["source"]))
+            if msg["source"] in (IMGW, IMGW_GFS):
+                result = await fetch_imgw_forecast(hass, msg["source"] == IMGW_GFS)
+            else:
+                result = await fetch_openmeteo_forecast(hass, msg["source"])
+            connection.send_result(msg["id"], result)
         except Exception as err:  # noqa: BLE001
             connection.send_error(msg["id"], "forecast_error", str(err))
         return
@@ -307,7 +331,7 @@ async def ws_forecast(hass, connection, msg):
         connection.send_result(msg["id"], None)
         return
     out = {}
-    for ftype, limit in (("hourly", 24), ("daily", 7)):
+    for ftype in ("hourly", "daily"):
         try:
             resp = await hass.services.async_call(
                 "weather",
@@ -316,10 +340,15 @@ async def ws_forecast(hass, connection, msg):
                 blocking=True,
                 return_response=True,
             )
-            out[ftype] = (resp.get(entity_id) or {}).get("forecast", [])[:limit]
+            out[ftype] = (resp.get(entity_id) or {}).get("forecast", [])
         except Exception:  # noqa: BLE001 — encja może nie wspierać danego typu
             out[ftype] = None
-    connection.send_result(msg["id"], out)
+    hourly = out["hourly"] or []
+    result = week_payload(hourly[:24], hourly, out["daily"] or [])
+    # encja bez prognozy godzinowej/dobowej → None, jak wcześniej (front pokaże „brak")
+    result["hourly"] = result["hourly"] if out["hourly"] is not None else None
+    result["daily"] = result["daily"] if out["daily"] is not None else None
+    connection.send_result(msg["id"], result)
 
 
 # --- AI ---
@@ -1028,15 +1057,15 @@ async def ws_weather_config(hass, connection, msg):
     data = hass.data[DOMAIN]["data"]
     if msg["sources"] is not None:
         data["weather_sources"] = [
-            s for s in msg["sources"] if s == "ha" or s in OPEN_METEO_MODELS
+            s for s in msg["sources"] if s == "ha" or s in FORECAST_SOURCES
         ]
-    if msg["rain_model"] in OPEN_METEO_MODELS:
+    if msg["rain_model"] in FORECAST_SOURCES:
         data["rain_model"] = msg["rain_model"]
     if msg["truth"] is not None:
         # źródła „prawdy gruntowej" mieszkają w opcjach wpisu integracji
         entry = hass.data[DOMAIN]["entry"]
         options = dict(entry.options)
-        for key in ("truth_temp_entity", "truth_rain_entity", "imgw_station"):
+        for key in ("truth_temp_entity", "truth_rain_entity", "imgw_station", "imgw_token"):
             if key in msg["truth"]:
                 value = (msg["truth"][key] or "").strip()
                 if value:

@@ -10,6 +10,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import DOMAIN
 from .logic import merge_ai_tasks
+from .verification import current_weather, fetch_imgw_forecast
 
 # Dostawcy z API zgodnym z OpenAI (chat/completions) — jeden klient, różne base_url.
 OPENAI_COMPAT = {
@@ -553,11 +554,14 @@ async def async_generate_tasks(hass, categories=None, plant_ids=None, include_ge
         "crisis": "crisis (pilne interwencje — TYLKO gdy odczyty czujników lub pogoda wskazują realny problem)",
     }
     context = _garden_context(hass, plant_ids)
-    weather = await hass.data[DOMAIN]["weather"].fetch(
-        _options(hass).get("imgw_station", "warszawa")
-    )
+    weather = await current_weather(hass)
     if weather:
         context["weather_imgw"] = weather
+    try:
+        # prognoza dobowa IMGW dla punktu ogrodu (~2 doby) — przymrozki, opady
+        context["forecast_imgw_daily"] = (await fetch_imgw_forecast(hass))["daily"]
+    except Exception:  # noqa: BLE001 — poza Polską IMGW nie ma prognozy
+        pass
     parsed = await _complete(
         hass,
         _prompt(hass, "tasks") + "\n"

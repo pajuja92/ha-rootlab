@@ -136,15 +136,20 @@ dialog {
 }
 dialog::backdrop { background: rgba(0, 0, 0, 0.4); }
 dialog h2 { margin: 0 0 16px; font-size: 18px; font-weight: 500; }
-dialog label { display: block; font-size: 13px; color: var(--secondary-text-color); margin: 12px 0 4px; }
-dialog input, dialog select, dialog textarea {
+/* .fields — formularz na karcie (np. Ustawienia) jak w oknie dialogowym; :where = niska waga, combo i check-list wygrywają */
+dialog label, :where(.fields) label { display: block; font-size: 13px; color: var(--secondary-text-color); margin: 12px 0 4px; }
+dialog input, dialog select, dialog textarea,
+:where(.fields) input, :where(.fields) select, :where(.fields) textarea {
   width: 100%; box-sizing: border-box; padding: 10px 12px;
   border: 1px solid var(--divider-color); border-radius: 8px;
   background: var(--primary-background-color); color: var(--primary-text-color);
   font: inherit; font-size: 14px;
 }
 dialog textarea { min-height: 72px; resize: vertical; }
-dialog input:focus, dialog select:focus, dialog textarea:focus { outline: 2px solid var(--rl-green); border-color: transparent; }
+dialog input:focus, dialog select:focus, dialog textarea:focus,
+:where(.fields) input:focus, :where(.fields) select:focus, :where(.fields) textarea:focus { outline: 2px solid var(--rl-green); border-color: transparent; }
+.field-hint { font-size: 13px; color: var(--secondary-text-color); margin: 4px 0 0; }
+.fields details > summary { cursor: pointer; font-size: 14px; color: var(--primary-text-color); padding: 4px 0; }
 dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 24px; }
 .day-picker { display: flex; gap: 4px; flex-wrap: wrap; }
 .day-picker label {
@@ -415,7 +420,8 @@ svg[data-fc] { cursor: crosshair; }
 .gen-zone-head { display: flex; gap: 8px; align-items: center; margin: 0; font-size: 14px; }
 .gen-plant { display: flex; gap: 8px; align-items: center; margin: 4px 0 4px 24px; font-size: 14px; color: var(--primary-text-color); }
 .gen-plant small { font-size: 12px; }
-dialog input[type=checkbox], dialog input[type=radio] { width: auto; accent-color: var(--rl-green); }
+dialog input[type=checkbox], dialog input[type=radio],
+:where(.fields) input[type=checkbox], :where(.fields) input[type=radio] { width: auto; accent-color: var(--rl-green); }
 .diff-add > span:first-of-type { color: var(--rl-green); font-weight: 700; }
 .diff-del > span:first-of-type { color: var(--rl-crisis); font-weight: 700; }
 .diff-add, .diff-del { margin-left: 0; flex-wrap: wrap; }
