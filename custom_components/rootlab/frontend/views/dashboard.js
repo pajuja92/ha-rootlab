@@ -183,16 +183,50 @@ const avg = (vals) => {
   return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
 };
 
-/* Komórki wiersza rankingu (błąd temp., błąd opadów, dni); nowe źródło — data pierwszych wyników. */
-function rankCells(row) {
-  if (row.first_result) {
-    const date = new Date(row.first_result).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "numeric" });
-    return `<td colspan="2" style="padding:6px 8px;color:var(--secondary-text-color)">${t("verify.first")} ${esc(date)}</td>
-      <td style="padding:6px 8px">0</td>`;
-  }
-  return `<td style="padding:6px 8px">${row.mae_temp != null ? row.mae_temp.toFixed(2) + " °C" : "—"}</td>
-    <td style="padding:6px 8px">${row.rain_err != null ? row.rain_err.toFixed(1) + " mm" : "—"}</td>
-    <td style="padding:6px 8px">${row.days}</td>`;
+/* Tabela rankingu trafności (pulpit i zakładka Pogoda). Tryb „|błąd|": wynik
+   ważony i średnie błędy bezwzględne; tryb „±": średni błąd ze znakiem
+   (+ prognoza zawyża, − zaniża) i liczba dni z pomyłką w górę ↑ / w dół ↓. */
+function rankTable(app, v) {
+  const signed = app._rankMode === "signed";
+  const td = (html, style = "", attrs = "") => `<td ${attrs} style="padding:6px 8px;${style}">${html}</td>`;
+  const th = (key) => `<th style="padding:4px 8px">${key ? t(key) : "#"}</th>`;
+  const num = (x, digits, unit) => (x != null ? `${x.toFixed(digits)} ${unit}` : "—");
+  const sgn = (x, digits, unit) =>
+    x != null ? `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(x).toFixed(digits)} ${unit}` : "—";
+  const updown = (up, down) =>
+    up || down ? `<div style="font-size:11px;color:var(--secondary-text-color)">↑${up} ↓${down}</div>` : "";
+  const cells = (row) => {
+    if (row.first_result) {
+      const date = new Date(row.first_result).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "numeric" });
+      return td(`${t("verify.first")} ${esc(date)}`, "color:var(--secondary-text-color)", `colspan="${signed ? 2 : 3}"`) + td(0);
+    }
+    if (signed) {
+      return td(sgn(row.temp_bias, 2, "°C") + updown(row.temp_up, row.temp_down))
+        + td(sgn(row.rain_bias, 1, "mm") + updown(row.rain_up, row.rain_down))
+        + td(row.bias_days || 0);
+    }
+    return td(row.score != null ? row.score.toFixed(2) : "—", "font-weight:600")
+      + td(num(row.mae_temp, 2, "°C")) + td(num(row.rain_err, 1, "mm")) + td(row.days);
+  };
+  const cols = signed
+    ? ["verify.source", "verify.tbias", "verify.rbias", "verify.days"]
+    : ["verify.source", "verify.score", "verify.mae", "verify.rainerr", "verify.days"];
+  const since = signed ? v.sources.find((x) => x.bias_since)?.bias_since : v.since;
+  const btn = (mode, key) =>
+    `<button class="btn small ${(app._rankMode || "abs") === mode ? "" : "plain"}" data-action="rank-mode" data-mode="${mode}">${t(key)}</button>`;
+  return `
+    <div style="display:flex;gap:6px;margin-bottom:6px">${btn("abs", "verify.mode.abs")}${btn("signed", "verify.mode.signed")}</div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px">
+      <tr style="color:var(--secondary-text-color);font-size:12px;text-align:left">${th()}${cols.map(th).join("")}</tr>
+      ${v.sources
+        .map((row, i) => `<tr style="border-top:1px solid var(--divider-color)">
+          ${td(row.first_result ? "" : !signed && i === 0 && row.score != null ? "🏆" : i + 1)}
+          ${td(esc(row.label))}${cells(row)}</tr>`)
+        .join("")}
+    </table></div>
+    <div style="font-size:12px;color:var(--secondary-text-color);margin-top:8px">
+      ${signed ? t("verify.signed.note") : `${t("verify.weight")} ${t("verify.note")}`}
+      ${since ? ` ${t("verify.since")} ${esc(since)}.` : signed ? ` ${t("verify.signed.empty")}` : ""}</div>`;
 }
 
 function forecastSection(app) {
@@ -273,6 +307,7 @@ function legendHtml(rows, mode, split) {
     items.push(`<span><i style="background:var(--rl-green)"></i>${t("forecast.hum")}</span>`);
   if (split && has("pressure"))
     items.push(`<span><i style="background:var(--rl-ai)"></i>${t("forecast.press")}</span>`);
+  if (has("wind_speed")) items.push(`<span>↗ ${t("forecast.legend.wind")}</span>`);
   return `<div class="chart-legend">${items.join("")}</div>`;
 }
 
@@ -306,19 +341,25 @@ function dayGroups(rows) {
   return out.map((g) => ({ ...g, mid: (g.start + g.end) / 2 }));
 }
 
-/* Podsumowanie doby z wierszy co 3 h — do dymka (jak wiersz dobowy). */
-function daySummary(rows) {
-  const temps = S(rows, "temperature").filter((v) => v != null);
-  const probs = S(rows, "precipitation_probability").filter((v) => v != null);
-  return {
-    datetime: rows[0].datetime,
-    temperature: temps.length ? Math.max(...temps) : null,
-    templow: temps.length ? Math.min(...temps) : null,
-    precipitation: temps.length ? Math.round(S(rows, "precipitation").reduce((a, b) => a + (b ?? 0), 0) * 10) / 10 : null,
-    precipitation_probability: probs.length ? Math.max(...probs) : null,
-    humidity: avg(S(rows, "humidity")),
-    pressure: avg(S(rows, "pressure")),
-  };
+/* Wiatr: kierunek meteo (skąd wieje) → strzałka w stronę, w którą wieje; prędkość w m/s. */
+const WIND_H = 24;
+const COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+const windText = (r) => {
+  const v = num(r.wind_speed), b = num(r.wind_bearing);
+  return v == null ? null : `${Math.round(v)} m/s${b != null ? " " + COMPASS[Math.round(b / 45) % 8] : ""}`;
+};
+/* Pas wiatru pod wykresem (nad dniami/godzinami): strzałka + prędkość, rzadziej gdy ciasno. */
+function windRow(rows, x, slot, y0) {
+  let step = 1;
+  while (step * slot < 13) step *= 2;
+  return rows
+    .map((r, i) => {
+      const v = num(r.wind_speed), b = num(r.wind_bearing);
+      if (i % step || v == null) return "";
+      const arrow = b == null ? "" : `<path class="wind-arrow" transform="translate(${x(i).toFixed(1)},${y0 + 6}) rotate(${b})" d="M0,-5V5M-3,2L0,5L3,2"/>`;
+      return `${arrow}<text class="wind-val" x="${x(i)}" y="${y0 + 21}" text-anchor="middle">${Math.round(v)}</text>`;
+    })
+    .join("");
 }
 
 /* Oś X wspólna dla wykresów: godziny / dni; w „week" dzień podpisany pośrodku doby
@@ -383,6 +424,7 @@ function pointChips(app, rows, mode, idx, key) {
     ${chip("mdi:umbrella-outline", t("forecast.legend.prob"), num(r.precipitation_probability) != null ? `${Math.round(num(r.precipitation_probability))} %` : null)}
     ${chip("mdi:cloud-percent-outline", t("forecast.hum"), num(r.humidity) != null ? `${Math.round(num(r.humidity))} %` : null)}
     ${chip("mdi:gauge", t("forecast.press"), num(r.pressure) != null ? `${Math.round(num(r.pressure))} hPa` : null)}
+    ${chip("mdi:weather-windy", t("forecast.wind"), windText(r))}
     <button class="icon-btn" data-action="fc-clear" data-key="${esc(key)}" title="${t("close")}"><ha-icon icon="mdi:close" style="--mdc-icon-size:16px"></ha-icon></button>
   </div>`;
 }
@@ -406,7 +448,8 @@ export function bindForecastCharts(app, root) {
 
 /* Wykres łączony: temperatura (linia), opad (słupki), szansa opadów (kreskowana). */
 function chartCombined(rows, mode, key = null, sel = null) {
-  const W = chartW(), H = 200, padL = 30, padR = 30, padT = 16, padB = 26;
+  const wind = S(rows, "wind_speed").some((v) => v != null) ? WIND_H : 0;
+  const W = chartW(), H = 200 + wind, padL = 30, padR = 30, padT = 16, padB = 26 + wind;
   const iw = W - padL - padR, ih = H - padT - padB;
   const temps = rows.flatMap((r) => [num(r.temperature), num(r.templow)]).filter((v) => v != null);
   if (!temps.length) return `<div class="ai-hint">${t("forecast.unavailable")}</div>`;
@@ -463,19 +506,11 @@ function chartCombined(rows, mode, key = null, sel = null) {
   const probAxis = [0, 50, 100]
     .map((v) => `<text x="${W - padR + 4}" y="${yP(v) + 3}" style="fill:var(--rl-water)">${v}%</text>`)
     .join("");
-  // tygodniowy: szczegóły dnia w dymku po najechaniu (nie zaśmiecamy widoku)
-  const days =
-    mode === "daily"
-      ? rows.map((r, i) => ({ r, start: i, end: i }))
-      : mode === "week"
-        ? dayGroups(rows).map((g) => ({ ...g, r: daySummary(rows.slice(g.start, g.end + 1)) }))
-        : [];
-  const tips = days
-          .map(({ r: day, start, end }) => {
-            // „week" po kliknięciu: dymek dnia z zaznaczonym punktem pokazuje ten krok (z godziną)
-            const point = mode === "week" && sel != null && sel >= start && sel <= end;
-            const r = point ? rows[sel] : day;
-            const i = point ? sel : (start + end) / 2;
+  // dymek po najechaniu: doba (daily) albo krok 3 h z godziną (week; max/min doby są na wykresie)
+  const point = mode === "week";
+  const tips = (mode === "daily" || point ? rows : [])
+          .map((r, i) => {
+            if (point && num(r.temperature) == null) return "";
             const date = new Date(r.datetime).toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "numeric" });
             const temp = num(r.temperature);
             const linesTip = [
@@ -485,11 +520,12 @@ function chartCombined(rows, mode, key = null, sel = null) {
               num(r.precipitation) != null ? `🌧 ${num(r.precipitation)} mm${point ? " / 3 h" : ""}` : null,
               num(r.humidity) != null ? `💧 ${Math.round(num(r.humidity))} %` : null,
               num(r.pressure) != null ? `◎ ${Math.round(num(r.pressure))} hPa` : null,
+              windText(r) && `🌬 ${windText(r)}`,
             ].filter(Boolean);
             const tw = 132;
             const tx = Math.min(Math.max(x(i) - tw / 2, padL), W - padR - tw);
             return `<g class="fc-day">
-              <rect class="hit" x="${padL + start * slot}" y="0" width="${(end - start + 1) * slot}" height="${H}" fill="transparent"/>
+              <rect class="hit" x="${padL + i * slot}" y="0" width="${slot}" height="${H}" fill="transparent"/>
               <g class="fc-tip">
                 <rect x="${tx}" y="6" width="${tw}" height="${linesTip.length * 13 + 10}" rx="6"/>
                 ${linesTip.map((ln, j) => `<text x="${tx + 8}" y="${21 + j * 13}">${esc(ln)}</text>`).join("")}
@@ -505,7 +541,8 @@ function chartCombined(rows, mode, key = null, sel = null) {
   return `<svg class="chart-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet"
       ${key ? `data-fc="${key}" data-n="${rows.length}" data-pl="${padL}" data-pr="${padR}"` : ""}>
     ${grid}${probAxis}${bars}${line("templow", "temp-line min", yT)}${line("temperature", "temp-line", yT)}
-    ${line("precipitation_probability", "prob-line", yP)}${tempLabels}${labels}${marker}${tips}
+    ${line("precipitation_probability", "prob-line", yP)}${tempLabels}${labels}
+    ${wind ? windRow(rows, x, slot, padT + ih + 2) : ""}${marker}${tips}
   </svg>`;
 }
 
@@ -516,6 +553,7 @@ function chartsSplit(rows, mode, key = null, sel = null) {
     { label: `${t("forecast.legend.rain")} + ${t("forecast.legend.prob")}`, bars: "precipitation", prob: true },
     { label: `${t("forecast.hum")} (%)`, series: [["humidity", "hum-line"]] },
     { label: `${t("forecast.press")} (hPa)`, series: [["pressure", "press-line"]] },
+    { label: `${t("forecast.wind")} (m/s)`, series: [["wind_speed", "wind-line"]], wind: true },
   ];
   return metrics
     .map((metric) => {
@@ -528,7 +566,8 @@ function chartsSplit(rows, mode, key = null, sel = null) {
 }
 
 function chartMini(rows, metric, mode, key = null, sel = null) {
-  const W = chartW(), H = 130, padL = 34, padR = 30, padT = 18, padB = 22;
+  const wind = metric.wind ? WIND_H : 0;
+  const W = chartW(), H = 130 + wind, padL = 34, padR = 30, padT = 18, padB = 22 + wind;
   const iw = W - padL - padR, ih = H - padT - padB;
   const slot = iw / rows.length;
   const x = (i) => padL + (i + 0.5) * slot;
@@ -569,6 +608,7 @@ function chartMini(rows, metric, mode, key = null, sel = null) {
     }
   }
   out += xAxis(rows, mode, x, slot, W, H - 6, padT, padT + ih);
+  if (wind) out += windRow(rows, x, slot, padT + ih + 2);
   const mi = sel != null ? sel : nowIdxOf(rows);
   if (mi >= 0 && mi < rows.length)
     out += `<line class="fc-now ${sel != null ? "sel" : ""}" x1="${x(mi)}" x2="${x(mi)}" y1="${padT - 4}" y2="${padT + ih}"/>`;
@@ -593,29 +633,9 @@ function verifySection(app) {
       <div class="section-title"><ha-icon icon="mdi:scale-balance"></ha-icon>${t("verify.title")}</div>
       <div class="card"><div class="ai-hint"><ha-icon icon="mdi:timer-sand"></ha-icon>${t("verify.collecting")}</div></div>`;
   }
-  const best = v.sources.find((x) => x.mae_temp != null);
   return `
     <div class="section-title"><ha-icon icon="mdi:scale-balance"></ha-icon>${t("verify.title")}</div>
-    <div class="card">
-      <table style="width:100%;border-collapse:collapse;font-size:14px">
-        <tr style="color:var(--secondary-text-color);font-size:12px;text-align:left">
-          <th style="padding:4px 8px">${t("verify.source")}</th>
-          <th style="padding:4px 8px">${t("verify.mae")}</th>
-          <th style="padding:4px 8px">${t("verify.rainerr")}</th>
-          <th style="padding:4px 8px">${t("verify.days")}</th>
-        </tr>
-        ${v.sources
-          .map(
-            (row) => `<tr style="border-top:1px solid var(--divider-color)">
-            <td style="padding:6px 8px">${row === best ? "🏆 " : ""}${esc(row.label)}</td>
-            ${rankCells(row)}
-          </tr>`
-          )
-          .join("")}
-      </table>
-      <div style="font-size:12px;color:var(--secondary-text-color);margin-top:8px">
-        ${t("verify.note")}${v.since ? ` ${t("verify.since")} ${esc(v.since)}.` : ""}</div>
-    </div>`;
+    <div class="card">${rankTable(app, v)}</div>`;
 }
 
 function weatherSection(app) {
@@ -661,6 +681,7 @@ export const actions = {
   "weather-skip": (app) => app.ws("irrigation/skip", { date: todayISO() }).then((d) => { app.data = d; app.render(); }),
   "weather-dismiss": (app) => { app.rainDismissed = true; app.render(); },
   "forecast-mode": (app, el) => { app.forecastMode = el.dataset.mode; app.render(); },
+  "rank-mode": (app, el) => { app._rankMode = el.dataset.mode; app.render(); },
   "fc-clear": (app, el) => {
     if (app._fcSel) delete app._fcSel[el.dataset.key];
     app.render();
@@ -686,7 +707,7 @@ export const actions = {
 };
 
 /* Współdzielone z zakładką Pogoda — te same karty prognozy co na pulpicie. */
-export { FC_MODELS, haEntityName, rankCells };
+export { FC_MODELS, haEntityName, rankTable };
 export function forecastBody(app, rows, mode, split, key = "wx") {
   let sel = (app._fcSel || {})[key];
   if (sel != null && (sel < 0 || sel >= rows.length)) sel = null;

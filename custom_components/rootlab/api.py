@@ -5,8 +5,10 @@ from datetime import date, timedelta
 import voluptuous as vol
 
 from homeassistant.components import websocket_api
+from homeassistant.const import UnitOfSpeed
 from homeassistant.core import callback
 import homeassistant.util.dt as dt_util
+from homeassistant.util.unit_conversion import SpeedConverter
 
 from . import ai
 from .const import DOMAIN, SHOP_CATALOG_URL, SHOP_FEEDBACK_URL, VERSION
@@ -343,6 +345,13 @@ async def ws_forecast(hass, connection, msg):
             out[ftype] = (resp.get(entity_id) or {}).get("forecast", [])
         except Exception:  # noqa: BLE001 — encja może nie wspierać danego typu
             out[ftype] = None
+    # wiatr w m/s jak w IMGW i Open-Meteo (encja podaje w swojej jednostce)
+    state = hass.states.get(entity_id)
+    unit = state.attributes.get("wind_speed_unit") if state else None
+    if unit and unit != UnitOfSpeed.METERS_PER_SECOND:
+        for row in (out["hourly"] or []) + (out["daily"] or []):
+            if row.get("wind_speed") is not None:
+                row["wind_speed"] = round(SpeedConverter.convert(row["wind_speed"], unit, UnitOfSpeed.METERS_PER_SECOND), 1)
     hourly = out["hourly"] or []
     result = week_payload(hourly[:24], hourly, out["daily"] or [])
     # encja bez prognozy godzinowej/dobowej → None, jak wcześniej (front pokaże „brak")

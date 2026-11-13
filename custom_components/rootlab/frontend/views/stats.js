@@ -3,7 +3,7 @@
    i wykresy rozdzielone. Poniżej: weryfikacja modeli (ranking, dziś). */
 import { t } from "../i18n.js";
 import { chartW, esc } from "../util.js";
-import { FC_MODELS, haEntityName, fcRows, forecastBody, bindForecastCharts, rankCells } from "./dashboard.js";
+import { FC_MODELS, haEntityName, fcRows, forecastBody, bindForecastCharts, rankTable } from "./dashboard.js";
 
 const COLORS = [
   "var(--rl-harvest)",
@@ -193,25 +193,7 @@ function verificationSection(app) {
 
 function rankingCard(app, v) {
   const body = v?.sources?.length
-    ? `<table style="width:100%;border-collapse:collapse;font-size:14px">
-        <tr style="color:var(--secondary-text-color);font-size:12px;text-align:left">
-          <th style="padding:4px 8px">#</th>
-          <th style="padding:4px 8px">${t("verify.source")}</th>
-          <th style="padding:4px 8px">${t("verify.mae")}</th>
-          <th style="padding:4px 8px">${t("verify.rainerr")}</th>
-          <th style="padding:4px 8px">${t("verify.days")}</th>
-        </tr>
-        ${v.sources
-          .map(
-            (row, i) => `<tr style="border-top:1px solid var(--divider-color)">
-            <td style="padding:6px 8px">${row.first_result ? "" : i === 0 && row.mae_temp != null ? "🏆" : i + 1}</td>
-            <td style="padding:6px 8px">${esc(row.label)}</td>
-            ${rankCells(row)}
-          </tr>`
-          )
-          .join("")}
-      </table>
-      ${v.since ? `<div style="font-size:12px;color:var(--secondary-text-color);margin-top:8px">${t("verify.since")} ${esc(v.since)}.</div>` : ""}`
+    ? rankTable(app, v)
     : `<div class="ai-hint"><ha-icon icon="mdi:timer-sand"></ha-icon>${t("verify.collecting")}</div>`;
   return `
     <div class="section-title"><ha-icon icon="mdi:scale-balance"></ha-icon>${t("verify.title")}</div>

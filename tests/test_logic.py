@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "custom_components" / "rootlab"))
 
-from logic import daily_from_hourly, due_sections, imgw_hourly, imgw_now, merge_ai_tasks, rain_sum, three_hourly, week_grid  # noqa: E402
+from logic import bias_summary, daily_from_hourly, due_sections, imgw_hourly, imgw_now, merge_ai_tasks, rain_sum, rank_score, three_hourly, week_grid, wind_mean  # noqa: E402
 
 MONDAY_6 = datetime(2026, 7, 20, 6, 0)  # poniedziałek 06:00
 SECTION = {"id": "a", "schedule": {"days": [0, 2], "times": ["06:00", "19:00"], "duration_min": 10}}
@@ -107,6 +107,16 @@ def test_three_hourly():
     assert three_hourly(gfs, warsaw)[0]["precipitation"] == 2.0
 
 
+def test_wind_mean():
+    # kierunek: średnia wektorowa — 350° i 10° to północ, nie południe
+    assert wind_mean([{"wind_speed": 2.0, "wind_bearing": 350}, {"wind_speed": 4.0, "wind_bearing": 10}]) == (3.0, 3)
+    assert wind_mean([{"wind_speed": 1.0, "wind_bearing": None}]) == (1.0, None)
+    assert wind_mean([{"temperature": 5}]) == (None, None)
+    # IMGW: Wind_Speed/Wind_Dir jako tekst → liczby w wierszu
+    row = imgw_hourly({"data": {"Data": [{"Type": "Type_Hour", "Date": "2026-10-09T12:00:00Z", "Wind_Speed": "3.5", "Wind_Dir": "270"}]}})[0]
+    assert (row["wind_speed"], row["wind_bearing"]) == (3.5, 270.0)
+
+
 def test_week_grid():
     warsaw = ZoneInfo("Europe/Warsaw")
     now = datetime(2026, 10, 7, 10, 40, tzinfo=warsaw)
@@ -117,6 +127,23 @@ def test_week_grid():
     assert grid[-1] == {"datetime": "2026-10-13T21:00:00+02:00"}
     assert len(grid) == 5 + 6 * 8
     assert week_grid([], now) == []
+
+
+def test_rank_score():
+    # 1 mm opadów waży jak 2 °C: lepsza temperatura nie nadrabia gorszego deszczu
+    ukmo, imgw = rank_score(1.01, 2.6), rank_score(1.31, 1.3)
+    assert imgw < ukmo and ukmo == 6.21
+    assert rank_score(1.0, None) is None
+
+
+def test_bias_summary():
+    daily = [{"d": "2026-10-14", "t": 1.0, "r": 3.0}, {"d": "2026-10-15", "t": -0.2, "r": -1.0},
+             {"d": "2026-10-16", "t": None, "r": 0.0}]
+    b = bias_summary(daily)
+    assert b["temp_bias"] == 0.4 and (b["temp_up"], b["temp_down"]) == (1, 0)
+    assert b["rain_bias"] == 0.67 and (b["rain_up"], b["rain_down"]) == (1, 1)
+    assert b["bias_days"] == 3 and b["bias_since"] == "2026-10-14"
+    assert bias_summary([])["temp_bias"] is None
 
 
 if __name__ == "__main__":

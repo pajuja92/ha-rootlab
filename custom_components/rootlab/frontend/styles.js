@@ -330,6 +330,9 @@ svg[data-fc] { cursor: crosshair; }
 .chart-svg .prob-line { stroke: var(--rl-water); stroke-dasharray: 6 4; fill: none; stroke-width: 1.5; }
 .chart-svg .hum-line { stroke: var(--rl-green); fill: none; stroke-width: 2; }
 .chart-svg .press-line { stroke: var(--rl-ai); fill: none; stroke-width: 2; }
+.chart-svg .wind-line { stroke: var(--secondary-text-color); fill: none; stroke-width: 2; }
+.chart-svg .wind-arrow { stroke: var(--secondary-text-color); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.chart-svg .wind-val { font-size: 9px; fill: var(--secondary-text-color); }
 .chart-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--secondary-text-color); margin-top: 6px; }
 .chart-legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
 .chart-legend i.bar { width: 8px; height: 10px; opacity: 0.55; }

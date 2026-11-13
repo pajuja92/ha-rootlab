@@ -1,4 +1,5 @@
 """Czysta logika RootLab — bez zależności od HA, testowalna zwykłym Pythonem."""
+import math
 from datetime import date, datetime, timedelta
 
 
@@ -76,9 +77,50 @@ def imgw_hourly(payload):
                 "precipitation_probability": None,
                 "humidity": _num(r.get("Humidity")),
                 "pressure": round(press / 100, 1) if press is not None else None,
+                "wind_speed": _num(r.get("Wind_Speed")),  # m/s
+                "wind_bearing": _num(r.get("Wind_Dir")),
             }
         )
     return rows
+
+
+# 1 mm błędu opadów/dobę waży w rankingu tyle co 2 °C błędu temperatury —
+# dla ogrodu pomyłka w deszczu (podlać czy nie) kosztuje więcej niż w stopniach
+RAIN_WEIGHT = 2.0
+
+
+def rank_score(mae_temp, rain_err):
+    """Wynik rankingu trafności (niżej = lepiej); None, gdy brak którejś miary."""
+    if mae_temp is None or rain_err is None:
+        return None
+    return round(mae_temp + RAIN_WEIGHT * rain_err, 2)
+
+
+def bias_summary(daily, threshold=0.5):
+    """Kierunek pomyłek z dziennych błędów [{d, t, r}] (+ zawyża, − zaniża):
+    średni błąd ze znakiem i liczba dni z pomyłką ≥ threshold w górę / w dół."""
+    out = {"bias_days": len(daily), "bias_since": daily[0]["d"] if daily else None}
+    for key, name in (("t", "temp"), ("r", "rain")):
+        xs = [x[key] for x in daily if x.get(key) is not None]
+        out[f"{name}_bias"] = round(sum(xs) / len(xs), 2) if xs else None
+        out[f"{name}_up"] = sum(x >= threshold for x in xs)
+        out[f"{name}_down"] = sum(x <= -threshold for x in xs)
+    return out
+
+
+def wind_mean(rows):
+    """Średni wiatr z wierszy: (prędkość m/s, kierunek °) — kierunek jako średnia wektorowa
+    (z 350° i 10° wychodzi 0°, nie 180°). (None, None) gdy brak danych."""
+    pts = [(r["wind_speed"], r.get("wind_bearing")) for r in rows if r.get("wind_speed") is not None]
+    if not pts:
+        return None, None
+    speed = round(sum(v for v, _ in pts) / len(pts), 1)
+    dirs = [(v or 0.1, b) for v, b in pts if b is not None]
+    if not dirs:
+        return speed, None
+    east = sum(v * math.sin(math.radians(b)) for v, b in dirs)
+    north = sum(v * math.cos(math.radians(b)) for v, b in dirs)
+    return speed, round(math.degrees(math.atan2(east, north)) % 360)
 
 
 def daily_from_hourly(rows, tz):
@@ -94,8 +136,9 @@ def daily_from_hourly(rows, tz):
     mean = lambda xs: round(sum(xs) / len(xs), 1) if xs else None
     out = []
     for day, items in days.items():
-        col = lambda key: [r[key] for r in items if r[key] is not None]
+        col = lambda key: [r[key] for r in items if r.get(key) is not None]
         temps = col("temperature")
+        speed, bearing = wind_mean(items)
         out.append(
             {
                 "datetime": day,
@@ -105,6 +148,8 @@ def daily_from_hourly(rows, tz):
                 "precipitation_probability": None,
                 "humidity": mean(col("humidity")),
                 "pressure": mean(col("pressure")),
+                "wind_speed": speed,
+                "wind_bearing": bearing,
             }
         )
     return out
@@ -156,6 +201,7 @@ def three_hourly(rows, tz):
         first = next((r for exact, r in items if exact), None)
         temps = col("temperature")
         probs = col("precipitation_probability")
+        speed, bearing = wind_mean([r for _, r in items])
         out.append(
             {
                 "datetime": start.isoformat(),
@@ -164,6 +210,8 @@ def three_hourly(rows, tz):
                 "precipitation_probability": max(probs) if probs else None,
                 "humidity": mean(col("humidity")),
                 "pressure": mean(col("pressure")),
+                "wind_speed": speed,
+                "wind_bearing": bearing,
             }
         )
     return out

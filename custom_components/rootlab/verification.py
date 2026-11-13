@@ -12,7 +12,7 @@ from homeassistant.helpers.event import async_track_time_change
 import homeassistant.util.dt as dt_util
 
 from .const import DOMAIN
-from .logic import daily_from_hourly, rain_sum, three_hourly, week_grid
+from .logic import bias_summary, daily_from_hourly, rain_sum, rank_score, three_hourly, week_grid, wind_mean
 from .store import async_save
 from .weather import STATIONS, nearest_station
 
@@ -40,6 +40,9 @@ def garden_location(hass):
         loc.get("latitude") or hass.config.latitude,
         loc.get("longitude") or hass.config.longitude,
     )
+
+
+DAILY_MAX = 365  # dni dziennych błędów na źródło (~25 kB na źródło w store)
 
 
 def _verify(hass):
@@ -198,8 +201,9 @@ def _finalize_day(verify):
     temps = actuals.get("temps", {})
     rain_actual = actuals.get("rain_mm")
     for source, forecast in snapshot.get("sources", {}).items():
-        errs = [
-            abs(forecast["temps"][int(h)] - temp)
+        # błąd ze znakiem: + prognoza zawyża, − zaniża
+        diffs = [
+            forecast["temps"][int(h)] - temp
             for h, temp in temps.items()
             if int(h) < len(forecast.get("temps", []))
             and forecast["temps"][int(h)] is not None
@@ -207,13 +211,19 @@ def _finalize_day(verify):
         stat = verify["stats"].setdefault(
             source, {"days": 0, "mae_sum": 0.0, "rain_err_sum": 0.0, "rain_days": 0}
         )
-        if errs:
+        day = {"d": snapshot["date"], "t": None, "r": None}
+        if diffs:
             stat["days"] += 1
-            stat["mae_sum"] += sum(errs) / len(errs)
+            stat["mae_sum"] += sum(abs(x) for x in diffs) / len(diffs)
+            day["t"] = round(sum(diffs) / len(diffs), 2)
         if rain_actual is not None and forecast.get("rain"):
-            forecast_sum = sum(v or 0 for v in forecast["rain"])
+            rain_diff = sum(v or 0 for v in forecast["rain"]) - rain_actual
             stat["rain_days"] += 1
-            stat["rain_err_sum"] += abs(forecast_sum - rain_actual)
+            stat["rain_err_sum"] += abs(rain_diff)
+            day["r"] = round(rain_diff, 1)
+        # dzienne błędy (od 2026-10-14) — kierunek pomyłki w rankingu „±"
+        stat.setdefault("daily", []).append(day)
+        del stat["daily"][:-DAILY_MAX]
     verify["stats"]["_since"] = verify["stats"].get("_since") or snapshot["date"]
 
 
@@ -334,9 +344,13 @@ def stats_payload(hass):
                 "rain_err": round(stat["rain_err_sum"] / stat["rain_days"], 2)
                 if stat["rain_days"]
                 else None,
+                **bias_summary(stat.get("daily", [])),
             }
         )
-    out.sort(key=lambda x: (x["mae_temp"] is None, x["mae_temp"] or 0))
+    for row in out:
+        row["score"] = rank_score(row["mae_temp"], row["rain_err"])
+    # ważony wynik pierwszy; źródła bez danych o opadach — za nimi, wg temperatury
+    out.sort(key=lambda x: (x["score"] is None, x["score"] or 0, x["mae_temp"] is None, x["mae_temp"] or 0))
     snapshot = verify.get("snapshot") or {}
     # źródła bez wyników: zapisane w dzisiejszym snapshocie → wynik jutro po północy,
     # nowe IMGW spoza snapshotu → snapshot dziś w nocy, wynik dzień później
@@ -354,6 +368,7 @@ def stats_payload(hass):
                 "days": 0,
                 "mae_temp": None,
                 "rain_err": None,
+                "score": None,
                 "first_result": (today_local + timedelta(days=1 if in_snapshot else 2)).isoformat(),
             }
         )
@@ -464,7 +479,7 @@ async def fetch_openmeteo_forecast(hass, model):
         "https://api.open-meteo.com/v1/forecast"
         f"?latitude={lat}&longitude={lon}"
         "&hourly=temperature_2m,precipitation,precipitation_probability,"
-        "relative_humidity_2m,surface_pressure"
+        "relative_humidity_2m,surface_pressure,wind_speed_10m,wind_direction_10m&wind_speed_unit=ms"
         "&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,"
         "precipitation_probability_max"
         f"&models={model}&forecast_days=7&timezone=auto"
@@ -481,6 +496,8 @@ async def fetch_openmeteo_forecast(hass, model):
     h_prob = get(hourly, "precipitation_probability")
     h_hum = get(hourly, "relative_humidity_2m")
     h_press = get(hourly, "surface_pressure")
+    h_wind = get(hourly, "wind_speed_10m")
+    h_dir = get(hourly, "wind_direction_10m")
     hourly_rows, all_rows = [], []
     day_agg = {}
     for i, iso in enumerate(times):
@@ -491,12 +508,15 @@ async def fetch_openmeteo_forecast(hass, model):
             "precipitation_probability": h_prob[i] if i < len(h_prob) else None,
             "humidity": h_hum[i] if i < len(h_hum) else None,
             "pressure": h_press[i] if i < len(h_press) else None,
+            "wind_speed": h_wind[i] if i < len(h_wind) else None,
+            "wind_bearing": h_dir[i] if i < len(h_dir) else None,
         }
         all_rows.append(row)
         if len(hourly_rows) < 24:
             hourly_rows.append(row)
         day = iso[:10]
-        agg = day_agg.setdefault(day, {"hum": [], "press": []})
+        agg = day_agg.setdefault(day, {"hum": [], "press": [], "rows": []})
+        agg["rows"].append(row)
         if row["humidity"] is not None:
             agg["hum"].append(row["humidity"])
         if row["pressure"] is not None:
@@ -509,7 +529,8 @@ async def fetch_openmeteo_forecast(hass, model):
     mean = lambda xs: round(sum(xs) / len(xs), 1) if xs else None
     daily_rows = []
     for i, iso in enumerate(d_times[:7]):
-        agg = day_agg.get(iso, {"hum": [], "press": []})
+        agg = day_agg.get(iso, {"hum": [], "press": [], "rows": []})
+        speed, bearing = wind_mean(agg["rows"])
         daily_rows.append(
             {
                 "datetime": iso,
@@ -519,6 +540,8 @@ async def fetch_openmeteo_forecast(hass, model):
                 "precipitation_probability": d_prob[i] if i < len(d_prob) else None,
                 "humidity": mean(agg["hum"]),
                 "pressure": mean(agg["press"]),
+                "wind_speed": speed,
+                "wind_bearing": bearing,
             }
         )
     return week_payload(hourly_rows, all_rows, daily_rows)
